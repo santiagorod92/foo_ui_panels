@@ -272,8 +272,12 @@ void SkinEngine::draw_script(HDC dc, int w, int h,
     if (script.is_empty()) return;
     SkinHook hook(this, dc, w, h);
     pfc::string8 dump;
-    if (track.is_valid()) track->format_title(&hook, dump, script, nullptr);
-    else                  script->run(&hook, dump, nullptr);
+    // Use playback formatting so dynamic fields (%playback_time%, %isplaying%…) resolve.
+    if (track.is_valid())
+        playback_control::get()->playback_format_title(
+            &hook, dump, script, nullptr, playback_control::display_level_all);
+    else
+        script->run(&hook, dump, nullptr);
 }
 
 } // namespace pui

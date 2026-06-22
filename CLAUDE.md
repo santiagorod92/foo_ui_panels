@@ -42,6 +42,8 @@ See `DESIGN.md` for full roadmap/facts.
   Native `Track Display` panel: `src/track_display.{h,cpp}` — own child window, repaints (1s timer)
   by running a per-panel titleformat script via `SkinEngine::draw_script(dc,w,h,script,nowplaying)`
   (built-in fields resolve from the now-playing track). Transparent bg = blit parent behind it.
+  Gotcha: `draw_script` uses `playback_control::playback_format_title(...display_level_all)` (not
+  `metadb_handle::format_title`) so dynamic fields like `%playback_time%`/`%isplaying%` resolve.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, other types to `PanelHost`.
   Still stubbed: `$button` interactivity, native seekbar/volume, pvar persistence, per-panel scripts from skin.
   Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
