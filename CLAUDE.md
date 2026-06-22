@@ -46,8 +46,8 @@ See `DESIGN.md` for full roadmap/facts.
   Gotcha: `draw_script` uses `playback_control::playback_format_title(...display_level_all)` (not
   `metadb_handle::format_title`) so dynamic fields like `%playback_time%`/`%isplaying%` resolve.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, `"Seek Panel"` to a native
-  `Seekbar` (`src/seekbar.{h,cpp}` — progress bar + click-to-seek, self-drawn, no assets), others to `PanelHost`.
-  Still stubbed: `$button` interactivity, native seekbar/volume, per-panel scripts from skin.
+  `Seekbar` (`src/seekbar.{h,cpp}` — progress bar + click-to-seek), `"Volume Panel"` to native `Volume`
+  (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), others to `PanelHost`. Native widgets self-drawn, no assets.
 
 ## fooAvA config format (s8.bin) — decoded
 `skins/fooava/config/s8.bin` layout: `[56-byte header][53 pvar KV pairs][length-prefixed script blocks]`.

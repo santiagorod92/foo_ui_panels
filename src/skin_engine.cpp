@@ -2,6 +2,7 @@
 #include "image.h"
 #include "track_display.h"
 #include "seekbar.h"
+#include "volume.h"
 #include "../sdk/foobar2000/SDK/cfg_var.h"
 #include <cstdlib>
 #include <cstdio>
@@ -367,6 +368,12 @@ void SkinEngine::render(HDC dc, int width, int height) {
             auto& sb = m_seekbars[p.name];
             if (!sb) { sb = std::make_unique<Seekbar>(); sb->create(m_parent); }
             if (HWND w = sb->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
+            continue;
+        }
+        if (p.type.find("Volume") != std::string::npos) {
+            auto& vol = m_volumes[p.name];
+            if (!vol) { vol = std::make_unique<Volume>(); vol->create(m_parent); }
+            if (HWND w = vol->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
             continue;
         }
         const char* dui = map_type(p.type);

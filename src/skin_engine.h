@@ -12,6 +12,7 @@
 #include "panel_host.h"
 #include "track_display.h"
 #include "seekbar.h"
+#include "volume.h"
 #include <vector>
 #include <map>
 #include <string>
@@ -65,6 +66,7 @@ private:
     std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
     std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;
+    std::map<std::string, std::unique_ptr<Volume>> m_volumes;
 };
 
 } // namespace pui
