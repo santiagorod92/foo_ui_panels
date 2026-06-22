@@ -88,6 +88,8 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   `run()` only returns it. `DrawString : pfc::string_base` routes each written chunk to `SkinHook::emit_text`;
   `$alignabs(left,top,right,bottom,halign,valign)` sets the box+flags and flushes; `$textcolor`/`$set_font_color`
   set the color; flushed on next `$alignabs`/`$drawstring`/end. This renders the bottom track-info text.
+  emit_text drops control chars (`$char(N)` for small N). PanelsUI underscore fields handled: `%_width%`
+  `%_height%` `%el_width%` `%el_height%` `%_isplaying%` `%_ispaused%` `%foobar_path%`.
 - `$imageabs2` opts parsed (`parse_img_opts`): `alpha-N` and `ROTATEFLIP-N` (6 = vertical mirror,
   used for cover reflections; drawn via GDI+ destination parallelogram, cache not mutated).
 - Image loader resolves **wildcard paths** (`image.cpp resolve_wildcard`, FindFirstFile): `*folder*.jpg`

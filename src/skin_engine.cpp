@@ -120,12 +120,26 @@ public:
     // Literal text written by titleformat (between functions) is drawn positionally:
     // $alignabs sets the box+alignment, subsequent text accumulates, flushed on next
     // $alignabs / at end. (PanelsUI draws literal text; standard titleformat just returns it.)
-    void emit_text(const char* s, size_t n) { if (m_aligned && s && n) m_pending.append(s, n); }
+    void emit_text(const char* s, size_t n) {
+        if (!m_aligned || !s) return;
+        for (size_t k = 0; k < n; ++k) {
+            unsigned char c = (unsigned char)s[k];
+            if (c >= 32 || c == '\n') m_pending.push_back((char)c); // drop control chars from $char(N)
+        }
+    }
 
     bool process_field(titleformat_text_out* out, const char* name, t_size len, bool& found) override {
         found = true;
         if (eq(name, len, "_width")  || eq(name, len, "el_width"))  { out->write_int(titleformat_inputtypes::unknown, m_w); return true; }
         if (eq(name, len, "_height") || eq(name, len, "el_height")) { out->write_int(titleformat_inputtypes::unknown, m_h); return true; }
+        if (eq(name, len, "_isplaying")) {
+            if (playback_control::get()->is_playing()) out->write(titleformat_inputtypes::unknown, "1", 1);
+            return true;
+        }
+        if (eq(name, len, "_ispaused")) {
+            if (playback_control::get()->is_paused()) out->write(titleformat_inputtypes::unknown, "1", 1);
+            return true;
+        }
         if (eq(name, len, "foobar_path")) {
             pfc::string8 p; filesystem::g_get_display_path(core_api::get_profile_path(), p);
             out->write(titleformat_inputtypes::unknown, p.get_ptr(), p.length()); return true;
