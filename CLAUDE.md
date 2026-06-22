@@ -84,6 +84,10 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the
   cover; the wildcard image loader resolves `*folder*.*` → Folder.jpg/png.
+- **Positional literal text**: PanelsUI draws titleformat literal text (between functions); standard
+  `run()` only returns it. `DrawString : pfc::string_base` routes each written chunk to `SkinHook::emit_text`;
+  `$alignabs(left,top,right,bottom,halign,valign)` sets the box+flags and flushes; `$textcolor`/`$set_font_color`
+  set the color; flushed on next `$alignabs`/`$drawstring`/end. This renders the bottom track-info text.
 - `$imageabs2` opts parsed (`parse_img_opts`): `alpha-N` and `ROTATEFLIP-N` (6 = vertical mirror,
   used for cover reflections; drawn via GDI+ destination parallelogram, cache not mutated).
 - Image loader resolves **wildcard paths** (`image.cpp resolve_wildcard`, FindFirstFile): `*folder*.jpg`

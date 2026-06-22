@@ -113,8 +113,14 @@ public:
         SetBkMode(m_dc, TRANSPARENT);
     }
     ~SkinHook() {
+        flush_text();
         if (m_font) { SelectObject(m_dc, m_oldFont); DeleteObject(m_font); }
     }
+
+    // Literal text written by titleformat (between functions) is drawn positionally:
+    // $alignabs sets the box+alignment, subsequent text accumulates, flushed on next
+    // $alignabs / at end. (PanelsUI draws literal text; standard titleformat just returns it.)
+    void emit_text(const char* s, size_t n) { if (m_aligned && s && n) m_pending.append(s, n); }
 
     bool process_field(titleformat_text_out* out, const char* name, t_size len, bool& found) override {
         found = true;
@@ -179,7 +185,23 @@ public:
             return true;
         }
         if (eq(name, len, "drawstring") && argc >= 5) {
-            draw_string(p, argc); return true;
+            flush_text(); draw_string(p, argc); return true;
+        }
+        if (eq(name, len, "alignabs") && argc >= 4) {
+            // $alignabs(left,top,right,bottom,halign,valign) — box for following literal text
+            flush_text();
+            m_alignRect = { param_int(p,0), param_int(p,1), param_int(p,2), param_int(p,3) };
+            std::string ha = argc >= 5 ? param_str(p,4) : std::string();
+            std::string va = argc >= 6 ? param_str(p,5) : std::string();
+            UINT f = DT_NOPREFIX | DT_WORD_ELLIPSIS;
+            if (ha.find("center") != std::string::npos) f |= DT_CENTER;
+            else if (ha.find("right") != std::string::npos) f |= DT_RIGHT;
+            if (va.find("center") != std::string::npos) f |= DT_VCENTER | DT_SINGLELINE;
+            m_alignFlags = f; m_aligned = true;
+            return true;
+        }
+        if ((eq(name, len, "textcolor") || eq(name, len, "set_font_color")) && argc >= 1) {
+            m_textcol = parse_rgb(param_str(p,0).c_str()); return true;
         }
         if (eq(name, len, "imageabs") && argc >= 5) {
             // $imageabs(x,y,w,h,path,align)
@@ -230,8 +252,8 @@ public:
         }
 
         // accepted-but-not-yet-rendered functions
-        static const char* stubs[] = { "draw_text","set_font_color",
-            "textcolor","offset_colour","calculate_blend_target","alignabs","calcwidth","scplsetlayout",
+        static const char* stubs[] = { "draw_text",
+            "offset_colour","calculate_blend_target","calcwidth","scplsetlayout",
             "imagebutton","textbutton","windowstyle","gp_set_brush","gp_set_pen",
             "gp_fill_rectangle" };
         for (auto s : stubs) if (eq(name, len, s)) return true;
@@ -240,6 +262,15 @@ public:
     }
 
 private:
+    void flush_text() {
+        if (m_aligned && !m_pending.empty()) {
+            SetTextColor(m_dc, m_textcol);
+            RECT r = m_alignRect;
+            DrawTextA(m_dc, m_pending.c_str(), (int)m_pending.size(), &r, m_alignFlags);
+        }
+        m_pending.clear();
+    }
+
     RECT mkrect(int x, int y, int w, int h) { RECT r = { x, y, x + w, y + h }; return r; }
 
     // Resolve a skin image path: normalize separators, strip leading ./ or /,
@@ -289,6 +320,10 @@ private:
 
     SkinEngine* m_e; HDC m_dc; int m_w, m_h;
     HFONT m_font = nullptr; HGDIOBJ m_oldFont = nullptr;
+
+    // positional literal-text state
+    bool m_aligned = false; RECT m_alignRect = {}; UINT m_alignFlags = 0;
+    std::string m_pending; COLORREF m_textcol = RGB(255, 255, 255);
 };
 
 // --- SkinEngine ------------------------------------------------------------
@@ -299,6 +334,25 @@ bool SkinEngine::load(const char* script) {
     }
     return true;
 }
+
+// titleformat output sink that routes written text to the hook for positional drawing,
+// while still satisfying string_base (so titleformat_object::run can write to it).
+class DrawString : public pfc::string_base {
+public:
+    explicit DrawString(SkinHook* h) : m_h(h) {}
+    const char* get_ptr() const override { return m_buf.c_str(); }
+    void add_string(const char* s, t_size n = SIZE_MAX) override {
+        size_t len = (n == SIZE_MAX) ? strlen(s) : n;
+        m_buf.append(s, len);
+        m_h->emit_text(s, len);
+    }
+    void truncate(t_size len) override { if (len < m_buf.size()) m_buf.resize(len); }
+    t_size get_length() const override { return m_buf.size(); }
+    char* lock_buffer(t_size req) override { m_buf.resize(req); return m_buf.empty() ? nullptr : &m_buf[0]; }
+    void unlock_buffer() override { m_buf.resize(strlen(m_buf.c_str())); }
+private:
+    SkinHook* m_h; std::string m_buf;
+};
 
 // Persistent pvar store (serialized "key=value" lines).
 namespace {
@@ -335,21 +389,10 @@ void SkinEngine::render(HDC dc, int width, int height) {
 
     m_placements.clear();
     m_buttons.clear();
-    pfc::string8 dump;
     { SkinHook hook(this, dc, width, height);
-      m_script->run(&hook, dump, nullptr); }
+      DrawString out(&hook);
+      m_script->run(&hook, out, nullptr); }
 
-    static bool logged = false;
-    if (!logged) {
-        logged = true;
-        console::printf("Panels UI: render %dx%d -> %u placements, out len=%u",
-                        width, height, (unsigned)m_placements.size(), (unsigned)dump.length());
-        for (size_t i = 0; i < m_placements.size() && i < 6; ++i) {
-            auto& p = m_placements[i];
-            console::printf("  [%u] '%s' type='%s' %d,%d,%d,%d",
-                (unsigned)i, p.name.c_str(), p.type.c_str(), p.x, p.y, p.w, p.h);
-        }
-    }
 
     for (const auto& p : m_placements) {
         // Native panels (no DUI equivalent) get our own window.
@@ -437,13 +480,13 @@ void SkinEngine::draw_script(HDC dc, int w, int h,
                              const metadb_handle_ptr& track) {
     if (script.is_empty()) return;
     SkinHook hook(this, dc, w, h);
-    pfc::string8 dump;
+    DrawString out(&hook);
     // Use playback formatting so dynamic fields (%playback_time%, %isplaying%…) resolve.
     if (track.is_valid())
         playback_control::get()->playback_format_title(
-            &hook, dump, script, nullptr, playback_control::display_level_all);
+            &hook, out, script, nullptr, playback_control::display_level_all);
     else
-        script->run(&hook, dump, nullptr);
+        script->run(&hook, out, nullptr);
 }
 
 } // namespace pui
