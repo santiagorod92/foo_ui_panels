@@ -6,6 +6,7 @@
 #include <objbase.h>    // defines the COM `interface` macro used by SDK headers
 #include <mmsystem.h>   // timeGetTime (pulled by pfc/timers.h)
 #include "../sdk/foobar2000/SDK/foobar2000.h"
+#include "splitter.h"
 #include <vector>
 
 DECLARE_COMPONENT_VERSION(
@@ -48,8 +49,30 @@ public:
 
         if (!m_wnd) throw exception_win32(GetLastError());
         build_menu();
+        build_layout();
         ShowWindow(m_wnd, SW_SHOW);
         return m_wnd;
+    }
+
+    // Phase 2 step 1: root splitter with two placeholder panes (proves resize).
+    void build_layout() {
+        HINSTANCE inst = core_api::get_my_instance();
+        m_root.create(m_wnd, pui::Orient::Vertical, 0.3f);
+        auto mk = [&](const wchar_t* text) {
+            return CreateWindowExW(WS_EX_CLIENTEDGE, L"STATIC", text,
+                WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 0, 0,
+                m_root.hwnd(), nullptr, inst, nullptr);
+        };
+        m_paneA = mk(L"Pane A");
+        m_paneB = mk(L"Pane B");
+        m_root.set_panes(m_paneA, m_paneB);
+        resize_layout();
+    }
+
+    void resize_layout() {
+        if (!m_root.hwnd()) return;
+        RECT rc; GetClientRect(m_wnd, &rc);
+        MoveWindow(m_root.hwnd(), 0, 0, rc.right, rc.bottom, TRUE);
     }
 
     void shutdown() override {
@@ -76,6 +99,10 @@ private:
     HWND        m_wnd     = nullptr;
     HookProc_t  m_hook    = nullptr;
     HMENU       m_menubar = nullptr;
+
+    pui::Splitter m_root;
+    HWND          m_paneA = nullptr;
+    HWND          m_paneB = nullptr;
 
     // One mainmenu_manager per top-level group; WM_COMMAND ids are partitioned
     // into [base, base+kSpan) ranges so we can route back to the right manager.
@@ -129,6 +156,9 @@ private:
             if (self->m_hook(wnd, msg, wp, lp, &ret)) return ret;
         }
         switch (msg) {
+        case WM_SIZE:
+            if (self) self->resize_layout();
+            return 0;
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             // Dispatch configured keyboard shortcuts (Ctrl+P -> Preferences, etc.).

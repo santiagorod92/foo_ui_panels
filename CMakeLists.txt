@@ -27,7 +27,7 @@ target_include_directories(fb2ksdk PUBLIC "${SDK}" "${SDK}/foobar2000")
 target_link_libraries(fb2ksdk PUBLIC pfc)
 
 # --- our component ---
-file(GLOB COMP_SRC "${CMAKE_SOURCE_DIR}/src/*.cpp")
+file(GLOB COMP_SRC CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/src/*.cpp")
 add_library(foo_ui_panels SHARED ${COMP_SRC})
 set_target_properties(foo_ui_panels PROPERTIES PREFIX "" SUFFIX ".dll")
 target_link_libraries(foo_ui_panels PRIVATE
