@@ -345,7 +345,11 @@ std::string SkinEngine::read_panel_script(const std::string& name) {
     std::string s(n > 0 ? n : 0, '\0');
     if (n > 0) { size_t r = fread(&s[0], 1, n, f); s.resize(r); }
     fclose(f);
-    return s;
+    // Simple cover-art resolution (replaces fooAvA's fragile init): point MyCoverPath at
+    // the track folder's cover; the image loader resolves the wildcard (Folder.jpg/png/...).
+    static const char* kCoverInit =
+        "$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))";
+    return std::string(kCoverInit) + s;
 }
 
 void SkinEngine::draw_script(HDC dc, int w, int h,

@@ -70,8 +70,10 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   `panels/<name>.txt` next to the DLL. Native `TrackDisplay` loads `panels/<placement-name>.txt`
   (e.g. "Display" = album-art cover display) instead of its default. `read_panel_script()` in SkinEngine.
 - Draw funcs now real (not stubbed): `$draw_image`, `$fileexists` (GetFileAttributes), `$greater`.
-- `fooava.txt` = pvar defaults + **init block (block_00)** + master. The init sets `MyCoverPath` per
-  track (cover detection), which the Display panel reads via `$imageabs2(...,$getpvar(MyCoverPath))`.
+- `fooava.txt` = pvar defaults + master. (block_00 init is NOT prepended — its deep-nested cover
+  logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
+  `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the
+  cover; the wildcard image loader resolves `*folder*.*` → Folder.jpg/png.
 - Image loader resolves **wildcard paths** (`image.cpp resolve_wildcard`, FindFirstFile): `*folder*.jpg`
   → `Folder.jpg`. Possible future fallback: broad `*.jpg`/`*.png` if specific patterns miss.
 - Main window needs **WS_CLIPCHILDREN** or the double-buffered WM_PAINT BitBlt paints over hosted panels.
