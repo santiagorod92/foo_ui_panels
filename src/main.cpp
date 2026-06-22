@@ -85,6 +85,12 @@ private:
             if (self->m_hook(wnd, msg, wp, lp, &ret)) return ret;
         }
         switch (msg) {
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+            // Dispatch configured keyboard shortcuts (Ctrl+P -> Preferences, etc.).
+            if (keyboard_shortcut_manager::get()->on_keydown_auto(wp))
+                return 0;
+            break;
         case WM_CLOSE:
             standard_commands::main_exit();
             return 0;
