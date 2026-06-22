@@ -5,6 +5,7 @@
 #include "image.h"
 #include <vector>
 #include <string>
+#include <cstdio>
 
 DECLARE_COMPONENT_VERSION(
     "Panels UI (reborn)",
@@ -64,8 +65,20 @@ public:
     void build_layout() {
         m_skin.set_parent(m_wnd);
         m_skin.set_base_dir(module_dir());
-        m_skin.load(kTestSkin);
+        // Load the real fooAvA master script if present, else the built-in test skin.
+        std::string skin = read_file(module_dir() + "\\fooava.txt");
+        m_skin.load(skin.empty() ? kTestSkin : skin.c_str());
         InvalidateRect(m_wnd, nullptr, FALSE);
+    }
+
+    static std::string read_file(const std::string& path) {
+        FILE* f = fopen(path.c_str(), "rb");
+        if (!f) return {};
+        fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+        std::string s(n > 0 ? n : 0, '\0');
+        if (n > 0) { size_t r = fread(&s[0], 1, n, f); s.resize(r); }
+        fclose(f);
+        return s;
     }
 
     // Directory of our DLL (UTF-8), used as the skin asset base for now.

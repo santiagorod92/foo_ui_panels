@@ -45,7 +45,17 @@ See `DESIGN.md` for full roadmap/facts.
   Gotcha: `draw_script` uses `playback_control::playback_format_title(...display_level_all)` (not
   `metadb_handle::format_title`) so dynamic fields like `%playback_time%`/`%isplaying%` resolve.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, other types to `PanelHost`.
-  Still stubbed: `$button` interactivity, native seekbar/volume, pvar persistence, per-panel scripts from skin.
+  Still stubbed: `$button` interactivity, native seekbar/volume, per-panel scripts from skin.
+
+## fooAvA config format (s8.bin) — decoded
+`skins/fooava/config/s8.bin` layout: `[56-byte header][53 pvar KV pairs][length-prefixed script blocks]`.
+- pvar KV: `<u32 nameLen><name><u32 valLen><val>` repeated (the setup defaults).
+- script blocks: `<u32 len><text>`. block 0 = font/cover init; block 1 (112KB) is a nested binary
+  panel-config blob whose **master layout script is a contiguous 40376-byte text run at offset ~161**
+  (starts with the fooAvA header comment, ends `//////////END///////////`; 75 `$panel` + 79 draws).
+- Extracted master → shipped as `fooava.txt` next to the DLL; `main` reads it (fallback: built-in test skin).
+  Re-extract via the python parsers in /tmp (parse_pss*.py) if needed.
+- Asset gap: button PNGs (`/images/fooAVA/*.png`) were NOT in the SFX streams — images won't load yet.
   Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
 
 ## Layout
