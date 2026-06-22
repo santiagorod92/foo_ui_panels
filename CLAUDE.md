@@ -11,6 +11,12 @@ See `DESIGN.md` for full roadmap/facts.
 - Reference skin / format spec source: **fooAvA 1.05** (dawxxx666). Its internal config XML = the
   Panels-UI format to reverse-engineer. Full fooAvA also needs `foo_chronflow` (CoverFlow, also dead).
 
+## Repo conventions
+- Remote: `origin` → github.com/santiagorod92/foo_ui_panels (private). Branch `main`.
+- **Commits: author Santiago Rodriguez <santiagom9992@gmail.com> ONLY — no Co-Authored-By trailer.**
+- Never commit: `sdk/`, `columns_ui_ref/` (fetched by build.sh), `.xwin-cache/` (MS binaries),
+  `skins/` (proprietary DLLs + CC-BY-NC-SA art), `build/`. All gitignored — keep local.
+
 ## Layout
 - `sdk/` — foobar2000 v2 SDK (razielanarki mirror): `foobar2000/`, `pfc/`, `libPPUI/`.
 - `columns_ui_ref/` — Columns UI + `columns_ui-sdk`, **reference only (LGPL), do not copy**.
