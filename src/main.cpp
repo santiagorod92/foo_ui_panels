@@ -83,6 +83,7 @@ public:
     void resize_layout() { InvalidateRect(m_wnd, nullptr, FALSE); }
 
     void shutdown() override {
+        m_skin.save_pvars();
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
         if (m_menubar) { DestroyMenu(m_menubar); m_menubar = nullptr; }
         m_groups.clear();

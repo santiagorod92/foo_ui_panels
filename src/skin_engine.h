@@ -39,8 +39,13 @@ public:
     // then create/position hosted panel windows. Called from the canvas WM_PAINT.
     void render(HDC dc, int width, int height);
 
+    // Persist setup variables (pvars) across sessions. save_pvars() on component shutdown.
+    void save_pvars();
+
 private:
     friend class SkinHook;
+    void load_pvars();
+    bool m_pvars_loaded = false;
     HWND m_parent = nullptr;
     std::string m_base;
     service_ptr_t<titleformat_object> m_script;

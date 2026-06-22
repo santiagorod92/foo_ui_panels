@@ -1,6 +1,7 @@
 #include "skin_engine.h"
 #include "image.h"
 #include "track_display.h"
+#include "../sdk/foobar2000/SDK/cfg_var.h"
 #include <cstdlib>
 
 namespace pui {
@@ -242,8 +243,38 @@ bool SkinEngine::load(const char* script) {
     return true;
 }
 
+// Persistent pvar store (serialized "key=value" lines).
+namespace {
+// {1B5C9A40-7E2D-4C8A-9F31-6A0B2D4E8C70}
+const GUID g_pvars_guid =
+    { 0x1b5c9a40, 0x7e2d, 0x4c8a, { 0x9f, 0x31, 0x6a, 0x0b, 0x2d, 0x4e, 0x8c, 0x70 } };
+cfg_var_modern::cfg_string g_pvars_cfg(g_pvars_guid, "");
+}
+
+void SkinEngine::load_pvars() {
+    pfc::string8 data = g_pvars_cfg.get();
+    m_pvars.clear();
+    std::string s(data.get_ptr(), data.length());
+    size_t pos = 0;
+    while (pos < s.size()) {
+        size_t nl = s.find('\n', pos);
+        if (nl == std::string::npos) nl = s.size();
+        std::string line = s.substr(pos, nl - pos);
+        size_t eq = line.find('=');
+        if (eq != std::string::npos) m_pvars[line.substr(0, eq)] = line.substr(eq + 1);
+        pos = nl + 1;
+    }
+}
+
+void SkinEngine::save_pvars() {
+    std::string out;
+    for (auto& kv : m_pvars) { out += kv.first; out += '='; out += kv.second; out += '\n'; }
+    g_pvars_cfg.set(out.c_str());
+}
+
 void SkinEngine::render(HDC dc, int width, int height) {
     if (m_script.is_empty() || !m_parent) return;
+    if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
 
     m_placements.clear();
     { SkinHook hook(this, dc, width, height);
