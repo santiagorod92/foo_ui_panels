@@ -1,0 +1,20 @@
+# build output
+build/
+*.dll
+*.lib
+*.pdb
+
+# vendored third-party (fetch separately; licenses restrict redistribution)
+sdk/
+columns_ui_ref/
+
+# xwin cache + Windows SDK downloads (Microsoft, do not redistribute)
+.xwin-cache/
+
+# extracted skin assets (fooAvA is CC-BY-NC-SA; proprietary DLLs) — local only
+skins/
+
+# editor
+*.user
+.cache/
+compile_commands.json
