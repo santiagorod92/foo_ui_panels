@@ -14,6 +14,7 @@ See `DESIGN.md` for full roadmap/facts.
 ## Repo conventions
 - Remote: `origin` → github.com/santiagorod92/foo_ui_panels (private). Branch `main`.
 - **Commits: author Santiago Rodriguez <santiagom9992@gmail.com> ONLY — no Co-Authored-By trailer.**
+- **Don't push per-step.** Iterate locally; push only at the end of an iteration round or on request.
 - Never commit: `sdk/`, `columns_ui_ref/` (fetched by build.sh), `.xwin-cache/` (MS binaries),
   `skins/` (proprietary DLLs + CC-BY-NC-SA art), `build/`. All gitignored — keep local.
 
