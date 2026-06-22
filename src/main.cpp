@@ -58,7 +58,8 @@ public:
         "$gradientrect(0,0,%_width%,40,60-60-110,30-30-60)"
         "$font(Segoe UI,22,b)$drawstring(Panels UI \xe2\x80\x94 reborn,16,6,600,30,255-220-80,vcenter)"
         "$imageabs(16,48,160,120,bg.jpg,)"
-        "$panel(pl,Playlist View,190,48,$eval({%_width%}-202),$eval({%_height%}-60),)";
+        "$panel(np,Track Display,190,48,$eval({%_width%}-202),70,)"
+        "$panel(pl,Playlist View,190,124,$eval({%_width%}-202),$eval({%_height%}-136),)";
 
     void build_layout() {
         m_skin.set_parent(m_wnd);

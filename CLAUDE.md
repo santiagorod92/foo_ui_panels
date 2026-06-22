@@ -39,7 +39,11 @@ See `DESIGN.md` for full roadmap/facts.
   draw via `src/image.{h,cpp}` (GDI+, links `gdiplus`; bitmaps cached by path since paint runs per frame;
   `alpha-N` opt honored). Paths resolved against skin base dir (`set_base_dir`, currently the DLL dir);
   `\`→`/`, leading `./`/`/` stripped. `images_shutdown()` called on component shutdown.
-  Still stubbed: `$button` interactivity, native Track Display/seekbar, pvar persistence.
+  Native `Track Display` panel: `src/track_display.{h,cpp}` — own child window, repaints (1s timer)
+  by running a per-panel titleformat script via `SkinEngine::draw_script(dc,w,h,script,nowplaying)`
+  (built-in fields resolve from the now-playing track). Transparent bg = blit parent behind it.
+  `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, other types to `PanelHost`.
+  Still stubbed: `$button` interactivity, native seekbar/volume, pvar persistence, per-panel scripts from skin.
   Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
 
 ## Layout

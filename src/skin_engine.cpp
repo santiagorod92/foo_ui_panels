@@ -1,5 +1,6 @@
 #include "skin_engine.h"
 #include "image.h"
+#include "track_display.h"
 #include <cstdlib>
 
 namespace pui {
@@ -250,12 +251,29 @@ void SkinEngine::render(HDC dc, int width, int height) {
       m_script->run(&hook, dump, nullptr); }
 
     for (const auto& p : m_placements) {
+        // Native panels (no DUI equivalent) get our own window.
+        if (p.type.find("Track Display") != std::string::npos) {
+            auto& td = m_track_displays[p.name];
+            if (!td) { td = std::make_unique<TrackDisplay>(); td->create(m_parent, this); }
+            if (HWND w = td->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
+            continue;
+        }
         const char* dui = map_type(p.type);
         if (!dui) continue;
         auto& host = m_hosts[p.name];
         if (!host) { host = std::make_unique<PanelHost>(); host->create(m_parent, dui); }
         if (HWND w = host->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
     }
+}
+
+void SkinEngine::draw_script(HDC dc, int w, int h,
+                             const service_ptr_t<titleformat_object>& script,
+                             const metadb_handle_ptr& track) {
+    if (script.is_empty()) return;
+    SkinHook hook(this, dc, w, h);
+    pfc::string8 dump;
+    if (track.is_valid()) track->format_title(&hook, dump, script, nullptr);
+    else                  script->run(&hook, dump, nullptr);
 }
 
 } // namespace pui

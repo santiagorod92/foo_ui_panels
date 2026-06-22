@@ -10,6 +10,7 @@
 #pragma once
 #include "win_sdk.h"
 #include "panel_host.h"
+#include "track_display.h"
 #include <vector>
 #include <map>
 #include <string>
@@ -28,6 +29,12 @@ public:
     void set_base_dir(const std::string& dir) { m_base = dir; } // for resolving image paths
     bool load(const char* script);
 
+    // Run `script` against the draw engine on `dc` (used by native panels like TrackDisplay).
+    // If `track` is valid, built-in fields (%title% etc.) resolve from it.
+    void draw_script(HDC dc, int w, int h,
+                     const service_ptr_t<titleformat_object>& script,
+                     const metadb_handle_ptr& track);
+
     // Paint pass: run the script against `dc` (executes draw funcs + records placements),
     // then create/position hosted panel windows. Called from the canvas WM_PAINT.
     void render(HDC dc, int width, int height);
@@ -40,6 +47,7 @@ private:
     std::map<std::string, std::string> m_pvars;
     std::vector<Placement> m_placements;
     std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
+    std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
 };
 
 } // namespace pui
