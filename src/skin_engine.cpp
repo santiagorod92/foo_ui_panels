@@ -60,8 +60,11 @@ static const char* map_type(const std::string& t) {
     if (has("Peakmeter") || has("Peak"))  return "Peak Meter";
     if (has("Album list") || has("Graphical Browser")) return "Album List";
     if (has("Album Art"))        return "Album Art";
-    // Track Display / Seek Panel / Volume / Chronflow / Quick Search: native, not yet implemented.
-    return nullptr;
+    // Native-only legacy types we have no element for yet: skip (don't host garbage).
+    if (has("Track Display") || has("Seek") || has("Volume") || has("Chronflow") || has("Quick Search"))
+        return nullptr;
+    // Otherwise assume it's already a DUI element name and pass it through to PanelHost.
+    return t.c_str();
 }
 
 // --- the titleformat hook --------------------------------------------------

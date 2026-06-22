@@ -53,10 +53,9 @@ public:
     // (two panels side by side) until the fooAvA loader lands.
     static constexpr const char* kTestSkin =
         "$panel(left,Playlist View,0,0,$eval({%_width%}/2),%_height%,)"
-        "$panel(right,Spectrum,$eval({%_width%}/2),0,$eval({%_width%}/2),%_height%,)";
+        "$panel(right,Album List,$eval({%_width%}/2),0,$eval({%_width%}/2),%_height%,)";
 
     void build_layout() {
-        pui::PanelHost::log_available();
         m_skin.set_parent(m_wnd);
         m_skin.load(kTestSkin);
         resize_layout();
