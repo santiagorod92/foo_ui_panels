@@ -6,6 +6,7 @@
 #include <objbase.h>    // defines the COM `interface` macro used by SDK headers
 #include <mmsystem.h>   // timeGetTime (pulled by pfc/timers.h)
 #include "../sdk/foobar2000/SDK/foobar2000.h"
+#include <vector>
 
 DECLARE_COMPONENT_VERSION(
     "Panels UI (reborn)",
@@ -46,12 +47,15 @@ public:
             nullptr, nullptr, inst, this);
 
         if (!m_wnd) throw exception_win32(GetLastError());
+        build_menu();
         ShowWindow(m_wnd, SW_SHOW);
         return m_wnd;
     }
 
     void shutdown() override {
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
+        if (m_menubar) { DestroyMenu(m_menubar); m_menubar = nullptr; }
+        m_groups.clear();
         UnregisterClassW(WNDCLASS_NAME, core_api::get_my_instance());
     }
 
@@ -69,8 +73,48 @@ public:
     void show_now_playing() override {}
 
 private:
-    HWND        m_wnd  = nullptr;
-    HookProc_t  m_hook = nullptr;
+    HWND        m_wnd     = nullptr;
+    HookProc_t  m_hook    = nullptr;
+    HMENU       m_menubar = nullptr;
+
+    // One mainmenu_manager per top-level group; WM_COMMAND ids are partitioned
+    // into [base, base+kSpan) ranges so we can route back to the right manager.
+    struct MenuGroup { service_ptr_t<mainmenu_manager> mgr; UINT base; };
+    std::vector<MenuGroup> m_groups;
+    static const UINT kSpan = 4000;
+
+    void build_menu() {
+        struct Root { const GUID& guid; const wchar_t* label; };
+        const Root roots[] = {
+            { mainmenu_groups::file,     L"&File" },
+            { mainmenu_groups::edit,     L"&Edit" },
+            { mainmenu_groups::view,     L"&View" },
+            { mainmenu_groups::playback, L"&Playback" },
+            { mainmenu_groups::library,  L"&Library" },
+            { mainmenu_groups::help,     L"&Help" },
+        };
+        m_menubar = CreateMenu();
+        UINT base = 1;
+        for (const auto& r : roots) {
+            auto mgr = mainmenu_manager::get();
+            mgr->instantiate(r.guid);
+            HMENU popup = CreatePopupMenu();
+            mgr->generate_menu_win32(popup, base, kSpan,
+                mainmenu_manager::flag_show_shortcuts | mainmenu_manager::flag_view_full);
+            AppendMenuW(m_menubar, MF_POPUP, reinterpret_cast<UINT_PTR>(popup), r.label);
+            m_groups.push_back({ mgr, base });
+            base += kSpan;
+        }
+        SetMenu(m_wnd, m_menubar);
+    }
+
+    bool exec_command(UINT id) {
+        for (auto& g : m_groups) {
+            if (id >= g.base && id < g.base + kSpan)
+                return g.mgr->execute_command(id - g.base);
+        }
+        return false;
+    }
 
     static LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         panels_ui* self = reinterpret_cast<panels_ui*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
@@ -90,6 +134,11 @@ private:
             // Dispatch configured keyboard shortcuts (Ctrl+P -> Preferences, etc.).
             if (keyboard_shortcut_manager::get()->on_keydown_auto(wp))
                 return 0;
+            break;
+        case WM_COMMAND:
+            if (self && HIWORD(wp) == 0 && lp == 0) { // menu item
+                if (self->exec_command(LOWORD(wp))) return 0;
+            }
             break;
         case WM_CLOSE:
             standard_commands::main_exit();
