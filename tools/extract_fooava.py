@@ -11,6 +11,26 @@
 # Usage: python3 extract_fooava.py <s8.bin> <out fooava.txt>
 import struct, sys
 
+def preprocess(text):
+    # Strip // comments + per-line whitespace, then balance parens.
+    lines = []
+    for ln in text.split('\n'):
+        i = ln.find('//')
+        if i != -1: ln = ln[:i]
+        ln = ln.strip()
+        if ln: lines.append(ln)
+    body = ''.join(lines)
+    res = []; depth = 0
+    for c in body:
+        if c == '(': depth += 1; res.append(c)
+        elif c == ')':
+            if depth == 0: continue
+            depth -= 1; res.append(c)
+        else: res.append(c)
+    res.append(')' * depth)
+    return ''.join(res)
+
+
 def main(src, out):
     data = open(src, 'rb').read()
     u32 = lambda o: struct.unpack_from('<I', data, o)[0]
@@ -35,29 +55,43 @@ def main(src, out):
         else: cur = 0
     master = data[best[0]:best[0]+best[1]].decode('latin1')
 
-    # Strip // comments + whitespace.
-    lines = []
-    for ln in master.split('\n'):
-        i = ln.find('//')
-        if i != -1: ln = ln[:i]
-        ln = ln.strip()
-        if ln: lines.append(ln)
-    body = ''.join(lines)
-
-    # Balance parens.
-    res = []; depth = 0
-    for c in body:
-        if c == '(': depth += 1; res.append(c)
-        elif c == ')':
-            if depth == 0: continue
-            depth -= 1; res.append(c)
-        else: res.append(c)
-    res.append(')' * depth)
-    body = ''.join(res)
+    body = preprocess(master)
 
     prefix = ''.join(f'$setpvar({k},{v})' for k, v in pvars)
     open(out, 'w', encoding='latin1').write(prefix + body)
     print(f"pvars={len(pvars)} panels={body.count('$panel(')} -> {out} ({len(prefix)+len(body)} bytes)")
+
+    # Per-panel scripts: records after the master = <u32 nameLen><name><meta><script>.
+    # Written (preprocessed) to <out dir>/panels/<name>.txt; the component loads them by panel name.
+    import os
+    pdir = os.path.join(os.path.dirname(out) or '.', 'panels')
+    os.makedirs(pdir, exist_ok=True)
+    region = data.find(b'///END')
+    recs = []; o = region
+    while o < len(data) - 8:
+        ln = struct.unpack_from('<I', data, o)[0]
+        if 2 <= ln <= 40 and all(32 <= b < 127 for b in data[o+4:o+4+ln]) and data[o+4:o+5] != b' ':
+            recs.append((o, ln, data[o+4:o+4+ln].decode('latin1'))); o += 4 + ln
+        else:
+            o += 1
+    offs = [r[0] for r in recs] + [len(data)]
+    made = 0
+    for idx, (o, ln, name) in enumerate(recs):
+        seg = data[o+4+ln:offs[idx+1]]
+        best = b''; cur = b''
+        for b in seg:
+            if 9 <= b < 127: cur += bytes([b])
+            else:
+                if len(cur) > len(best): best = cur
+                cur = b''
+        if len(cur) > len(best): best = cur
+        if len(best) <= 40: continue
+        try:
+            open(os.path.join(pdir, name + '.txt'), 'w', encoding='latin1').write(preprocess(best.decode('latin1')))
+            made += 1
+        except OSError:
+            pass
+    print(f"per-panel scripts: {made} -> {pdir}")
 
 if __name__ == '__main__':
     main(sys.argv[1], sys.argv[2])
