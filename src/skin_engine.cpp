@@ -3,6 +3,7 @@
 #include "track_display.h"
 #include "../sdk/foobar2000/SDK/cfg_var.h"
 #include <cstdlib>
+#include <cstdio>
 
 namespace pui {
 
@@ -165,6 +166,24 @@ public:
                        param_int(p,2), param_int(p,3));
             return true;
         }
+        if (eq(name, len, "draw_image") && argc >= 5) {
+            // $draw_image(x,y,w,h,path,...)
+            draw_image(m_dc, resolve(param_str(p,4)), param_int(p,0), param_int(p,1),
+                       param_int(p,2), param_int(p,3));
+            return true;
+        }
+        if (eq(name, len, "fileexists") && argc >= 1) {
+            std::string path = resolve(param_str(p,0));
+            DWORD a = GetFileAttributesA(path.c_str());
+            if (a != INVALID_FILE_ATTRIBUTES && !(a & FILE_ATTRIBUTE_DIRECTORY))
+                out->write(titleformat_inputtypes::unknown, "1", 1);
+            return true;
+        }
+        if (eq(name, len, "greater") && argc >= 2) {
+            if (atoi(param_str(p,0).c_str()) > atoi(param_str(p,1).c_str()))
+                out->write(titleformat_inputtypes::unknown, "1", 1);
+            return true;
+        }
         if (eq(name, len, "imageabs2") && argc >= 9) {
             // $imageabs2(maxW,maxH,imgW,imgH,srcX,srcY,dstX,dstY,path,opts)
             int alpha = 255;
@@ -176,7 +195,7 @@ public:
         }
 
         // accepted-but-not-yet-rendered functions
-        static const char* stubs[] = { "draw_text","draw_image","set_font_color",
+        static const char* stubs[] = { "draw_text","set_font_color",
             "textcolor","offset_colour","calculate_blend_target","alignabs","calcwidth","scplsetlayout",
             "button","button2","imagebutton","textbutton","windowstyle","gp_set_brush","gp_set_pen",
             "gp_fill_rectangle" };
@@ -300,7 +319,12 @@ void SkinEngine::render(HDC dc, int width, int height) {
         // Native panels (no DUI equivalent) get our own window.
         if (p.type.find("Track Display") != std::string::npos) {
             auto& td = m_track_displays[p.name];
-            if (!td) { td = std::make_unique<TrackDisplay>(); td->create(m_parent, this); }
+            if (!td) {
+                td = std::make_unique<TrackDisplay>();
+                td->create(m_parent, this);
+                std::string sc = read_panel_script(p.name); // real fooAvA per-panel script
+                if (!sc.empty()) td->set_script(sc.c_str());
+            }
             if (HWND w = td->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
             continue;
         }
@@ -310,6 +334,18 @@ void SkinEngine::render(HDC dc, int width, int height) {
         if (!host) { host = std::make_unique<PanelHost>(); host->create(m_parent, dui); }
         if (HWND w = host->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
     }
+}
+
+std::string SkinEngine::read_panel_script(const std::string& name) {
+    if (m_base.empty()) return {};
+    std::string path = m_base + "/panels/" + name + ".txt";
+    FILE* f = fopen(path.c_str(), "rb");
+    if (!f) return {};
+    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
+    std::string s(n > 0 ? n : 0, '\0');
+    if (n > 0) { size_t r = fread(&s[0], 1, n, f); s.resize(r); }
+    fclose(f);
+    return s;
 }
 
 void SkinEngine::draw_script(HDC dc, int w, int h,

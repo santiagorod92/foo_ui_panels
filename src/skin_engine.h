@@ -45,6 +45,7 @@ public:
 private:
     friend class SkinHook;
     void load_pvars();
+    std::string read_panel_script(const std::string& name); // panels/<name>.txt next to the DLL
     bool m_pvars_loaded = false;
     HWND m_parent = nullptr;
     std::string m_base;

@@ -65,6 +65,11 @@ fb2k titleformat won't run the raw script. `tools/extract_fooava.py <s8.bin> <fo
    nothing (0 placements, 0 output).
 3. Prepend the 53 pvar defaults as `$setpvar(k,v)` (panels are gated behind `$ifequal($getpvar...)`).
 Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gated by mode pvars).
+- **Per-panel scripts**: after the master, block_01 holds `<u32 nameLen><name><meta><script>` records
+  (raw bytes of s8.bin — NOT block_01.txt, which is UTF-8-mangled). Extracted (preprocessed) to
+  `panels/<name>.txt` next to the DLL. Native `TrackDisplay` loads `panels/<placement-name>.txt`
+  (e.g. "Display" = album-art cover display) instead of its default. `read_panel_script()` in SkinEngine.
+- Draw funcs now real (not stubbed): `$draw_image`, `$fileexists` (GetFileAttributes), `$greater`.
 - Main window needs **WS_CLIPCHILDREN** or the double-buffered WM_PAINT BitBlt paints over hosted panels.
 - Color spec `brushcolor-null` / `pencolor-null` = transparent (no fill/frame).
   Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
