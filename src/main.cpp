@@ -1,8 +1,7 @@
 // foo_ui_panels (reborn) — Phase 1 skeleton.
 // Registers a full UI replacement (user_interface) that creates a bare main window.
 #include "win_sdk.h"
-#include "splitter.h"
-#include "panel_host.h"
+#include "skin_engine.h"
 #include <vector>
 
 DECLARE_COMPONENT_VERSION(
@@ -50,28 +49,22 @@ public:
         return m_wnd;
     }
 
-    // Phase 2 step 1: root splitter with two placeholder panes (proves resize).
+    // Phase 3: drive the layout from the skin interpreter. Hardcoded test script
+    // (two panels side by side) until the fooAvA loader lands.
+    static constexpr const char* kTestSkin =
+        "$panel(left,Playlist View,0,0,$eval({%_width%}/2),%_height%,)"
+        "$panel(right,Spectrum,$eval({%_width%}/2),0,$eval({%_width%}/2),%_height%,)";
+
     void build_layout() {
-        HINSTANCE inst = core_api::get_my_instance();
-        m_root.create(m_wnd, pui::Orient::Vertical, 0.3f);
         pui::PanelHost::log_available();
-        auto mk = [&](const wchar_t* text) {
-            return CreateWindowExW(WS_EX_CLIENTEDGE, L"STATIC", text,
-                WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 0, 0,
-                m_root.hwnd(), nullptr, inst, nullptr);
-        };
-        m_paneA = mk(L"Pane A");
-        // Host a real DUI element in pane B; fall back to a placeholder if none matched.
-        m_paneB = m_paneB_host.create(m_root.hwnd(), "Playlist");
-        if (!m_paneB) m_paneB = mk(L"Pane B (no host)");
-        m_root.set_panes(m_paneA, m_paneB);
+        m_skin.set_parent(m_wnd);
+        m_skin.load(kTestSkin);
         resize_layout();
     }
 
     void resize_layout() {
-        if (!m_root.hwnd()) return;
         RECT rc; GetClientRect(m_wnd, &rc);
-        MoveWindow(m_root.hwnd(), 0, 0, rc.right, rc.bottom, TRUE);
+        m_skin.layout(rc.right, rc.bottom);
     }
 
     void shutdown() override {
@@ -99,10 +92,7 @@ private:
     HookProc_t  m_hook    = nullptr;
     HMENU       m_menubar = nullptr;
 
-    pui::Splitter  m_root;
-    pui::PanelHost m_paneB_host;
-    HWND           m_paneA = nullptr;
-    HWND           m_paneB = nullptr;
+    pui::SkinEngine m_skin;
 
     // One mainmenu_manager per top-level group; WM_COMMAND ids are partitioned
     // into [base, base+kSpan) ranges so we can route back to the right manager.
