@@ -27,7 +27,21 @@ std::wstring widen(const std::string& s) {
     return w;
 }
 
-Gdiplus::Bitmap* load(const std::string& path) {
+// Resolve a wildcard path (e.g. C:\Album\*folder*.jpg -> C:\Album\Folder.jpg).
+std::string resolve_wildcard(const std::string& p) {
+    if (p.find('*') == std::string::npos && p.find('?') == std::string::npos) return p;
+    std::string q = p; for (auto& c : q) if (c == '/') c = '\\';
+    WIN32_FIND_DATAA fd;
+    HANDLE h = FindFirstFileA(q.c_str(), &fd);
+    if (h == INVALID_HANDLE_VALUE) return p;
+    FindClose(h);
+    auto slash = q.find_last_of('\\');
+    std::string dir = (slash == std::string::npos) ? std::string() : q.substr(0, slash + 1);
+    return dir + fd.cFileName;
+}
+
+Gdiplus::Bitmap* load(const std::string& rawpath) {
+    std::string path = resolve_wildcard(rawpath);
     auto it = g_cache.find(path);
     if (it != g_cache.end()) return it->second.get();
     auto bmp = std::make_shared<Gdiplus::Bitmap>(widen(path).c_str());
