@@ -1,6 +1,7 @@
 #include "skin_engine.h"
 #include "image.h"
 #include "track_display.h"
+#include "seekbar.h"
 #include "../sdk/foobar2000/SDK/cfg_var.h"
 #include <cstdlib>
 #include <cstdio>
@@ -335,6 +336,12 @@ void SkinEngine::render(HDC dc, int width, int height) {
                 if (!sc.empty()) td->set_script(sc.c_str());
             }
             if (HWND w = td->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
+            continue;
+        }
+        if (p.type.find("Seek") != std::string::npos) {
+            auto& sb = m_seekbars[p.name];
+            if (!sb) { sb = std::make_unique<Seekbar>(); sb->create(m_parent); }
+            if (HWND w = sb->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
             continue;
         }
         const char* dui = map_type(p.type);

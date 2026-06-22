@@ -11,6 +11,7 @@
 #include "win_sdk.h"
 #include "panel_host.h"
 #include "track_display.h"
+#include "seekbar.h"
 #include <vector>
 #include <map>
 #include <string>
@@ -54,6 +55,7 @@ private:
     std::vector<Placement> m_placements;
     std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
+    std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;
 };
 
 } // namespace pui
