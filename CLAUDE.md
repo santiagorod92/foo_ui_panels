@@ -76,6 +76,10 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   Native `TrackDisplay` loads `panels/<placement-name>.txt`
   (e.g. "Display" = album-art cover display) instead of its default. `read_panel_script()` in SkinEngine.
 - Draw funcs now real (not stubbed): `$draw_image`, `$fileexists` (GetFileAttributes), `$greater`.
+- `$button`/`$button2`: record clickable rect + action; `SkinEngine::handle_click` (from main WM_LBUTTONDOWN)
+  runs the action via `run_action()` — matches the leaf name (e.g. "Playback/Random"→"Random") against
+  registered `mainmenu_commands` and executes. Icon PNGs missing → faint frame marker drawn so buttons
+  are visible/clickable.
 - `fooava.txt` = pvar defaults + master. (block_00 init is NOT prepended — its deep-nested cover
   logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the

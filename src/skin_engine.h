@@ -24,6 +24,11 @@ struct Placement {
     int x = 0, y = 0, w = 0, h = 0;
 };
 
+struct Button {
+    int x = 0, y = 0, w = 0, h = 0;
+    std::string action; // main-menu command path, e.g. "Playback/Random"
+};
+
 class SkinEngine {
 public:
     void set_parent(HWND parent) { m_parent = parent; }
@@ -43,6 +48,9 @@ public:
     // Persist setup variables (pvars) across sessions. save_pvars() on component shutdown.
     void save_pvars();
 
+    // Hit-test the buttons recorded in the last render and run the clicked one's action.
+    bool handle_click(int x, int y);
+
 private:
     friend class SkinHook;
     void load_pvars();
@@ -53,6 +61,7 @@ private:
     service_ptr_t<titleformat_object> m_script;
     std::map<std::string, std::string> m_pvars;
     std::vector<Placement> m_placements;
+    std::vector<Button> m_buttons;
     std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
     std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;

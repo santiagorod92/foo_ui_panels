@@ -1,6 +1,7 @@
 // foo_ui_panels (reborn) — Phase 1 skeleton.
 // Registers a full UI replacement (user_interface) that creates a bare main window.
 #include "win_sdk.h"
+#include <windowsx.h>
 #include "skin_engine.h"
 #include "image.h"
 #include <vector>
@@ -182,6 +183,9 @@ private:
         case WM_SIZE:
             if (self) self->resize_layout();
             return 0;
+        case WM_LBUTTONDOWN:
+            if (self && self->m_skin.handle_click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp))) return 0;
+            break;
         case WM_ERASEBKGND:
             return 1; // we fully paint in WM_PAINT (no flicker)
         case WM_PAINT: {

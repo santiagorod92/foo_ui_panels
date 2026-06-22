@@ -33,6 +33,15 @@ static COLORREF parse_rgb(const char* s) {
     }
     return RGB(v[0], v[1], v[2]);
 }
+// Trim whitespace and surrounding single quotes from a $button action argument.
+static std::string clean_action(std::string a) {
+    size_t b = a.find_first_not_of(" \t"), e = a.find_last_not_of(" \t");
+    if (b == std::string::npos) return {};
+    a = a.substr(b, e - b + 1);
+    if (a.size() >= 2 && a.front() == '\'' && a.back() == '\'') a = a.substr(1, a.size() - 2);
+    return a;
+}
+
 // Parse image option string, e.g. "alpha-200nokeepaspectROTATEFLIP-6".
 static void parse_img_opts(const std::string& o, int& alpha, int& flip) {
     auto a = o.find("alpha-");        if (a != std::string::npos) alpha = atoi(o.c_str() + a + 6);
@@ -204,10 +213,25 @@ public:
             return true;
         }
 
+        if ((eq(name, len, "button") || eq(name, len, "button2")) && argc >= 9) {
+            // $button(x,y,?,?,w,h,img1,img2,'action',tooltip)
+            // $button2(x,y,?,?,w,h,draw1,draw2,'action',tooltip) — draws happen during arg eval
+            int x = param_int(p,0), y = param_int(p,1), w = param_int(p,4), h = param_int(p,5);
+            if (w <= 0) w = 22; if (h <= 0) h = 22;
+            bool drew = eq(name, len, "button") && draw_image(m_dc, resolve(param_str(p,6)), x, y, w, h);
+            if (!drew) { // icon PNG missing -> faint clickable marker so the button is visible
+                RECT r = mkrect(x, y, w, h);
+                HBRUSH b = CreateSolidBrush(RGB(70, 80, 110)); FrameRect(m_dc, &r, b); DeleteObject(b);
+            }
+            std::string act = clean_action(param_str(p,8));
+            if (!act.empty()) m_e->m_buttons.push_back({ x, y, w, h, act });
+            return true;
+        }
+
         // accepted-but-not-yet-rendered functions
         static const char* stubs[] = { "draw_text","set_font_color",
             "textcolor","offset_colour","calculate_blend_target","alignabs","calcwidth","scplsetlayout",
-            "button","button2","imagebutton","textbutton","windowstyle","gp_set_brush","gp_set_pen",
+            "imagebutton","textbutton","windowstyle","gp_set_brush","gp_set_pen",
             "gp_fill_rectangle" };
         for (auto s : stubs) if (eq(name, len, s)) return true;
 
@@ -309,6 +333,7 @@ void SkinEngine::render(HDC dc, int width, int height) {
     if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
 
     m_placements.clear();
+    m_buttons.clear();
     pfc::string8 dump;
     { SkinHook hook(this, dc, width, height);
       m_script->run(&hook, dump, nullptr); }
@@ -366,6 +391,38 @@ std::string SkinEngine::read_panel_script(const std::string& name) {
     static const char* kCoverInit =
         "$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))";
     return std::string(kCoverInit) + s;
+}
+
+// Run a fooAvA button action ("Playback/Random", "Previous", "New Playlist", …) by
+// matching the leaf name against registered main-menu commands.
+static bool run_action(const std::string& action) {
+    std::string leaf = action;
+    auto s = leaf.find_last_of('/');
+    if (s != std::string::npos) leaf = leaf.substr(s + 1);
+
+    service_enum_t<mainmenu_commands> e;
+    service_ptr_t<mainmenu_commands> p;
+    while (e.next(p)) {
+        const t_uint32 n = p->get_command_count();
+        for (t_uint32 i = 0; i < n; ++i) {
+            pfc::string8 nm;
+            p->get_name(i, nm);
+            if (stricmp_utf8(nm.get_ptr(), leaf.c_str()) == 0) {
+                p->execute(i, service_ptr_t<service_base>());
+                return true;
+            }
+        }
+    }
+    console::printf("Panels UI: no command for action '%s'", action.c_str());
+    return false;
+}
+
+bool SkinEngine::handle_click(int x, int y) {
+    for (const auto& b : m_buttons) {
+        if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+            return run_action(b.action);
+    }
+    return false;
 }
 
 void SkinEngine::draw_script(HDC dc, int w, int h,
