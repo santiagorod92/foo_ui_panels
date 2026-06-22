@@ -23,8 +23,13 @@ See `DESIGN.md` for full roadmap/facts.
 - `src/splitter.{h,cpp}` — `pui::Splitter`: layout engine in **raw Win32, no ATL/WTL** (deliberate —
   ATL/WTL not in xwin; only libPPUI rich controls need them, deferred). Splitters nest via child HWNDs.
 - `src/panel_host.{h,cpp}` — `pui::PanelHost`: hosts a DUI `ui_element` by name inside a pane
-  (derives `ui_element_instance_callback_receiver`, `instantiate()` → child HWND). This is how
-  fooAvA's `$panel(name,"uie_type",…)` will map to real panels.
+  (derives `ui_element_instance_callback_receiver`, `instantiate()` → child HWND).
+- `src/skin_engine.{h,cpp}` — `pui::SkinEngine`: the interpreter. Reuses fb2k `titleformat_compiler`
+  (built-in `$if/$sub/$add/$puts/…` for free); a `titleformat_hook` supplies `%_width%/%_height%`,
+  `$panel` (records rects), `$eval` (integer arithmetic, strips `{}`), `$getpvar/$setpvar`; draw
+  funcs stubbed. `layout(w,h)` re-evaluates on resize → creates/positions hosted panels.
+  Legacy type→DUI mapping in `map_type()` (see FORMAT.md). **This is the core architecture** —
+  Panels UI is a scripted absolute-positioning canvas, not a splitter tree (splitter.cpp now unused).
 
 ## Layout
 - `sdk/` — foobar2000 v2 SDK (razielanarki mirror): `foobar2000/`, `pfc/`, `libPPUI/`.
