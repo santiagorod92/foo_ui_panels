@@ -1,12 +1,8 @@
 // foo_ui_panels (reborn) — Phase 1 skeleton.
 // Registers a full UI replacement (user_interface) that creates a bare main window.
-#define WIN32_LEAN_AND_MEAN
-#include <winsock2.h>   // before windows.h so WS2 wins over legacy winsock
-#include <windows.h>
-#include <objbase.h>    // defines the COM `interface` macro used by SDK headers
-#include <mmsystem.h>   // timeGetTime (pulled by pfc/timers.h)
-#include "../sdk/foobar2000/SDK/foobar2000.h"
+#include "win_sdk.h"
 #include "splitter.h"
+#include "panel_host.h"
 #include <vector>
 
 DECLARE_COMPONENT_VERSION(
@@ -58,13 +54,16 @@ public:
     void build_layout() {
         HINSTANCE inst = core_api::get_my_instance();
         m_root.create(m_wnd, pui::Orient::Vertical, 0.3f);
+        pui::PanelHost::log_available();
         auto mk = [&](const wchar_t* text) {
             return CreateWindowExW(WS_EX_CLIENTEDGE, L"STATIC", text,
                 WS_CHILD | WS_VISIBLE | SS_CENTER, 0, 0, 0, 0,
                 m_root.hwnd(), nullptr, inst, nullptr);
         };
         m_paneA = mk(L"Pane A");
-        m_paneB = mk(L"Pane B");
+        // Host a real DUI element in pane B; fall back to a placeholder if none matched.
+        m_paneB = m_paneB_host.create(m_root.hwnd(), "Playlist");
+        if (!m_paneB) m_paneB = mk(L"Pane B (no host)");
         m_root.set_panes(m_paneA, m_paneB);
         resize_layout();
     }
@@ -100,9 +99,10 @@ private:
     HookProc_t  m_hook    = nullptr;
     HMENU       m_menubar = nullptr;
 
-    pui::Splitter m_root;
-    HWND          m_paneA = nullptr;
-    HWND          m_paneB = nullptr;
+    pui::Splitter  m_root;
+    pui::PanelHost m_paneB_host;
+    HWND           m_paneA = nullptr;
+    HWND           m_paneB = nullptr;
 
     // One mainmenu_manager per top-level group; WM_COMMAND ids are partitioned
     // into [base, base+kSpan) ranges so we can route back to the right manager.
