@@ -20,6 +20,11 @@ def preprocess(text):
         ln = ln.strip()
         if ln: lines.append(ln)
     body = ''.join(lines)
+    # Trim short trailing junk after the last ')' (extraction can grab a few bytes
+    # of the next binary record onto the end of a script).
+    lp = body.rfind(')')
+    if lp != -1 and len(body) - lp <= 8:
+        body = body[:lp + 1]
     res = []; depth = 0
     for c in body:
         if c == '(': depth += 1; res.append(c)
