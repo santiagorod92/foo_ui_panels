@@ -31,6 +31,11 @@ See `DESIGN.md` for full roadmap/facts.
   funcs stubbed. `layout(w,h)` re-evaluates on resize → creates/positions hosted panels.
   Legacy type→DUI mapping in `map_type()` (see FORMAT.md). **This is the core architecture** —
   Panels UI is a scripted absolute-positioning canvas, not a splitter tree (splitter.cpp now unused).
+  Drawing is immediate-mode: the script runs in the canvas **WM_PAINT** (double-buffered),
+  `SkinEngine::render(dc,w,h)` executes draw funcs against the DC then positions hosted panels.
+  Implemented draw funcs: `$drawrect` (brushcolor-/pencolor- spec), `$gradientrect`, `$drawroundrect`,
+  `$font`, `$drawstring`. Colors are `r-g-b[-a]` (alpha ignored, GDI). Links `msimg32` (GradientFill).
+  Still stubbed: `$imageabs2`/images, `$button` interactivity, native Track Display/seekbar, pvar persistence.
 
 ## Layout
 - `sdk/` — foobar2000 v2 SDK (razielanarki mirror): `foobar2000/`, `pfc/`, `libPPUI/`.

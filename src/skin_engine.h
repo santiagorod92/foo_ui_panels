@@ -1,12 +1,12 @@
-// Phase 3 — Panels UI skin interpreter.
-// The skin is a titleformat-style script re-evaluated on every resize. We reuse
+// Phase 3/5 — Panels UI skin interpreter + draw engine.
+// The skin is a titleformat-style script re-evaluated every paint. We reuse
 // foobar2000's titleformat compiler (gets $if/$sub/$add/… for free) and supply the
 // Panels-UI-specific functions/fields via a titleformat_hook:
-//   %_width% %_height%      -> current canvas size
-//   $panel(name,type,x,y,w,h) -> records a panel placement (rect already evaluated)
-//   $eval(expr)             -> integer arithmetic over { } expressions
-//   $getpvar/$setpvar       -> persistent variables (setup panel state)
-// Drawing functions ($drawrect/$font/$imageabs2/$button…) are stubbed for now.
+//   %_width% %_height% %el_width% %el_height% %foobar_path%
+//   $panel(name,type,x,y,w,h)   -> records a panel placement (host window)
+//   $eval(expr)                 -> integer arithmetic over { } expressions
+//   $getpvar/$setpvar           -> persistent variables (setup state)
+//   $font/$drawrect/$drawstring/$drawroundrect/$gradientrect -> immediate GDI drawing
 #pragma once
 #include "win_sdk.h"
 #include "panel_host.h"
@@ -18,19 +18,18 @@
 namespace pui {
 
 struct Placement {
-    std::string name;   // unique instance name
-    std::string type;   // legacy panel type (mapped to a DUI element name)
+    std::string name, type;
     int x = 0, y = 0, w = 0, h = 0;
 };
 
 class SkinEngine {
 public:
     void set_parent(HWND parent) { m_parent = parent; }
-    // Compile a skin script. Returns false on compile error (logged to console).
     bool load(const char* script);
-    // Re-evaluate at the given canvas size: recomputes placements, then creates/positions
-    // the hosted panel windows accordingly.
-    void layout(int width, int height);
+
+    // Paint pass: run the script against `dc` (executes draw funcs + records placements),
+    // then create/position hosted panel windows. Called from the canvas WM_PAINT.
+    void render(HDC dc, int width, int height);
 
 private:
     friend class SkinHook;
@@ -38,7 +37,7 @@ private:
     service_ptr_t<titleformat_object> m_script;
     std::map<std::string, std::string> m_pvars;
     std::vector<Placement> m_placements;
-    std::map<std::string, std::unique_ptr<PanelHost>> m_hosts; // by placement name
+    std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
 };
 
 } // namespace pui

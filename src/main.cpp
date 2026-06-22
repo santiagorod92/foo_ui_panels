@@ -49,22 +49,21 @@ public:
         return m_wnd;
     }
 
-    // Phase 3: drive the layout from the skin interpreter. Hardcoded test script
-    // (two panels side by side) until the fooAvA loader lands.
+    // Phase 3/5 test script: background fill + title text + a hosted playlist.
+    // Proves draw engine ($drawrect/$font/$drawstring) and panel hosting together.
     static constexpr const char* kTestSkin =
-        "$panel(left,Playlist View,0,0,$eval({%_width%}/2),%_height%,)"
-        "$panel(right,Album List,$eval({%_width%}/2),0,$eval({%_width%}/2),%_height%,)";
+        "$drawrect(0,0,%_width%,%_height%,brushcolor-30-30-60 pencolor-30-30-60)"
+        "$gradientrect(0,0,%_width%,40,60-60-110,30-30-60)"
+        "$font(Segoe UI,22,b)$drawstring(Panels UI \xe2\x80\x94 reborn,16,6,600,30,255-220-80,vcenter)"
+        "$panel(pl,Playlist View,12,48,$eval({%_width%}-24),$eval({%_height%}-60),)";
 
     void build_layout() {
         m_skin.set_parent(m_wnd);
         m_skin.load(kTestSkin);
-        resize_layout();
+        InvalidateRect(m_wnd, nullptr, FALSE);
     }
 
-    void resize_layout() {
-        RECT rc; GetClientRect(m_wnd, &rc);
-        m_skin.layout(rc.right, rc.bottom);
-    }
+    void resize_layout() { InvalidateRect(m_wnd, nullptr, FALSE); }
 
     void shutdown() override {
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
@@ -148,6 +147,21 @@ private:
         case WM_SIZE:
             if (self) self->resize_layout();
             return 0;
+        case WM_ERASEBKGND:
+            return 1; // we fully paint in WM_PAINT (no flicker)
+        case WM_PAINT: {
+            PAINTSTRUCT ps; HDC dc = BeginPaint(wnd, &ps);
+            RECT rc; GetClientRect(wnd, &rc);
+            HDC mem = CreateCompatibleDC(dc);
+            HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
+            HGDIOBJ ob = SelectObject(mem, bmp);
+            FillRect(mem, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
+            if (self) self->m_skin.render(mem, rc.right, rc.bottom);
+            BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+            SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
+            EndPaint(wnd, &ps);
+            return 0;
+        }
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
             // Dispatch configured keyboard shortcuts (Ctrl+P -> Preferences, etc.).

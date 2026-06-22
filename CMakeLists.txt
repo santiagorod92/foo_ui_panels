@@ -33,4 +33,4 @@ set_target_properties(foo_ui_panels PROPERTIES PREFIX "" SUFFIX ".dll")
 target_link_libraries(foo_ui_panels PRIVATE
   fb2ksdk pfc
   "${SDK}/foobar2000/shared/shared-x64.lib"
-  user32 gdi32 shell32 ole32 oleaut32 uuid comctl32 comdlg32 advapi32 shlwapi winmm)
+  user32 gdi32 shell32 ole32 oleaut32 uuid comctl32 comdlg32 advapi32 shlwapi winmm msimg32)
