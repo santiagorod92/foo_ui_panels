@@ -47,10 +47,14 @@ static bool find_color(const std::string& spec, const char* key, COLORREF& out) 
 namespace {
 struct Expr {
     const char* s;
-    void skip() { while (*s == ' ' || *s == '{' || *s == '}') ++s; }
+    void skip() { while (*s == ' ') ++s; }
     long number() {
         skip();
-        if (*s == '(') { ++s; long v = expr(); skip(); if (*s == ')') ++s; return v; }
+        // {} and () are both grouping in PanelsUI $eval.
+        if (*s == '(' || *s == '{') {
+            char close = (*s == '(') ? ')' : '}';
+            ++s; long v = expr(); skip(); if (*s == close) ++s; return v;
+        }
         long sign = 1; if (*s == '-') { sign = -1; ++s; }
         long v = 0; while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); ++s; }
         return sign * v;

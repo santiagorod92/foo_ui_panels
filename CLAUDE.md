@@ -27,7 +27,8 @@ See `DESIGN.md` for full roadmap/facts.
   (derives `ui_element_instance_callback_receiver`, `instantiate()` → child HWND).
 - `src/skin_engine.{h,cpp}` — `pui::SkinEngine`: the interpreter. Reuses fb2k `titleformat_compiler`
   (built-in `$if/$sub/$add/$puts/…` for free); a `titleformat_hook` supplies `%_width%/%_height%`,
-  `$panel` (records rects), `$eval` (integer arithmetic, strips `{}`), `$getpvar/$setpvar`; draw
+  `$panel` (records rects), `$eval` (integer arithmetic; **`{}` are grouping like parens**, needed for
+  cover-scaling math), `$getpvar/$setpvar`; draw
   funcs stubbed. `layout(w,h)` re-evaluates on resize → creates/positions hosted panels.
   Legacy type→DUI mapping in `map_type()` (see FORMAT.md). **This is the core architecture** —
   Panels UI is a scripted absolute-positioning canvas, not a splitter tree (splitter.cpp now unused).
