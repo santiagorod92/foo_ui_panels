@@ -4,6 +4,29 @@ Reverse-engineered from the **fooAvA 1.05** config (`skins/fooava/config/s8_skin
 `s4_titleformat.txt`) and the original `foo_ui_panels.dll` binaries. This is the format the
 Phase 3 skin loader + Phase 5 titleformat engine must implement for compatibility.
 
+## Layout model — IMPORTANT correction
+Panels UI does **not** use a static splitter tree. The skin is a script re-evaluated on
+every resize; it positions panels by **absolute computed rects**:
+`$panel(name, type, x, y, w, h)` where x/y/w/h derive from `%_width%`/`%_height%` via `$eval`,
+with show/hide driven by pvars (e.g. `$ifequal($getpvar(onepanel),1, ...)`). So the core engine
+is a **titleformat interpreter** that each pass (a) collects `$panel` placements → positions
+hosted windows, and (b) runs draw funcs (`$drawrect`/`$font`/`$imageabs2`/`$button`).
+`src/splitter.{h,cpp}` remains useful for splitter-based skins, but fooAvA needs the scripted canvas.
+
+## fooAvA panel types → modern element mapping
+Legacy CUI/PSS panel names used by fooAvA (2nd arg of `$panel`), and their target:
+- `Channel spectrum panel` (38) → DUI **Spectrum** / **Spectrogram**
+- `Track Display` (10) → **native** scripted text panel (titleformat draw) — build us
+- `Single Column Playlist` (7), `ELPlaylist` (1) → DUI **Playlist View**
+- `Lyric Show` (4) → DUI **OpenLyrics Panel**
+- `Playlist switcher` (3) → DUI **Playlist Tabs** / **Playlist Manager**
+- `Peakmeter` (3) → DUI **Peak Meter**
+- `Album list` (3), `Graphical Browser` (3) → DUI **Album List** / **ReFacets**
+- `Album Art` (1) → DUI **Album Art Viewer**
+- `Seek Panel` (1), `Volume Panel` (1) → **native** seekbar/volume
+- `Quick Search Toolbar` (1) → DUI **Playlist Search** / **Media Library Search**
+- `Chronflow` (1) → coverflow (dead component); defer or substitute Album Art
+
 ## Model
 A skin is a **titleformat-style script** evaluated continuously. The script lays out child
 panels and draws directly. Heritage: Panel Stack Splitter (PSS) scripting (`SCPL*`, `$scplsetlayout`).
