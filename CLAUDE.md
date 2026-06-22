@@ -57,6 +57,9 @@ See `DESIGN.md` for full roadmap/facts.
 - Extracted master → shipped as `fooava.txt` next to the DLL; `main` reads it (fallback: built-in test skin).
   Re-extract via the python parsers in /tmp (parse_pss*.py) if needed.
 - Asset gap: button PNGs (`/images/fooAVA/*.png`) were NOT in the SFX streams — images won't load yet.
+- Wallpaper: the 6 extracted JPEGs (SFX streams s9–s14) are the `walls`. Place at
+  `<dll dir>/images/fooAVA/walls/1.jpg..6.jpg`. The master draws it only when pvar `backgroundd=1`
+  (default 0 = solid black) — fooava.txt is patched to seed `backgroundd=1`. Alpha from `alpha.bgr` (195).
 
 ## Loading a real PanelsUI script into fb2k titleformat — required preprocessing
 fb2k titleformat won't run the raw script. `tools/extract_fooava.py <s8.bin> <fooava.txt>` does, IN ORDER:
