@@ -26,6 +26,13 @@ See `DESIGN.md` for full roadmap/facts.
 - Build: `./build.sh` → `build/foo_ui_panels.dll` (PE32+ x64, exports `foobar2000_get_interface`).
 - Toolchain file: `cmake/clang-cl-win64.cmake`. Test the DLL in fb2k v2 (Wine, then real).
 
+### Deploy/test (Wine)
+- Install: foobar2000 v2.25.9 at `~/.foobar2000/`.
+- Deploy DLL to `~/.foobar2000/profile/user-components-x64/foo_ui_panels/foo_ui_panels.dll`
+  (v2 user-component layout: one subfolder per component). Fully restart fb2k to reload.
+- A full UI replacement must forward `WM_KEYDOWN`/`WM_SYSKEYDOWN` to
+  `keyboard_shortcut_manager::on_keydown_auto(wp)` or shortcuts (Ctrl+P…) won't work.
+
 ### Cross-build gotchas (all handled, don't re-discover)
 - **Static release CRT only**: xwin ships no debug CRT → toolchain forces `/MT` (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, Release). Debug build → `msvcrtd.lib` not found.
 - **Header case-sensitivity**: SDK `#include`s cased headers (`<SDKDDKVer.h>` etc); xwin lowercases. `build.sh` symlinks cased names into `~/.xwin`.
