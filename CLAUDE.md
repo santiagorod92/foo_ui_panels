@@ -76,6 +76,8 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the
   cover; the wildcard image loader resolves `*folder*.*` → Folder.jpg/png.
+- `$imageabs2` opts parsed (`parse_img_opts`): `alpha-N` and `ROTATEFLIP-N` (6 = vertical mirror,
+  used for cover reflections; drawn via GDI+ destination parallelogram, cache not mutated).
 - Image loader resolves **wildcard paths** (`image.cpp resolve_wildcard`, FindFirstFile): `*folder*.jpg`
   → `Folder.jpg`. Possible future fallback: broad `*.jpg`/`*.png` if specific patterns miss.
 - Main window needs **WS_CLIPCHILDREN** or the double-buffered WM_PAINT BitBlt paints over hosted panels.

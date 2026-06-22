@@ -51,26 +51,38 @@ Gdiplus::Bitmap* load(const std::string& rawpath) {
 }
 } // namespace
 
-bool draw_image(HDC dc, const std::string& path, int x, int y, int w, int h, int alpha) {
+bool draw_image(HDC dc, const std::string& path, int x, int y, int w, int h, int alpha, int rotateflip) {
     ensure_started();
     Gdiplus::Bitmap* bmp = load(path);
     if (!bmp) return false;
-    if (w <= 0) w = (int)bmp->GetWidth();
-    if (h <= 0) h = (int)bmp->GetHeight();
+    const int iw = (int)bmp->GetWidth(), ih = (int)bmp->GetHeight();
+    if (w <= 0) w = iw;
+    if (h <= 0) h = ih;
 
     Gdiplus::Graphics g(dc);
     g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
-    Gdiplus::Rect dst(x, y, w, h);
-    if (alpha >= 255) {
-        g.DrawImage(bmp, dst, 0, 0, (int)bmp->GetWidth(), (int)bmp->GetHeight(), Gdiplus::UnitPixel);
-    } else {
+
+    Gdiplus::ImageAttributes ia; Gdiplus::ImageAttributes* pia = nullptr;
+    if (alpha < 255) {
         Gdiplus::ColorMatrix cm = {};
         cm.m[0][0] = cm.m[1][1] = cm.m[2][2] = 1.0f; cm.m[4][4] = 1.0f;
         cm.m[3][3] = alpha / 255.0f;
-        Gdiplus::ImageAttributes ia; ia.SetColorMatrix(&cm);
-        g.DrawImage(bmp, dst, 0, 0, (int)bmp->GetWidth(), (int)bmp->GetHeight(),
-                    Gdiplus::UnitPixel, &ia);
+        ia.SetColorMatrix(&cm); pia = &ia;
     }
+
+    // RotateFlipType 6 == Rotate180FlipX == vertical mirror (used for reflections).
+    // Map via a destination parallelogram so the cached bitmap isn't mutated.
+    Gdiplus::Point dest[3];
+    if (rotateflip == 6) {
+        dest[0] = Gdiplus::Point(x, y + h);   // image top-left -> bottom
+        dest[1] = Gdiplus::Point(x + w, y + h);
+        dest[2] = Gdiplus::Point(x, y);       // image bottom-left -> top
+    } else {
+        dest[0] = Gdiplus::Point(x, y);
+        dest[1] = Gdiplus::Point(x + w, y);
+        dest[2] = Gdiplus::Point(x, y + h);
+    }
+    g.DrawImage(bmp, dest, 3, 0, 0, iw, ih, Gdiplus::UnitPixel, pia);
     return true;
 }
 

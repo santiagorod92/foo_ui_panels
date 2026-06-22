@@ -32,6 +32,12 @@ static COLORREF parse_rgb(const char* s) {
     }
     return RGB(v[0], v[1], v[2]);
 }
+// Parse image option string, e.g. "alpha-200nokeepaspectROTATEFLIP-6".
+static void parse_img_opts(const std::string& o, int& alpha, int& flip) {
+    auto a = o.find("alpha-");        if (a != std::string::npos) alpha = atoi(o.c_str() + a + 6);
+    auto r = o.find("ROTATEFLIP-");   if (r != std::string::npos) flip  = atoi(o.c_str() + r + 11);
+}
+
 // Find "key-r-g-b" inside spec (e.g. brushcolor-..., pencolor-...).
 static bool find_color(const std::string& spec, const char* key, COLORREF& out) {
     auto p = spec.find(key);
@@ -190,11 +196,10 @@ public:
         }
         if (eq(name, len, "imageabs2") && argc >= 9) {
             // $imageabs2(maxW,maxH,imgW,imgH,srcX,srcY,dstX,dstY,path,opts)
-            int alpha = 255;
-            if (argc >= 10) { std::string o = param_str(p,9);
-                auto a = o.find("alpha-"); if (a != std::string::npos) alpha = atoi(o.c_str() + a + 6); }
+            int alpha = 255, flip = 0;
+            if (argc >= 10) parse_img_opts(param_str(p,9), alpha, flip);
             draw_image(m_dc, resolve(param_str(p,8)), param_int(p,6), param_int(p,7),
-                       param_int(p,0), param_int(p,1), alpha);
+                       param_int(p,0), param_int(p,1), alpha, flip);
             return true;
         }
 
