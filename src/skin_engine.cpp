@@ -35,7 +35,10 @@ static COLORREF parse_rgb(const char* s) {
 static bool find_color(const std::string& spec, const char* key, COLORREF& out) {
     auto p = spec.find(key);
     if (p == std::string::npos) return false;
-    out = parse_rgb(spec.c_str() + p + strlen(key));
+    const char* v = spec.c_str() + p + strlen(key);
+    while (*v == '-' || *v == ' ') ++v;
+    if (strncmp(v, "null", 4) == 0) return false; // transparent
+    out = parse_rgb(v);
     return true;
 }
 
@@ -277,9 +280,21 @@ void SkinEngine::render(HDC dc, int width, int height) {
     if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
 
     m_placements.clear();
+    pfc::string8 dump;
     { SkinHook hook(this, dc, width, height);
-      pfc::string8 dump;
       m_script->run(&hook, dump, nullptr); }
+
+    static bool logged = false;
+    if (!logged) {
+        logged = true;
+        console::printf("Panels UI: render %dx%d -> %u placements, out len=%u",
+                        width, height, (unsigned)m_placements.size(), (unsigned)dump.length());
+        for (size_t i = 0; i < m_placements.size() && i < 6; ++i) {
+            auto& p = m_placements[i];
+            console::printf("  [%u] '%s' type='%s' %d,%d,%d,%d",
+                (unsigned)i, p.name.c_str(), p.type.c_str(), p.x, p.y, p.w, p.h);
+        }
+    }
 
     for (const auto& p : m_placements) {
         // Native panels (no DUI equivalent) get our own window.

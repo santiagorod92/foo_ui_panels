@@ -56,6 +56,17 @@ See `DESIGN.md` for full roadmap/facts.
 - Extracted master → shipped as `fooava.txt` next to the DLL; `main` reads it (fallback: built-in test skin).
   Re-extract via the python parsers in /tmp (parse_pss*.py) if needed.
 - Asset gap: button PNGs (`/images/fooAVA/*.png`) were NOT in the SFX streams — images won't load yet.
+
+## Loading a real PanelsUI script into fb2k titleformat — required preprocessing
+fb2k titleformat won't run the raw script. The /tmp build_skin*.py pipeline does, IN ORDER:
+1. Strip `//` comments (full-line + trailing) and per-line leading/trailing whitespace; join lines.
+2. **Balance parens** — fooAvA has an unmatched `)` (PanelsUI auto-closed; fb2k doesn't). Drop stray
+   closers (depth<0) and append missing closers. Without this, titleformat compiles but executes
+   nothing (0 placements, 0 output).
+3. Prepend the 53 pvar defaults as `$setpvar(k,v)` (panels are gated behind `$ifequal($getpvar...)`).
+Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gated by mode pvars).
+- Main window needs **WS_CLIPCHILDREN** or the double-buffered WM_PAINT BitBlt paints over hosted panels.
+- Color spec `brushcolor-null` / `pencolor-null` = transparent (no fill/frame).
   Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
 
 ## Layout

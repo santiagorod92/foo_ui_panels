@@ -41,7 +41,7 @@ public:
 
         m_wnd = CreateWindowExW(
             0, WNDCLASS_NAME, L"foobar2000 — Panels UI (reborn)",
-            WS_OVERLAPPEDWINDOW,
+            WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, // don't paint over hosted child panels
             CW_USEDEFAULT, CW_USEDEFAULT, 900, 600,
             nullptr, nullptr, inst, this);
 
@@ -67,7 +67,10 @@ public:
         m_skin.set_base_dir(module_dir());
         // Load the real fooAvA master script if present, else the built-in test skin.
         std::string skin = read_file(module_dir() + "\\fooava.txt");
-        m_skin.load(skin.empty() ? kTestSkin : skin.c_str());
+        console::printf("Panels UI: fooava.txt read %u bytes from %s",
+                        (unsigned)skin.size(), module_dir().c_str());
+        bool ok = m_skin.load(skin.empty() ? kTestSkin : skin.c_str());
+        console::printf("Panels UI: compile -> %s", ok ? "ok" : "FAILED");
         InvalidateRect(m_wnd, nullptr, FALSE);
     }
 
