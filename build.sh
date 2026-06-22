@@ -4,6 +4,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# --- Fetch vendored SDKs if missing (not committed: licenses restrict redistribution) ---
+[ -d sdk ]            || git clone --depth 1 https://github.com/razielanarki/foobar2000-sdk.git sdk
+[ -d columns_ui_ref ] || git clone --depth 1 https://github.com/reupen/columns_ui.git columns_ui_ref
+
 # --- Fix Windows-SDK case-sensitivity: SDK sources #include caps-cased headers
 # (e.g. <SDKDDKVer.h>) but xwin lowercases filenames. Symlink the cased names. ---
 grep -rhoE '#include <[^>]+>' sdk/pfc sdk/foobar2000/SDK sdk/foobar2000/foobar2000_component_client src 2>/dev/null \
