@@ -18,9 +18,13 @@ See `DESIGN.md` for full roadmap/facts.
   `skins/` (proprietary DLLs + CC-BY-NC-SA art), `build/`. All gitignored — keep local.
 
 ## Code
+- `src/win_sdk.h` — canonical SDK include block (right order for clang-cl). Include this, not raw windows.h.
 - `src/main.cpp` — `user_interface` impl: main window, menu, keyboard, hosts root splitter.
 - `src/splitter.{h,cpp}` — `pui::Splitter`: layout engine in **raw Win32, no ATL/WTL** (deliberate —
   ATL/WTL not in xwin; only libPPUI rich controls need them, deferred). Splitters nest via child HWNDs.
+- `src/panel_host.{h,cpp}` — `pui::PanelHost`: hosts a DUI `ui_element` by name inside a pane
+  (derives `ui_element_instance_callback_receiver`, `instantiate()` → child HWND). This is how
+  fooAvA's `$panel(name,"uie_type",…)` will map to real panels.
 
 ## Layout
 - `sdk/` — foobar2000 v2 SDK (razielanarki mirror): `foobar2000/`, `pfc/`, `libPPUI/`.
