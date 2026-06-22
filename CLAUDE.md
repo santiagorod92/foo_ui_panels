@@ -32,6 +32,9 @@ See `DESIGN.md` for full roadmap/facts.
   (v2 user-component layout: one subfolder per component). Fully restart fb2k to reload.
 - A full UI replacement must forward `WM_KEYDOWN`/`WM_SYSKEYDOWN` to
   `keyboard_shortcut_manager::on_keydown_auto(wp)` or shortcuts (Ctrl+P…) won't work.
+- Main menu: one `mainmenu_manager` per root group (`mainmenu_groups::file` etc.),
+  `generate_menu_win32` into partitioned WM_COMMAND id ranges (`kSpan`-wide), routed back via
+  `execute_command(id-base)`. TODO: rebuild on `WM_INITMENUPOPUP` for dynamic check/enable state.
 
 ### Cross-build gotchas (all handled, don't re-discover)
 - **Static release CRT only**: xwin ships no debug CRT → toolchain forces `/MT` (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, Release). Debug build → `msvcrtd.lib` not found.
