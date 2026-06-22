@@ -35,7 +35,12 @@ See `DESIGN.md` for full roadmap/facts.
   `SkinEngine::render(dc,w,h)` executes draw funcs against the DC then positions hosted panels.
   Implemented draw funcs: `$drawrect` (brushcolor-/pencolor- spec), `$gradientrect`, `$drawroundrect`,
   `$font`, `$drawstring`. Colors are `r-g-b[-a]` (alpha ignored, GDI). Links `msimg32` (GradientFill).
-  Still stubbed: `$imageabs2`/images, `$button` interactivity, native Track Display/seekbar, pvar persistence.
+  `$imageabs(x,y,w,h,path,align)` and `$imageabs2(maxW,maxH,imgW,imgH,srcX,srcY,dstX,dstY,path,opts)`
+  draw via `src/image.{h,cpp}` (GDI+, links `gdiplus`; bitmaps cached by path since paint runs per frame;
+  `alpha-N` opt honored). Paths resolved against skin base dir (`set_base_dir`, currently the DLL dir);
+  `\`→`/`, leading `./`/`/` stripped. `images_shutdown()` called on component shutdown.
+  Still stubbed: `$button` interactivity, native Track Display/seekbar, pvar persistence.
+  Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
 
 ## Layout
 - `sdk/` — foobar2000 v2 SDK (razielanarki mirror): `foobar2000/`, `pfc/`, `libPPUI/`.

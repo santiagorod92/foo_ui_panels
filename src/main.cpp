@@ -2,7 +2,9 @@
 // Registers a full UI replacement (user_interface) that creates a bare main window.
 #include "win_sdk.h"
 #include "skin_engine.h"
+#include "image.h"
 #include <vector>
+#include <string>
 
 DECLARE_COMPONENT_VERSION(
     "Panels UI (reborn)",
@@ -55,12 +57,26 @@ public:
         "$drawrect(0,0,%_width%,%_height%,brushcolor-30-30-60 pencolor-30-30-60)"
         "$gradientrect(0,0,%_width%,40,60-60-110,30-30-60)"
         "$font(Segoe UI,22,b)$drawstring(Panels UI \xe2\x80\x94 reborn,16,6,600,30,255-220-80,vcenter)"
-        "$panel(pl,Playlist View,12,48,$eval({%_width%}-24),$eval({%_height%}-60),)";
+        "$imageabs(16,48,160,120,bg.jpg,)"
+        "$panel(pl,Playlist View,190,48,$eval({%_width%}-202),$eval({%_height%}-60),)";
 
     void build_layout() {
         m_skin.set_parent(m_wnd);
+        m_skin.set_base_dir(module_dir());
         m_skin.load(kTestSkin);
         InvalidateRect(m_wnd, nullptr, FALSE);
+    }
+
+    // Directory of our DLL (UTF-8), used as the skin asset base for now.
+    static std::string module_dir() {
+        wchar_t mod[MAX_PATH] = {};
+        GetModuleFileNameW(core_api::get_my_instance(), mod, MAX_PATH);
+        std::wstring wd(mod);
+        auto s = wd.find_last_of(L"\\/");
+        if (s != std::wstring::npos) wd.resize(s);
+        char u[MAX_PATH * 3] = {};
+        WideCharToMultiByte(CP_UTF8, 0, wd.c_str(), -1, u, sizeof(u), nullptr, nullptr);
+        return std::string(u);
     }
 
     void resize_layout() { InvalidateRect(m_wnd, nullptr, FALSE); }
@@ -69,6 +85,7 @@ public:
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
         if (m_menubar) { DestroyMenu(m_menubar); m_menubar = nullptr; }
         m_groups.clear();
+        pui::images_shutdown();
         UnregisterClassW(WNDCLASS_NAME, core_api::get_my_instance());
     }
 

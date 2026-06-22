@@ -1,4 +1,5 @@
 #include "skin_engine.h"
+#include "image.h"
 #include <cstdlib>
 
 namespace pui {
@@ -153,9 +154,24 @@ public:
         if (eq(name, len, "drawstring") && argc >= 5) {
             draw_string(p, argc); return true;
         }
+        if (eq(name, len, "imageabs") && argc >= 5) {
+            // $imageabs(x,y,w,h,path,align)
+            draw_image(m_dc, resolve(param_str(p,4)), param_int(p,0), param_int(p,1),
+                       param_int(p,2), param_int(p,3));
+            return true;
+        }
+        if (eq(name, len, "imageabs2") && argc >= 9) {
+            // $imageabs2(maxW,maxH,imgW,imgH,srcX,srcY,dstX,dstY,path,opts)
+            int alpha = 255;
+            if (argc >= 10) { std::string o = param_str(p,9);
+                auto a = o.find("alpha-"); if (a != std::string::npos) alpha = atoi(o.c_str() + a + 6); }
+            draw_image(m_dc, resolve(param_str(p,8)), param_int(p,6), param_int(p,7),
+                       param_int(p,0), param_int(p,1), alpha);
+            return true;
+        }
 
         // accepted-but-not-yet-rendered functions
-        static const char* stubs[] = { "draw_text","draw_image","imageabs","imageabs2","set_font_color",
+        static const char* stubs[] = { "draw_text","draw_image","set_font_color",
             "textcolor","offset_colour","calculate_blend_target","alignabs","calcwidth","scplsetlayout",
             "button","button2","imagebutton","textbutton","windowstyle","gp_set_brush","gp_set_pen",
             "gp_fill_rectangle" };
@@ -166,6 +182,17 @@ public:
 
 private:
     RECT mkrect(int x, int y, int w, int h) { RECT r = { x, y, x + w, y + h }; return r; }
+
+    // Resolve a skin image path: normalize separators, strip leading ./ or /,
+    // and make relative paths absolute against the skin base dir.
+    std::string resolve(std::string p) {
+        for (auto& c : p) if (c == '\\') c = '/';
+        bool absolute = (p.size() >= 2 && p[1] == ':') || p.compare(0, 2, "//") == 0;
+        if (absolute) return p;
+        while (!p.empty() && (p[0] == '.' || p[0] == '/')) p.erase(0, 1);
+        if (m_e->m_base.empty()) return p;
+        return m_e->m_base + "/" + p;
+    }
 
     void select_font(const char* face, int size, const std::string& style) {
         int h = -MulDiv(size > 0 ? size : 9, GetDeviceCaps(m_dc, LOGPIXELSY), 72);

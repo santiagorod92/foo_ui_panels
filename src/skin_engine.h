@@ -25,6 +25,7 @@ struct Placement {
 class SkinEngine {
 public:
     void set_parent(HWND parent) { m_parent = parent; }
+    void set_base_dir(const std::string& dir) { m_base = dir; } // for resolving image paths
     bool load(const char* script);
 
     // Paint pass: run the script against `dc` (executes draw funcs + records placements),
@@ -34,6 +35,7 @@ public:
 private:
     friend class SkinHook;
     HWND m_parent = nullptr;
+    std::string m_base;
     service_ptr_t<titleformat_object> m_script;
     std::map<std::string, std::string> m_pvars;
     std::vector<Placement> m_placements;
