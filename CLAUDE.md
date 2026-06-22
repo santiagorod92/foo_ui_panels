@@ -58,7 +58,7 @@ See `DESIGN.md` for full roadmap/facts.
 - Asset gap: button PNGs (`/images/fooAVA/*.png`) were NOT in the SFX streams — images won't load yet.
 
 ## Loading a real PanelsUI script into fb2k titleformat — required preprocessing
-fb2k titleformat won't run the raw script. The /tmp build_skin*.py pipeline does, IN ORDER:
+fb2k titleformat won't run the raw script. `tools/extract_fooava.py <s8.bin> <fooava.txt>` does, IN ORDER:
 1. Strip `//` comments (full-line + trailing) and per-line leading/trailing whitespace; join lines.
 2. **Balance parens** — fooAvA has an unmatched `)` (PanelsUI auto-closed; fb2k doesn't). Drop stray
    closers (depth<0) and append missing closers. Without this, titleformat compiles but executes
