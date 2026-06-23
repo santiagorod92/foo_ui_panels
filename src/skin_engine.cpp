@@ -265,10 +265,39 @@ public:
             return true;
         }
 
+        // $calcwidth(text) -> pixel width of text in the current font (used for centering)
+        if (eq(name, len, "calcwidth") && argc >= 1) {
+            std::string t = param_str(p, 0);
+            SIZE sz{}; GetTextExtentPoint32A(m_dc, t.c_str(), (int)t.size(), &sz);
+            out->write_int(titleformat_inputtypes::unknown, sz.cx);
+            return true;
+        }
+        // $textbutton(left,top,width,height,str_normal,str_hover,action,"TOOLTIP",tip)
+        // Draws the (already-evaluated) normal text into the box + records a clickable region.
+        if (eq(name, len, "textbutton") && argc >= 5) {
+            int x = param_int(p,0), y = param_int(p,1), w = param_int(p,2), h = param_int(p,3);
+            std::string text = param_str(p,4);
+            RECT r = mkrect(x, y, w > 0 ? w : 240, h > 0 ? h : 18);
+            SetTextColor(m_dc, m_textcol);
+            DrawTextA(m_dc, text.c_str(), (int)text.size(), &r,
+                      DT_NOPREFIX | DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOCLIP);
+            if (argc >= 7) { std::string a = clean_action(param_str(p,6));
+                if (!a.empty()) m_e->m_buttons.push_back({ x, y, (w>0?w:240), (h>0?h:18), a }); }
+            return true;
+        }
+        // $imagebutton(left,top,image_normal,image_hover,action,"TOOLTIP",tip) — rating stars etc.
+        if (eq(name, len, "imagebutton") && argc >= 5) {
+            int x = param_int(p,0), y = param_int(p,1);
+            draw_image(m_dc, resolve(param_str(p,2)), x, y, 0, 0); // natural size
+            std::string a = clean_action(param_str(p,4));
+            if (!a.empty()) m_e->m_buttons.push_back({ x, y, 11, 15, a }); // ~star-sized hit box
+            return true;
+        }
+
         // accepted-but-not-yet-rendered functions
         static const char* stubs[] = { "draw_text",
-            "offset_colour","calculate_blend_target","calcwidth","scplsetlayout",
-            "imagebutton","textbutton","windowstyle","gp_set_brush","gp_set_pen",
+            "offset_colour","calculate_blend_target","scplsetlayout",
+            "windowstyle","gp_set_brush","gp_set_pen",
             "gp_fill_rectangle" };
         for (auto s : stubs) if (eq(name, len, s)) return true;
 
@@ -481,10 +510,51 @@ static bool run_action(const std::string& action) {
     return false;
 }
 
+// Strip surrounding single quotes (PanelsUI quotes WINDOWSIZE/PVAR values like '736').
+static std::string unquote(std::string s) {
+    if (s.size() >= 2 && s.front() == '\'' && s.back() == '\'') s = s.substr(1, s.size() - 2);
+    return s;
+}
+
 bool SkinEngine::handle_click(int x, int y) {
     for (const auto& b : m_buttons) {
-        if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
-            return run_action(b.action);
+        if (!(x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)) continue;
+        const std::string& a = b.action;
+
+        // PVAR:SET:key:value — set a setup variable, persist, and re-layout (mode/theme switch).
+        if (a.compare(0, 9, "PVAR:SET:") == 0) {
+            std::string rest = a.substr(9);
+            size_t c = rest.find(':');
+            if (c != std::string::npos) {
+                m_pvars[unquote(rest.substr(0, c))] = unquote(rest.substr(c + 1));
+                save_pvars();
+                if (m_parent) InvalidateRect(GetAncestor(m_parent, GA_ROOT), nullptr, TRUE);
+            }
+            return true;
+        }
+        // WINDOWSIZE:w:h[:halign:valign] — resize the top-level player window.
+        if (a.compare(0, 11, "WINDOWSIZE:") == 0) {
+            std::string rest = a.substr(11);
+            size_t c = rest.find(':');
+            if (c != std::string::npos) {
+                int w = atoi(unquote(rest.substr(0, c)).c_str());
+                std::string r2 = rest.substr(c + 1);
+                size_t c2 = r2.find(':');
+                int h = atoi(unquote(c2 == std::string::npos ? r2 : r2.substr(0, c2)).c_str());
+                HWND top = m_parent ? GetAncestor(m_parent, GA_ROOT) : nullptr;
+                if (top && w > 0 && h > 0)
+                    SetWindowPos(top, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
+            }
+            return true;
+        }
+        // play / pause toggle (cover overlay button).
+        if (a == "play" || a == "pause") { playback_control::get()->play_or_pause(); return true; }
+        // TAG:SET:field:value — writing tags deferred (needs metadb edit transaction).
+        if (a.compare(0, 8, "TAG:SET:") == 0) {
+            console::printf("Panels UI: TAG:SET not yet implemented (%s)", a.c_str());
+            return true;
+        }
+        return run_action(a);
     }
     return false;
 }

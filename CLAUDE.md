@@ -57,7 +57,14 @@ See `DESIGN.md` for full roadmap/facts.
   (starts with the fooAvA header comment, ends `//////////END///////////`; 75 `$panel` + 79 draws).
 - Extracted master → shipped as `fooava.txt` next to the DLL; `main` reads it (fallback: built-in test skin).
   Re-extract via the python parsers in /tmp (parse_pss*.py) if needed.
-- Asset gap: button PNGs (`/images/fooAVA/*.png`) were NOT in the SFX streams — images won't load yet.
+- Assets RECOVERED (was a gap): button PNGs (`images/fooAVA/*.png`, cover-case art, side-tab icons —
+  ~365 files) were NOT in the bzip2 SFX streams. They live in the original DeviantArt distribution
+  **.exe** (a **ClickTeam Install Creator** SFX — see "clickteam.com" in the PE head). `tools/recover_fooava_images.py
+  <fooava_1_05_*.exe> <out>` extracts them: a ClickTeam FILE_LIST manifest (zlib block ~offset 232k,
+  names + uncompressed size as LE32 at `name_end+27`) maps a FILE_DATA region (~offset 4.8M) of
+  per-file zlib streams in install order. Engine loads PNGs by path → buttons/cover frame render with
+  no code change. (Note: a few lowercase `s/` tab icons collide on size in the script's auto-align;
+  the staged `skins/fooava/images/fooAVA/` set is the hand-verified complete copy.)
 - Wallpaper: the 6 extracted JPEGs (SFX streams s9–s14) are the `walls`. Place at
   `<dll dir>/images/fooAVA/walls/1.jpg..6.jpg`. The master draws it only when pvar `backgroundd=1`
   (default 0 = solid black) — fooava.txt is patched to seed `backgroundd=1`. Alpha from `alpha.bgr` (195).
@@ -76,10 +83,17 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   Native `TrackDisplay` loads `panels/<placement-name>.txt`
   (e.g. "Display" = album-art cover display) instead of its default. `read_panel_script()` in SkinEngine.
 - Draw funcs now real (not stubbed): `$draw_image`, `$fileexists` (GetFileAttributes), `$greater`.
-- `$button`/`$button2`: record clickable rect + action; `SkinEngine::handle_click` (from main WM_LBUTTONDOWN)
-  runs the action via `run_action()` — matches the leaf name (e.g. "Playback/Random"→"Random") against
-  registered `mainmenu_commands` and executes. Icon PNGs missing → faint frame marker drawn so buttons
-  are visible/clickable.
+- `$button`/`$button2`: record clickable rect + action; draws param-6 image (real now that assets are
+  recovered), else faint frame fallback. `$textbutton(l,t,w,h,strN,strH,action,…)` draws the evaluated
+  normal text in the box + records a click region (renders artist/album track-info). `$calcwidth(text)`
+  → pixel width via `GetTextExtentPoint32A` (used to center text). `$imagebutton(l,t,imgN,imgH,action,…)`
+  draws the image natural-size + ~11×15 hit box (rating stars).
+- `SkinEngine::handle_click` (from main WM_LBUTTONDOWN) dispatches the action: `PVAR:SET:key:value`
+  → set pvar + `save_pvars` + invalidate root (mode/theme switch, e.g. background/onepanel/mini.panels);
+  `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` the top-level window; `play`/`pause` →
+  `play_or_pause`; `TAG:SET:field:value` → deferred (needs metadb edit). Else `run_action()` matches the
+  leaf name (e.g. "Playback/Random"→"Random") against registered `mainmenu_commands`. Values may be
+  `'`-quoted (`unquote`).
 - `fooava.txt` = pvar defaults + master. (block_00 init is NOT prepended — its deep-nested cover
   logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the
@@ -96,7 +110,8 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   → `Folder.jpg`. Possible future fallback: broad `*.jpg`/`*.png` if specific patterns miss.
 - Main window needs **WS_CLIPCHILDREN** or the double-buffered WM_PAINT BitBlt paints over hosted panels.
 - Color spec `brushcolor-null` / `pencolor-null` = transparent (no fill/frame).
-  Asset gap: fooAvA's button PNGs were NOT in the extracted SFX streams (only 6 JPEGs) — needs recovery.
+  (Assets recovered — see `tools/recover_fooava_images.py`, staged at `skins/fooava/images/fooAVA/`,
+  deployed to `<dll dir>/images/fooAVA/`. Wine resolves the script's mixed-case paths case-insensitively.)
 
 ## Layout
 - `sdk/` — foobar2000 v2 SDK (razielanarki mirror): `foobar2000/`, `pfc/`, `libPPUI/`.
