@@ -59,12 +59,17 @@ See `DESIGN.md` for full roadmap/facts.
   Re-extract via the python parsers in /tmp (parse_pss*.py) if needed.
 - Assets RECOVERED (was a gap): button PNGs (`images/fooAVA/*.png`, cover-case art, side-tab icons —
   ~365 files) were NOT in the bzip2 SFX streams. They live in the original DeviantArt distribution
-  **.exe** (a **ClickTeam Install Creator** SFX — see "clickteam.com" in the PE head). `tools/recover_fooava_images.py
-  <fooava_1_05_*.exe> <out>` extracts them: a ClickTeam FILE_LIST manifest (zlib block ~offset 232k,
-  names + uncompressed size as LE32 at `name_end+27`) maps a FILE_DATA region (~offset 4.8M) of
-  per-file zlib streams in install order. Engine loads PNGs by path → buttons/cover frame render with
-  no code change. (Note: a few lowercase `s/` tab icons collide on size in the script's auto-align;
-  the staged `skins/fooava/images/fooAVA/` set is the hand-verified complete copy.)
+  **.exe** (a **ClickTeam Install Creator** SFX — "clickteam.com" in the PE head). `tools/recover_fooava_images.py
+  <fooava_1_05_*.exe> <skin_root>` extracts them via a proper ClickTeam parser (ported from
+  Bioruebe/cicdec, installer **version 30**): find the overlay signature `77 77 67 54 29 48`, walk
+  blocks (`id u16`+skip2+`size u32`), decompress the **FILE_LIST** (0x143A) node table, and for each
+  file read its exact **offset** into **FILE_DATA** (0x7F7F) — body at `dataStart+offset+4` =
+  `[method byte][zlib 78 da deflate | BZh | raw]`. Mapping by offset is EXACT. (An earlier size-collision
+  heuristic mismapped same-size images — wrong colours/dims, e.g. `playlist1` 65px, `reflet300` 20×20;
+  do NOT reintroduce it.) Engine loads PNGs by path → renders with no code change. Variants: `prevN.png`
+  N=1 black default / 2 blue / 3 red / 4 green; `$button` draws normal (img1=black), themed = hover (img2,
+  not drawn). Staged copy: `skins/fooava/images/fooAVA/` (script's lowercase `s\` resolves to the `S/`
+  dir case-insensitively under Wine).
 - Wallpaper: the 6 extracted JPEGs (SFX streams s9–s14) are the `walls`. Place at
   `<dll dir>/images/fooAVA/walls/1.jpg..6.jpg`. The master draws it only when pvar `backgroundd=1`
   (default 0 = solid black) — fooava.txt is patched to seed `backgroundd=1`. Alpha from `alpha.bgr` (195).
