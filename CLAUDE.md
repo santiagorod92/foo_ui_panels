@@ -47,7 +47,10 @@ See `DESIGN.md` for full roadmap/facts.
   `metadb_handle::format_title`) so dynamic fields like `%playback_time%`/`%isplaying%` resolve.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, `"Seek Panel"` to a native
   `Seekbar` (`src/seekbar.{h,cpp}` — progress bar + click-to-seek), `"Volume Panel"` to native `Volume`
-  (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), others to `PanelHost`. Native widgets self-drawn, no assets.
+  (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), others to `PanelHost`. The seek/volume
+  bars draw with the **skin graphics** (`tb.png` groove + themed `progress{colour.b}.png` fill + `point.png`
+  knob, over the blitted parent bg) via `SkinEngine::base_dir()`/`colour_index()`; flat themed rect is the
+  fallback if images are absent.
 
 ## fooAvA config format (s8.bin) — decoded
 `skins/fooava/config/s8.bin` layout: `[56-byte header][53 pvar KV pairs][length-prefixed script blocks]`.
@@ -92,7 +95,8 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   and base variants don't stack. For `$button` param 6 is an image path → `draw_image`. For `$button2`
   it's a draw *command* (often `'`-quoted `$imageabs2(...)`, coords relative to the button) → run via
   `run_subscript` with the draw origin `m_ox/m_oy` set to the button (x,y); a resolved path draws directly;
-  else faint-frame fallback. Compiled commands cached in `m_subcache`. `$textbutton(l,t,w,h,strN,strH,action,…)` draws the evaluated
+  else nothing (a button whose image is missing stays invisible but clickable — no empty border).
+  Compiled commands cached in `m_subcache`. `$textbutton(l,t,w,h,strN,strH,action,…)` draws the evaluated
   normal text in the box + records a click region (renders artist/album track-info). `$calcwidth(text)`
   → pixel width via `GetTextExtentPoint32A` (used to center text). `$imagebutton(l,t,imgN,imgH,action,…)`
   draws the image natural-size + ~11×15 hit box (rating stars).
@@ -100,7 +104,10 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   `save_pvars` + `repaint_all()` (invalidate canvas + every panel so a mode/theme change shows
   everywhere); `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` top-level; `POPUP:<file.ava>` → open that
   PanelsUI script in a floating `Popup` window (`src/popup.{h,cpp}`; reads `panels/<file.ava>.txt`);
-  `play`/`pause` → `play_or_pause`; `TAG:SET:field:value` → deferred (needs metadb edit). Else
+  `play`/`pause` → `play_or_pause`; `MENUBAR:toggle` → flip pvar `menubar` + post `PUI_WM_TOGGLE_MENU`
+  to the top-level window (main.cpp `SetMenu`s the bar on/off; restores persisted state at startup via
+  `pvar_int("menubar",1)`; the settings popup has a "SHOW MENU BAR" checkbox); `TAG:SET:field:value` →
+  deferred (needs metadb edit). Else
   `run_action()` matches the leaf (e.g. "Playback/Random"→"Random") against `mainmenu_commands`. Values
   may be `'`-quoted (`unquote`).
 - **Click routing**: the main window's `handle_click` hit-tests `m_buttons` (master-script buttons). But
