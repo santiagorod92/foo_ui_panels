@@ -99,6 +99,37 @@ void fill_gradient_v(HDC dc, int x, int y, int w, int h, COLORREF base) {
     GradientFill(dc, v, 2, &gr, 1, GRADIENT_FILL_RECT_V);
 }
 
+void fill_alpha(HDC dc, int x, int y, int w, int h, COLORREF c, int alpha) {
+    if (w <= 0 || h <= 0) return;
+    HDC md = CreateCompatibleDC(dc);
+    BITMAPINFO bi = {}; bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+    bi.bmiHeader.biWidth = 1; bi.bmiHeader.biHeight = 1; bi.bmiHeader.biPlanes = 1;
+    bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
+    void* bits = nullptr;
+    HBITMAP bmp = CreateDIBSection(md, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+    if (bits) { unsigned char* px = (unsigned char*)bits;
+        px[0] = GetBValue(c); px[1] = GetGValue(c); px[2] = GetRValue(c); px[3] = 255; }
+    HGDIOBJ ob = SelectObject(md, bmp);
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)alpha, 0 };
+    AlphaBlend(dc, x, y, w, h, md, 0, 0, 1, 1, bf);
+    SelectObject(md, ob); DeleteObject(bmp); DeleteDC(md);
+}
+
+bool image_avg_color(const std::string& path, COLORREF& out) {
+    ensure_started();
+    Gdiplus::Bitmap* bmp = load(path);
+    if (!bmp) return false;
+    Gdiplus::Bitmap tiny(1, 1, PixelFormat32bppARGB);
+    Gdiplus::Graphics g(&tiny);
+    g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+    g.DrawImage(bmp, Gdiplus::Rect(0, 0, 1, 1),
+                0, 0, (int)bmp->GetWidth(), (int)bmp->GetHeight(), Gdiplus::UnitPixel);
+    Gdiplus::Color c;
+    if (tiny.GetPixel(0, 0, &c) != Gdiplus::Ok) return false;
+    out = RGB(c.GetR(), c.GetG(), c.GetB());
+    return true;
+}
+
 void images_shutdown() {
     g_cache.clear();
     if (g_started) { Gdiplus::GdiplusShutdown(g_token); g_started = false; }

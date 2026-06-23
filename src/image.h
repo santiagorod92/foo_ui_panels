@@ -17,6 +17,14 @@ bool draw_image(HDC dc, const std::string& path, int x, int y, int w, int h,
 // bottom) — the glossy themed look used by the seek/volume bars. Links msimg32.
 void fill_gradient_v(HDC dc, int x, int y, int w, int h, COLORREF base);
 
+// Fill a rect with a solid colour at constant `alpha` (0..255) via AlphaBlend (msimg32) —
+// e.g. a translucent dark overlay over a wallpaper, or a selection band.
+void fill_alpha(HDC dc, int x, int y, int w, int h, COLORREF c, int alpha);
+
+// Dominant (1x1-downscaled) colour of an image — used to tint the playlist highlight to the
+// wallpaper. Returns false if the image can't load.
+bool image_avg_color(const std::string& path, COLORREF& out);
+
 // Free the image cache + shut down GDI+ (call at component shutdown).
 void images_shutdown();
 

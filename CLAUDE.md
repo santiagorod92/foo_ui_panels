@@ -20,6 +20,9 @@ See `DESIGN.md` for full roadmap/facts.
 
 ## Code
 - `src/win_sdk.h` — canonical SDK include block (right order for clang-cl). Include this, not raw windows.h.
+- **Text drawing: always `DrawTextW`** (via the `dtW` UTF-8→UTF-16 helper in skin_engine.cpp / playlist_view.cpp).
+  foobar strings (titleformat output, `format_title`, tags) are UTF-8; `DrawTextA` mojibakes non-ASCII
+  (`’`→`â€™`, accents). Never draw foobar text with the A variant.
 - `src/main.cpp` — `user_interface` impl: main window, menu, keyboard, hosts root splitter.
 - `src/splitter.{h,cpp}` — `pui::Splitter`: layout engine in **raw Win32, no ATL/WTL** (deliberate —
   ATL/WTL not in xwin; only libPPUI rich controls need them, deferred). Splitters nest via child HWNDs.
@@ -36,6 +39,9 @@ See `DESIGN.md` for full roadmap/facts.
   `SkinEngine::render(dc,w,h)` executes draw funcs against the DC then positions hosted panels.
   Implemented draw funcs: `$drawrect` (brushcolor-/pencolor- spec), `$gradientrect`, `$drawroundrect`,
   `$font`, `$drawstring`. Colors are `r-g-b[-a]` (alpha ignored, GDI). Links `msimg32` (GradientFill).
+  `$font` face gotcha: the skin uses `$font($get(fontAVA),…)`, but `$get` reads `$puts` vars (not our
+  pvars), so the face arrives EMPTY → GDI would pick a big default System font; `select_font` falls back
+  to "Tahoma" for a blank face (compact white now-playing text, close to the skin's Swis721 Cn BT).
   `$imageabs(x,y,w,h,path,align)` and `$imageabs2(maxW,maxH,imgW,imgH,srcX,srcY,dstX,dstY,path,opts)`
   draw via `src/image.{h,cpp}` (GDI+, links `gdiplus`; bitmaps cached by path since paint runs per frame;
   `alpha-N` opt honored). Paths resolved against skin base dir (`set_base_dir`, currently the DLL dir);
@@ -47,8 +53,34 @@ See `DESIGN.md` for full roadmap/facts.
   `metadb_handle::format_title`) so dynamic fields like `%playback_time%`/`%isplaying%` resolve.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, `"Seek Panel"` to a native
   `Seekbar` (`src/seekbar.{h,cpp}` — progress bar + click-to-seek), `"Volume Panel"` to native `Volume`
-  (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), others to `PanelHost`. The seek/volume
-  bars are transparent (blit parent bg) with a THIN (~4px, vertically centred) themed fill =
+  (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), `"Single Column Playlist"`/`"ELPlaylist"`
+  to native `PlaylistView` (`src/playlist_view.{h,cpp}`), `"Channel spectrum panel"`/`Spectrum` to native
+  the spectrum (EQ bars under the cover): renderer prefers a real DUI spectrum component if installed
+  (PanelHost substring-matches `"Spectrum"` → hosts e.g. **foo_vis_spectrum_analyzer**), else falls back to
+  native `Spectrum` (`src/spectrum.{h,cpp}` — `visualisation_manager`/`visualisation_stream` FFT-512 →
+  themed mirrored log-spaced bars, ~25fps). Others to `PanelHost`. (CoverFlow/"vinyl-spines" is
+  foo_chronflow — dead, not replicable; the cover-case spine `$button2` cycles `mini.panels` =
+  cover/mini-playlist/track-info instead.)
+  `PlaylistView`: the skin's playlist is `foo_uie_elplaylist` (a Columns-UI panel — NOT hostable in a
+  DUI replacement), so we self-draw the active playlist grouped by album (consecutive `%album artist%|%album%`):
+  per-group header (cover thumb from `$replace(%path%,%filename_ext%,*folder*.*)` + album artist/album/date/genre/
+  track-count) then track rows (`$num(%tracknumber%,2). %title%` + rating `rating_stars24/{0-5}s1.png` +
+  `%length%`). Background = the skin wallpaper (pvar `background` when `backgroundd`) under a translucent
+  dark overlay (`image.cpp fill_alpha`, alpha ~185) so it matches the main window yet stays readable;
+  navy `fill_gradient_v` fallback. Row highlight colour is tinted to the wallpaper's dominant colour
+  (`image_avg_color` → 1×1 downscale, ×3 brightened) so it harmonises instead of a stark blue: now-playing
+  = gradient bar, click-selected (`activeplaylist_is_item_selected`) = translucent band + brighter underline.
+  Wheel scroll. Selection: click=single, Shift+click=range (from `m_anchor`), Ctrl+click=toggle
+  (`activeplaylist_set_selection_single`/`set_selection`+`bit_array_range`); dbl-click =
+  `activeplaylist_execute_default_action`. Right-click = the classic foobar context menu via
+  `contextmenu_manager::win32_run_menu_context(hwnd, selected, &pt, ...)` (Properties / tagging / etc.;
+  selects the row first if it's outside the selection). Clicking the star column (x in `[w-106, w-51)`)
+  sets that row's rating via `SkinEngine::set_rating` (writes RATING tag, metadb_io_v2); WM_MOUSEMOVE over
+  the star column live-previews the star count (`m_hover_row`/`m_hover_stars`, TrackMouseEvent→WM_MOUSELEAVE
+  clears it) before the click commits. Re-reads playlist each paint (1s). The seek/volume
+  bars draw a solid dark groove (RGB 12,12,14 — must NOT blit the parent: WS_CLIPCHILDREN means the
+  parent never paints behind the child, so blitting reads the white window bg brush) with a THIN
+  (~4px, vertically centred) themed fill =
   `bar/v{colour.b}.png` (a ~3px coloured gloss strip; volume adds the `bar/vol{colour.b}.png` round knob).
   Fallback `image.cpp fill_gradient_v` (theme colour, light top → dark bottom) if the image is missing.
   NOTE: don't fill the FULL panel height (looks too thick / misaligned with the volume knob), and don't use
@@ -103,14 +135,23 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   normal text in the box + records a click region (renders artist/album track-info). `$calcwidth(text)`
   → pixel width via `GetTextExtentPoint32A` (used to center text). `$imagebutton(l,t,imgN,imgH,action,…)`
   draws the image natural-size + ~11×15 hit box (rating stars).
-- Action dispatch lives in `SkinEngine::run_button_action(action)`: `PVAR:SET:key:value` → set pvar +
+- Action dispatch lives in `SkinEngine::run_button_action(action)`. Transport handled FIRST via
+  `playback_control` (Previous/Next/Stop/Play/Pause → previous/next/stop/play_or_pause; `Playback/Random`
+  → `start(track_command_rand)`) — NOT by main-menu leaf name, because the leaf "Random" is ambiguous
+  (matches both Playback/Random and the Random playback ORDER). A bare action equal to a playback-order
+  name (Default, Repeat (track), Repeat (playlist), Shuffle (tracks)…) → `playback_order_set_active`
+  (the order button cycles the real order; `%cwb_playback_order%` field resolves from the active order so
+  the repeat/shuffle icons + label reflect it). `TAG:SET:field:value` → writes the tag on the now-playing
+  track via `metadb_io_v2::update_info_async` + a `file_info_filter` (`meta_set_filter`); `rating`→`RATING`,
+  value 0 clears (the star `$imagebutton`s). NOTE: don't add a `%rating%` hook field — it shadowed the
+  rating provider (foo_playcount) and made the stars vanish; let the provider supply `%rating%`. Then:
+  `PVAR:SET:key:value` → set pvar +
   `save_pvars` + `repaint_all()` (invalidate canvas + every panel so a mode/theme change shows
   everywhere); `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` top-level; `POPUP:<file.ava>` → open that
   PanelsUI script in a floating `Popup` window (`src/popup.{h,cpp}`; reads `panels/<file.ava>.txt`);
   `play`/`pause` → `play_or_pause`; `MENUBAR:toggle` → flip pvar `menubar` + post `PUI_WM_TOGGLE_MENU`
   to the top-level window (main.cpp `SetMenu`s the bar on/off; restores persisted state at startup via
-  `pvar_int("menubar",1)`; the settings popup has a "SHOW MENU BAR" checkbox); `TAG:SET:field:value` →
-  deferred (needs metadb edit). Else
+  `pvar_int("menubar",1)`; the settings popup has a "SHOW MENU BAR" checkbox). Else
   `run_action()` matches the leaf (e.g. "Playback/Random"→"Random") against `mainmenu_commands`. Values
   may be `'`-quoted (`unquote`).
 - **Click routing**: the main window's `handle_click` hit-tests `m_buttons` (master-script buttons). But
@@ -132,10 +173,14 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the
   cover; the wildcard image loader resolves `*folder*.*` → Folder.jpg/png.
 - **Positional literal text**: PanelsUI draws titleformat literal text (between functions); standard
-  `run()` only returns it. `DrawString : pfc::string_base` routes each written chunk to `SkinHook::emit_text`;
-  `$alignabs(left,top,right,bottom,halign,valign)` sets the box+flags and flushes; `$textcolor`/`$set_font_color`
-  set the color; flushed on next `$alignabs`/`$drawstring`/end. This renders the bottom track-info text.
-  emit_text drops control chars (`$char(N)` for small N). PanelsUI underscore fields handled: `%_width%`
+  `run()` only returns it. `DrawString : pfc::string_base` accumulates all written text into one buffer;
+  `SkinHook` reads a SLICE of that buffer `[m_flushFrom, end)` at each flush (control chars from `$char(N)`
+  dropped). `$alignabs(left,top,right,bottom,halign,valign)` sets the box+flags and flushes the prior box;
+  `$textcolor`/`$set_font_color` set the colour; flushed on next `$alignabs`/`$drawstring` and via `finish()`
+  after run (NOT the destructor — the DrawString is destroyed first). CRITICAL: read from the live buffer,
+  do NOT keep a separate appended pending — titleformat appends a `$if`/`$ifequal` *condition's* value to the
+  buffer then truncates it; reading the post-truncate buffer is why `%_isplaying%`→"1" no longer leaks as a
+  "1" before the title. PanelsUI underscore fields handled: `%_width%`
   `%_height%` `%el_width%` `%el_height%` `%_isplaying%` `%_ispaused%` `%foobar_path%`.
 - `$imageabs2` opts parsed (`parse_img_opts`): `alpha-N` and `ROTATEFLIP-N` (6 = vertical mirror,
   used for cover reflections; drawn via GDI+ destination parallelogram, cache not mutated).
@@ -165,7 +210,9 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   `keyboard_shortcut_manager::on_keydown_auto(wp)` or shortcuts (Ctrl+P…) won't work.
 - Main menu: one `mainmenu_manager` per root group (`mainmenu_groups::file` etc.),
   `generate_menu_win32` into partitioned WM_COMMAND id ranges (`kSpan`-wide), routed back via
-  `execute_command(id-base)`. TODO: rebuild on `WM_INITMENUPOPUP` for dynamic check/enable state.
+  `execute_command(id-base)`. `WM_INITMENUPOPUP` → `refresh_popup()` re-generates the opening top-level
+  popup (fresh `mainmenu_manager`) so radios/checks reflect live state (e.g. Playback›Order after the
+  order button changes it) — the menu bar is built once, so without this the checks only updated on restart.
 
 ### Cross-build gotchas (all handled, don't re-discover)
 - **Static release CRT only**: xwin ships no debug CRT → toolchain forces `/MT` (`CMAKE_MSVC_RUNTIME_LIBRARY=MultiThreaded`, Release). Debug build → `msvcrtd.lib` not found.

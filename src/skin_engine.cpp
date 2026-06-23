@@ -22,6 +22,15 @@ static int param_int(titleformat_hook_function_params* p, size_t i) {
     return atoi(param_str(p, i).c_str());
 }
 
+// foobar text is UTF-8 — draw via DrawTextW (DrawTextA mojibakes non-ASCII, e.g. "’"->"â€™").
+// Drop-in for dtW(dc,s,len,r,f): len is ignored (s is NUL-terminated).
+static int dtW(HDC dc, const char* s, int, LPRECT r, UINT f) {
+    int n = MultiByteToWideChar(CP_UTF8, 0, s, -1, nullptr, 0);
+    std::wstring w(n > 0 ? n : 1, L'\0');
+    if (n > 0) MultiByteToWideChar(CP_UTF8, 0, s, -1, &w[0], n);
+    return DrawTextW(dc, w.c_str(), -1, r, f);
+}
+
 // Parse "r-g-b" or "r-g-b-a" starting at s; returns COLORREF (alpha ignored for GDI).
 static COLORREF parse_rgb(const char* s) {
     int v[4] = { 0,0,0,255 }, n = 0;
@@ -59,6 +68,19 @@ static bool find_color(const std::string& spec, const char* key, COLORREF& out) 
     out = parse_rgb(v);
     return true;
 }
+
+// Tag-write filter: sets (or clears) one meta field on a track. Used by TAG:SET:rating:N.
+class meta_set_filter : public file_info_filter {
+public:
+    meta_set_filter(const char* field, const char* value) : m_field(field), m_value(value) {}
+    bool apply_filter(metadb_handle_ptr, t_filestats, file_info& info) override {
+        if (m_value.is_empty() || m_value == "0") info.meta_remove_field(m_field);
+        else info.meta_set(m_field, m_value);
+        return true;
+    }
+private:
+    pfc::string8 m_field, m_value;
+};
 
 // --- $eval integer expression evaluator ------------------------------------
 namespace {
@@ -117,17 +139,6 @@ public:
         if (m_font) { SelectObject(m_dc, m_oldFont); DeleteObject(m_font); }
     }
 
-    // Literal text written by titleformat (between functions) is drawn positionally:
-    // $alignabs sets the box+alignment, subsequent text accumulates, flushed on next
-    // $alignabs / at end. (PanelsUI draws literal text; standard titleformat just returns it.)
-    void emit_text(const char* s, size_t n) {
-        if (!m_aligned || !s) return;
-        for (size_t k = 0; k < n; ++k) {
-            unsigned char c = (unsigned char)s[k];
-            if (c >= 32 || c == '\n') m_pending.push_back((char)c); // drop control chars from $char(N)
-        }
-    }
-
     bool process_field(titleformat_text_out* out, const char* name, t_size len, bool& found) override {
         found = true;
         if (eq(name, len, "_width")  || eq(name, len, "el_width"))  { out->write_int(titleformat_inputtypes::unknown, m_w); return true; }
@@ -138,6 +149,14 @@ public:
         }
         if (eq(name, len, "_ispaused")) {
             if (playback_control::get()->is_paused()) out->write(titleformat_inputtypes::unknown, "1", 1);
+            return true;
+        }
+        if (eq(name, len, "cwb_playback_order")) {
+            // fooAvA reads this (a foo_cwb_hooks field) to pick the repeat/shuffle icon + label.
+            // Resolve it from foobar's own active playback order so the button reflects/stays in sync.
+            auto pm = playlist_manager::get();
+            const char* nm = pm->playback_order_get_name(pm->playback_order_get_active());
+            if (nm) out->write(titleformat_inputtypes::unknown, nm, strlen(nm));
             return true;
         }
         if (eq(name, len, "foobar_path")) {
@@ -296,7 +315,7 @@ public:
             std::string text = param_str(p,4);
             RECT r = mkrect(x, y, w > 0 ? w : 240, h > 0 ? h : 18);
             SetTextColor(m_dc, m_textcol);
-            DrawTextA(m_dc, text.c_str(), (int)text.size(), &r,
+            dtW(m_dc, text.c_str(), (int)text.size(), &r,
                       DT_NOPREFIX | DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOCLIP);
             if (argc >= 7) { std::string a = clean_action(param_str(p,6));
                 if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, (w>0?w:240), (h>0?h:18), a }); }
@@ -323,12 +342,20 @@ public:
 
 private:
     void flush_text() {
-        if (m_aligned && !m_pending.empty()) {
-            SetTextColor(m_dc, m_textcol);
-            RECT r = m_alignRect;
-            DrawTextA(m_dc, m_pending.c_str(), (int)m_pending.size(), &r, m_alignFlags);
+        if (!m_buf) return;
+        if (m_aligned && m_buf->size() > m_flushFrom) {
+            std::string s; // buffer slice since the last flush, control chars ($char(N)) dropped
+            for (size_t i = m_flushFrom; i < m_buf->size(); ++i) {
+                unsigned char c = (unsigned char)(*m_buf)[i];
+                if (c >= 32 || c == '\n') s.push_back((char)c);
+            }
+            if (!s.empty()) {
+                SetTextColor(m_dc, m_textcol);
+                RECT r = m_alignRect;
+                dtW(m_dc, s.c_str(), (int)s.size(), &r, m_alignFlags);
+            }
         }
-        m_pending.clear();
+        m_flushFrom = m_buf->size();
     }
 
     // Draw origin: normally (0,0); set to a button's (x,y) while running a $button2
@@ -369,11 +396,17 @@ private:
     }
 
     void select_font(const char* face, int size, const std::string& style) {
+        // The skin asks for "$get(fontAVA)" (Swis721 Cn BT) but that var doesn't resolve here, so
+        // `face` arrives empty -> GDI would pick a big default System font. Fall back to a clean
+        // compact UI font (matches the original's small white now-playing text far better).
+        const char* f0 = face;
+        while (f0 && (*f0 == ' ' || *f0 == '\t')) ++f0;
+        if (!f0 || !*f0) f0 = "Tahoma";
         int h = -MulDiv(size > 0 ? size : 9, GetDeviceCaps(m_dc, LOGPIXELSY), 72);
         int weight = (style.find('b') != std::string::npos) ? FW_BOLD : FW_NORMAL;
         BYTE italic = (style.find('i') != std::string::npos) ? TRUE : FALSE;
         HFONT f = CreateFontA(h, 0, 0, 0, weight, italic, 0, 0, DEFAULT_CHARSET,
-            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, face);
+            OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS, CLEARTYPE_QUALITY, DEFAULT_PITCH, f0);
         if (!f) return;
         HGDIOBJ old = SelectObject(m_dc, f);
         if (m_font) DeleteObject(m_font); else m_oldFont = old;
@@ -390,7 +423,7 @@ private:
         if (flags.find("right")   != std::string::npos) fmt |= DT_RIGHT;
         if (flags.find("vcenter") != std::string::npos) fmt |= DT_VCENTER | DT_SINGLELINE;
         SetTextColor(m_dc, col);
-        DrawTextA(m_dc, text.c_str(), (int)text.size(), &rc, fmt);
+        dtW(m_dc, text.c_str(), (int)text.size(), &rc, fmt);
     }
 
     void draw_gradient(int x, int y, int w, int h, COLORREF c1, COLORREF c2) {
@@ -405,9 +438,18 @@ private:
     SkinEngine* m_e; HDC m_dc; int m_w, m_h;
     HFONT m_font = nullptr; HGDIOBJ m_oldFont = nullptr;
 
-    // positional literal-text state
+    // positional literal-text state. Text is read from the DrawString buffer (m_buf) rather than
+    // accumulated per-write: titleformat appends a $if/$ifequal condition's value to the buffer then
+    // truncates it away — reading the live buffer at flush time means those (e.g. %_isplaying% -> "1")
+    // never leak into the drawn text (which a separate pending buffer would keep).
     bool m_aligned = false; RECT m_alignRect = {}; UINT m_alignFlags = 0;
-    std::string m_pending; COLORREF m_textcol = RGB(255, 255, 255);
+    COLORREF m_textcol = RGB(255, 255, 255);
+    const std::string* m_buf = nullptr; size_t m_flushFrom = 0;
+public:
+    void set_buf(const std::string* b) { m_buf = b; m_flushFrom = b ? b->size() : 0; }
+    // Flush the final text box while the DrawString buffer is still alive (it is destroyed
+    // before this hook), then detach so ~SkinHook doesn't read a dangling buffer.
+    void finish() { flush_text(); m_buf = nullptr; }
 };
 
 // --- SkinEngine ------------------------------------------------------------
@@ -424,11 +466,11 @@ bool SkinEngine::load(const char* script) {
 class DrawString : public pfc::string_base {
 public:
     explicit DrawString(SkinHook* h) : m_h(h) {}
+    const std::string& buf() const { return m_buf; }
     const char* get_ptr() const override { return m_buf.c_str(); }
     void add_string(const char* s, t_size n = SIZE_MAX) override {
         size_t len = (n == SIZE_MAX) ? strlen(s) : n;
-        m_buf.append(s, len);
-        m_h->emit_text(s, len);
+        m_buf.append(s, len); // SkinHook reads this buffer at flush (truncate-safe)
     }
     void truncate(t_size len) override { if (len < m_buf.size()) m_buf.resize(len); }
     t_size get_length() const override { return m_buf.size(); }
@@ -450,8 +492,11 @@ void SkinHook::run_subscript(const std::string& text, int ox, int oy) {
     }
     if (it->second.is_empty()) return;
     int sx = m_ox, sy = m_oy; m_ox = ox; m_oy = oy;
+    const std::string* sbuf = m_buf; size_t sfrom = m_flushFrom;
     DrawString out(this);
+    set_buf(&out.buf());
     it->second->run(this, out, nullptr);
+    m_buf = sbuf; m_flushFrom = sfrom;
     m_ox = sx; m_oy = sy;
 }
 
@@ -491,8 +536,8 @@ void SkinEngine::render(HDC dc, int width, int height) {
     m_placements.clear();
     m_buttons.clear();
     { SkinHook hook(this, dc, width, height);
-      DrawString out(&hook);
-      m_script->run(&hook, out, nullptr); }
+      DrawString out(&hook); hook.set_buf(&out.buf());
+      m_script->run(&hook, out, nullptr); hook.finish(); }
 
 
     for (const auto& p : m_placements) {
@@ -518,6 +563,30 @@ void SkinEngine::render(HDC dc, int width, int height) {
             auto& vol = m_volumes[p.name];
             if (!vol) { vol = std::make_unique<Volume>(); vol->create(m_parent, this); }
             if (HWND w = vol->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
+            continue;
+        }
+        if (p.type.find("Single Column Playlist") != std::string::npos ||
+            p.type.find("ELPlaylist") != std::string::npos) {
+            auto& pv = m_playlists[p.name];
+            if (!pv) { pv = std::make_unique<PlaylistView>(); pv->create(m_parent, this); }
+            if (HWND w = pv->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
+            continue;
+        }
+        if (p.type.find("spectrum") != std::string::npos || p.type.find("Spectrum") != std::string::npos) {
+            // Prefer a real DUI spectrum component (e.g. foo_vis_spectrum_analyzer) if installed;
+            // fall back to our native themed bars otherwise.
+            auto& host = m_hosts[p.name];
+            if (!host && m_spectra.find(p.name) == m_spectra.end()) { // decide once per panel
+                host = std::make_unique<PanelHost>();
+                if (!host->create(m_parent, "Spectrum")) host.reset();
+            }
+            if (host) {
+                if (HWND w = host->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
+                continue;
+            }
+            auto& sp = m_spectra[p.name];
+            if (!sp) { sp = std::make_unique<Spectrum>(); sp->create(m_parent, this); }
+            if (HWND w = sp->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
             continue;
         }
         const char* dui = map_type(p.type);
@@ -575,6 +644,16 @@ static std::string unquote(std::string s) {
 }
 
 bool SkinEngine::run_button_action(const std::string& a) {
+    // Transport buttons — handle via playback_control directly. (Going through the main menu by
+    // leaf name is ambiguous: "Random" matches both Playback/Random AND the Random playback ORDER,
+    // so the play-random button would wrongly change the order.)
+    auto pc = playback_control::get();
+    if (a == "Previous")          { pc->previous(); return true; }
+    if (a == "Next")              { pc->next(); return true; }
+    if (a == "Stop")              { pc->stop(); return true; }
+    if (a == "Play" || a == "Pause" || a == "play" || a == "pause") { pc->play_or_pause(); return true; }
+    if (a == "Playback/Random")   { pc->start(playback_control::track_command_rand, false); return true; }
+
     // PVAR:SET:key:value — set a setup variable, persist, and re-layout (mode/theme switch).
     if (a.compare(0, 9, "PVAR:SET:") == 0) {
         std::string rest = a.substr(9);
@@ -619,11 +698,32 @@ bool SkinEngine::run_button_action(const std::string& a) {
         repaint_all();
         return true;
     }
-    // play / pause toggle (cover overlay button).
-    if (a == "play" || a == "pause") { playback_control::get()->play_or_pause(); return true; }
-    // TAG:SET:field:value — writing tags deferred (needs metadb edit transaction).
+    // Playback order by name ("Default", "Repeat (track)", "Shuffle (tracks)", …) — set it on
+    // playlist_manager directly so the order buttons stay in sync with the player.
+    {
+        auto pm = playlist_manager::get();
+        const t_size n = pm->playback_order_get_count();
+        for (t_size i = 0; i < n; ++i)
+            if (stricmp_utf8(pm->playback_order_get_name(i), a.c_str()) == 0) {
+                pm->playback_order_set_active(i); repaint_all(); return true;
+            }
+    }
+    // TAG:SET:field:value — write a tag on the now-playing track (e.g. the rating stars).
     if (a.compare(0, 8, "TAG:SET:") == 0) {
-        console::printf("Panels UI: TAG:SET not yet implemented (%s)", a.c_str());
+        std::string rest = a.substr(8); size_t c = rest.find(':');
+        if (c != std::string::npos) {
+            std::string field = rest.substr(0, c), value = rest.substr(c + 1);
+            if (field == "rating") field = "RATING";
+            metadb_handle_ptr track; playback_control::get()->get_now_playing(track);
+            if (track.is_valid()) {
+                metadb_handle_list list; list.add_item(track);
+                service_ptr_t<file_info_filter> f =
+                    new service_impl_t<meta_set_filter>(field.c_str(), value.c_str());
+                metadb_io_v2::get()->update_info_async(
+                    list, f, core_api::get_main_window(), 0, nullptr);
+            }
+        }
+        repaint_all();
         return true;
     }
     return run_action(a);
@@ -650,6 +750,20 @@ int SkinEngine::pvar_int(const std::string& key, int def) {
     return (it != m_pvars.end() && !it->second.empty()) ? atoi(it->second.c_str()) : def;
 }
 
+void SkinEngine::set_rating(const metadb_handle_ptr& track, int stars) {
+    if (track.is_empty()) return;
+    char v[8] = ""; if (stars > 0) { if (stars > 5) stars = 5; sprintf(v, "%d", stars); }
+    metadb_handle_list list; list.add_item(track);
+    service_ptr_t<file_info_filter> f = new service_impl_t<meta_set_filter>("RATING", v);
+    metadb_io_v2::get()->update_info_async(list, f, core_api::get_main_window(), 0, nullptr);
+}
+
+std::string SkinEngine::pvar_str(const std::string& key) {
+    if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
+    auto it = m_pvars.find(key);
+    return it != m_pvars.end() ? it->second : std::string();
+}
+
 int SkinEngine::colour_index() const {
     auto it = m_pvars.find("colour.b");
     if (it != m_pvars.end()) { int v = atoi(it->second.c_str()); if (v >= 1 && v <= 4) return v; }
@@ -670,13 +784,14 @@ void SkinEngine::draw_script(HDC dc, int w, int h,
     if (script.is_empty()) return;
     if (capture) { capture->clear(); m_capture = capture; }
     SkinHook hook(this, dc, w, h);
-    DrawString out(&hook);
+    DrawString out(&hook); hook.set_buf(&out.buf());
     // Use playback formatting so dynamic fields (%playback_time%, %isplaying%…) resolve.
     if (track.is_valid())
         playback_control::get()->playback_format_title(
             &hook, out, script, nullptr, playback_control::display_level_all);
     else
         script->run(&hook, out, nullptr);
+    hook.finish();
     m_capture = nullptr;
 }
 

@@ -45,12 +45,9 @@ void Seekbar::paint() {
     std::string base = m_engine ? m_engine->base_dir() : std::string();
     int cb = m_engine ? m_engine->colour_index() : 2;
     COLORREF accent = RGB(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    // Transparent groove: the bottom bar bg shows through (stays dark like the skin).
-    HWND parent = GetParent(m_wnd);
-    POINT org = { 0, 0 }; MapWindowPoints(m_wnd, parent, &org, 1);
-    HDC pdc = GetDC(parent);
-    BitBlt(mem, 0, 0, rc.right, rc.bottom, pdc, org.x, org.y, SRCCOPY);
-    ReleaseDC(parent, pdc);
+    // Solid dark groove matching the skin's near-black bottom bar (do NOT blit the parent:
+    // WS_CLIPCHILDREN means the parent never paints behind us -> would read the white bg brush).
+    HBRUSH groove = CreateSolidBrush(RGB(12, 12, 14)); FillRect(mem, &rc, groove); DeleteObject(groove);
     // Played portion: thin themed bar graphic (bar/v{colour.b}.png is a ~3px coloured gloss),
     // vertically centred; fall back to a thin gradient if the image is missing.
     const int bh = 4, by = (rc.bottom - bh) / 2;

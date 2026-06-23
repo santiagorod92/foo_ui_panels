@@ -51,12 +51,8 @@ void Volume::paint() {
     std::string base = m_engine ? m_engine->base_dir() : std::string();
     int cb = m_engine ? m_engine->colour_index() : 2;
     COLORREF accent = RGB(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    // Transparent groove (skin bg shows through).
-    HWND parent = GetParent(m_wnd);
-    POINT org = { 0, 0 }; MapWindowPoints(m_wnd, parent, &org, 1);
-    HDC pdc = GetDC(parent);
-    BitBlt(mem, 0, 0, rc.right, rc.bottom, pdc, org.x, org.y, SRCCOPY);
-    ReleaseDC(parent, pdc);
+    // Solid dark groove (parent doesn't paint behind us under WS_CLIPCHILDREN -> no blit).
+    HBRUSH groove = CreateSolidBrush(RGB(12, 12, 14)); FillRect(mem, &rc, groove); DeleteObject(groove);
     // Thin themed level bar (bar/v{cb}.png ~3px) + round knob (bar/vol{cb}.png 10x12), centred.
     const int bh = 4, by = (rc.bottom - bh) / 2;
     bool drew = false;

@@ -15,6 +15,8 @@
 #include "seekbar.h"
 #include "volume.h"
 #include "popup.h"
+#include "playlist_view.h"
+#include "spectrum.h"
 #include <vector>
 #include <map>
 #include <string>
@@ -60,6 +62,9 @@ public:
     // Panels (TrackDisplay) call this after hit-testing their own captured buttons.
     bool run_button_action(const std::string& action);
 
+    // Write the RATING tag (0..5; 0 clears) on a specific track — playlist star clicks.
+    void set_rating(const metadb_handle_ptr& track, int stars);
+
     // Invalidate the canvas + every hosted panel so a pvar (theme/mode) change is reflected.
     void repaint_all();
 
@@ -74,6 +79,7 @@ public:
     // Read a persisted setup variable as int (loads pvars on first use). For main.cpp to
     // query e.g. the "menubar" toggle before the first paint.
     int pvar_int(const std::string& key, int def);
+    std::string pvar_str(const std::string& key); // "" if unset
 
 private:
     friend class SkinHook;
@@ -92,6 +98,8 @@ private:
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
     std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;
     std::map<std::string, std::unique_ptr<Volume>> m_volumes;
+    std::map<std::string, std::unique_ptr<PlaylistView>> m_playlists;
+    std::map<std::string, std::unique_ptr<Spectrum>> m_spectra;
     std::unique_ptr<Popup> m_popup; // settings/about popup ($button 'POPUP:<file.ava>')
 };
 

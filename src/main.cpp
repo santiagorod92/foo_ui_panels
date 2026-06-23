@@ -130,9 +130,23 @@ private:
 
     // One mainmenu_manager per top-level group; WM_COMMAND ids are partitioned
     // into [base, base+kSpan) ranges so we can route back to the right manager.
-    struct MenuGroup { service_ptr_t<mainmenu_manager> mgr; UINT base; };
+    struct MenuGroup { service_ptr_t<mainmenu_manager> mgr; UINT base; HMENU popup; const GUID* guid; };
     std::vector<MenuGroup> m_groups;
     static const UINT kSpan = 4000;
+    static const UINT kMenuFlags = mainmenu_manager::flag_show_shortcuts | mainmenu_manager::flag_view_full;
+
+    // Re-generate a top-level popup so its check/enable state (e.g. Playback>Order radio) is current.
+    // The menu bar is built once; without this the radios only refresh on restart.
+    void refresh_popup(HMENU popup) {
+        for (auto& g : m_groups) {
+            if (g.popup != popup) continue;
+            while (GetMenuItemCount(popup) > 0) DeleteMenu(popup, 0, MF_BYPOSITION);
+            g.mgr = mainmenu_manager::get();
+            g.mgr->instantiate(*g.guid);
+            g.mgr->generate_menu_win32(popup, g.base, kSpan, kMenuFlags);
+            return;
+        }
+    }
 
     void build_menu() {
         struct Root { const GUID& guid; const wchar_t* label; };
@@ -150,10 +164,9 @@ private:
             auto mgr = mainmenu_manager::get();
             mgr->instantiate(r.guid);
             HMENU popup = CreatePopupMenu();
-            mgr->generate_menu_win32(popup, base, kSpan,
-                mainmenu_manager::flag_show_shortcuts | mainmenu_manager::flag_view_full);
+            mgr->generate_menu_win32(popup, base, kSpan, kMenuFlags);
             AppendMenuW(m_menubar, MF_POPUP, reinterpret_cast<UINT_PTR>(popup), r.label);
-            m_groups.push_back({ mgr, base });
+            m_groups.push_back({ mgr, base, popup, &r.guid });
             base += kSpan;
         }
         // Apply the persisted "show menu bar" setting (toggled from the fooAvA settings popup).
@@ -212,6 +225,9 @@ private:
             if (self && HIWORD(wp) == 0 && lp == 0) { // menu item
                 if (self->exec_command(LOWORD(wp))) return 0;
             }
+            break;
+        case WM_INITMENUPOPUP: // refresh the opening popup so radios/checks (e.g. Order) are current
+            if (self) self->refresh_popup(reinterpret_cast<HMENU>(wp));
             break;
         case PUI_WM_TOGGLE_MENU: // show/hide the menu bar (from settings popup)
             if (self) { SetMenu(wnd, wp ? self->m_menubar : nullptr); self->resize_layout(); }
