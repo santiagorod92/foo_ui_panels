@@ -1,116 +1,79 @@
 #!/usr/bin/env python3
 # Recover the fooAvA image assets (button PNGs, cover-case art, side-tab icons) from the
-# original DeviantArt distribution .exe.
+# original DeviantArt distribution .exe — a **ClickTeam Install Creator** SFX.
 #
-# The .exe is a ClickTeam Install Creator SFX (look for "clickteam.com" in the PE head).
-# Layout we exploit:
-#   - bzip2 streams (DLLs, config s8, wallpaper JPEGs) early in the file  -> handled elsewhere
-#   - a ClickTeam FILE_LIST manifest: a zlib stream (~offset 232k) of length-named records.
-#     Each record stores the *uncompressed* file size as a LE32 at <name_end + 27>.
-#   - a FILE_DATA region (~offset 4.8M) of concatenated zlib streams, one per file, in the
-#     SAME order as the manifest. Most image files are stored (BTYPE=0) so the raw PNG is
-#     directly present, but some are deflate-compressed -> we must zlib-decode each stream.
+# Reliable extraction (ported from Bioruebe/cicdec). The overlay starts at the signature
+# 77 77 67 54 29 48; it is a sequence of blocks: blockId(u16) + skip2 + blockSize(u32) + data.
+#   FILE_LIST (0x143A): a compressed node table -> file names + each file's offset/sizes.
+#   FILE_DATA (0x7F7F): the file bodies; file k lives at dataStart + offset + 4 as
+#                       [method byte][zlib(78 da) deflate | BZh | raw].
+# This installer is version 30 (u16 nodeSize, has a u32 index field). Mapping files by their
+# recorded `offset` is exact — no size-guessing (an earlier heuristic mismapped same-size
+# images, e.g. swapping themed colour variants / wrong dimensions).
 #
-# Strategy: decode every zlib stream in the data region (in order) -> exact file bytes.
-# Build the ordered manifest (name, size) records. Align data files to manifest records by
-# matching uncompressed size within a forward window (handles files stored outside this
-# region, e.g. configs/walls). Any record left unplaced is filled by a global bare-name+size
-# lookup. Filenames are written under their real relative paths (images/fooAVA/...).
-#
-# Usage: python3 recover_fooava_images.py <fooava_1_05_*.exe> <out_dir>
-import re, struct, zlib, os, sys
+# Usage: python3 recover_fooava_images.py <fooava_1_05_*.exe> <out_dir> [--all]
+#   default: only image files (png/jpg). --all: every file (incl .ava/.pui/.txt configs).
+import struct, zlib, bz2, sys, os, re
 
-def decode_data_region(d, search_from=4_800_000):
-    """Decompress each complete zlib stream in the FILE_DATA region, in order."""
-    pos = d.find(b'\x78\xda', search_from); n = len(d); out = []
-    while pos < n - 4:
-        if d[pos] == 0x78 and d[pos+1] in (0x01, 0x9c, 0xda):
-            dec = zlib.decompressobj()
-            try:
-                blob = dec.decompress(d[pos:]) + dec.flush()
-            except Exception:
-                pos += 1; continue
-            consumed = (n - pos) - len(dec.unused_data)
-            if len(blob) > 20:
-                out.append(blob)
-            pos += max(consumed, 1)
-        else:
-            pos += 1
-    return out
+def u16(d, o): return struct.unpack_from('<H', d, o)[0]
+def u32(d, o): return struct.unpack_from('<I', d, o)[0]
 
-def find_manifest(d):
-    """Return the decompressed ClickTeam FILE_LIST (the zlib block richest in .png names)."""
-    best = None
-    for mt in re.finditer(b'\x78[\x01\x9c\xda]', d):
-        z = mt.start()
-        try:
-            o = zlib.decompressobj().decompress(d[z:z+500_000])
-        except Exception:
-            continue
-        if o.count(b'.png') >= 50 and (best is None or o.count(b'.png') > best.count(b'.png')):
-            best = o
-    return best
+def unpack(d, o, dec=None):
+    """Decompress a ClickTeam stream at offset o (optional known decompressed size)."""
+    p = o
+    if dec is None: dec = u32(d, p); p += 4
+    method = d[p]; p += 1
+    if method == 0: return d[p:p + dec]                       # NONE (stored)
+    if d[p:p + 1] == b'\x78': return zlib.decompress(d[p + 2:], -15)[:dec]  # DEFLATE (skip zlib hdr)
+    if d[p:p + 3] == b'BZh': return bz2.BZ2Decompressor().decompress(d[p:])[:dec]
+    return zlib.decompressobj().decompress(d[p:])[:dec]
 
-def manifest_records(m):
-    """Ordered (fullpath, uncompressed_size). Size lives at name_end+27; dir is the preceding
-    run that ends with a backslash."""
-    runs = [(mt.start(), mt.group().decode('latin1'))
-            for mt in re.finditer(rb'[ -~]{2,90}', m)]
-    recs = []
-    for k, (off, s) in enumerate(runs):
-        if s.endswith('\\'):
-            continue
-        if re.search(r'\.(png|jpg|jpeg|ava|pui|txt|dll|exe|lnk|ini)$', s, re.I):
-            ne = off + len(s)
-            sz = struct.unpack_from('<I', m, ne + 27)[0] if ne + 31 <= len(m) else -1
-            full = (runs[k-1][1] + s) if (k > 0 and runs[k-1][1].endswith('\\')) else s
-            recs.append((full, sz))
-    return recs
+def parse_filelist_v30(man):
+    """Parse a version-30 FILE_LIST -> list of (path, offset, compressedSize, uncompressedSize)."""
+    n = u16(man, 0); p = 4; files = []
+    for _ in range(n):
+        if p + 4 > len(man): break
+        ns = p; nodeSize = u16(man, p); type_ = u16(man, p + 2); ne = ns + nodeSize
+        if ne > len(man) or nodeSize < 4: break
+        if type_ != 0: p = ne; continue          # not a file node
+        q = p + 4 + 2                              # nodeSize(2)+type(2)+skip2
+        offset = u32(man, q); comp = u32(man, q + 4); uncomp = u32(man, q + 12)
+        q += 18 + 16 + 4 + 24                      # fields + skip18 + index(4) + 3x FILETIME(24)
+        path = man[q:ne].split(b'\x00')[0].decode('latin1')
+        files.append((path, offset, comp, uncomp))
+        p = ne
+    return files
 
-def rel_path(full):
-    return full.replace('PanelsUI\\AvA 1.05\\', '').replace('\\', '/').lstrip('/')
-
-def main(exe, outdir):
+def main(exe, outdir, want_all=False):
     d = open(exe, 'rb').read()
-    D = decode_data_region(d)
-    m = find_manifest(d)
-    if not m:
-        print('manifest not found'); return 1
-    recs = manifest_records(m)
+    sig = d.find(b'\x77\x77\x67\x54\x29\x48')
+    if sig < 0: print('overlay signature not found'); return 1
+    p = sig + 6; L = len(d); dataStart = None; man = None
+    while p + 8 <= L:
+        bid = u16(d, p); bsize = u32(d, p + 4); bdata = p + 8; nxt = bdata + bsize
+        if bid == 0x7F7F: dataStart = bdata
+        elif bid == 0x143A:
+            try: man = unpack(d, bdata)
+            except Exception as e: print('FILE_LIST unpack failed:', e)
+        if nxt <= p: break
+        p = nxt
+    if man is None or dataStart is None: print('missing FILE_LIST/FILE_DATA'); return 1
+
+    files = parse_filelist_v30(man)
     os.makedirs(outdir, exist_ok=True)
-
-    # pass 1: ordered window alignment by size
-    placed = set(); wrote = 0; j = 0
-    for blob in D:
-        s = len(blob); start = j; found = -1
-        for jj in range(start, min(start + 400, len(recs))):
-            if recs[jj][1] == s:
-                found = jj; break
-        if found < 0:
-            continue
-        j = found + 1
-        name = recs[found][0]
-        if re.search(r'\.(png|jpg|jpeg)$', name, re.I):
-            fp = os.path.join(outdir, rel_path(name))
-            os.makedirs(os.path.dirname(fp) or outdir, exist_ok=True)
-            open(fp, 'wb').write(blob); placed.add(found); wrote += 1
-
-    # pass 2: fill any image record not yet placed via bare-name + size lookup
-    bysize = {}
-    for blob in D:
-        if blob[:8] == b'\x89PNG\r\n\x1a\n':
-            bysize.setdefault(len(blob), blob)
-    filled = 0
-    for idx, (name, sz) in enumerate(recs):
-        if idx in placed or not re.search(r'\.png$', name, re.I):
-            continue
-        if sz in bysize:
-            fp = os.path.join(outdir, rel_path(name))
-            os.makedirs(os.path.dirname(fp) or outdir, exist_ok=True)
-            open(fp, 'wb').write(bysize[sz]); filled += 1
-
-    print(f"data files={len(D)} manifest recs={len(recs)} wrote={wrote} filled={filled}")
+    made = 0
+    keep = re.compile(r'\.(png|jpg|jpeg)$' if not want_all else r'\.\w+$', re.I)
+    for path, offset, comp, uncomp in files:
+        if not path or not keep.search(path): continue
+        rel = path.replace('PanelsUI\\AvA 1.05\\', '').replace('\\', '/').lstrip('/')
+        try: data = unpack(d, dataStart + offset + 4, uncomp)
+        except Exception: continue
+        fp = os.path.join(outdir, rel)
+        os.makedirs(os.path.dirname(fp) or outdir, exist_ok=True)
+        open(fp, 'wb').write(data); made += 1
+    print(f"files={len(files)} extracted={made} -> {outdir}")
     return 0
 
 if __name__ == '__main__':
-    sys.exit(main(sys.argv[1], sys.argv[2]))
+    a = [x for x in sys.argv[1:] if x != '--all']
+    sys.exit(main(a[0], a[1], '--all' in sys.argv))
