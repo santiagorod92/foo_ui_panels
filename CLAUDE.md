@@ -83,8 +83,11 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   Native `TrackDisplay` loads `panels/<placement-name>.txt`
   (e.g. "Display" = album-art cover display) instead of its default. `read_panel_script()` in SkinEngine.
 - Draw funcs now real (not stubbed): `$draw_image`, `$fileexists` (GetFileAttributes), `$greater`.
-- `$button`/`$button2`: record clickable rect + action; draws param-6 image (real now that assets are
-  recovered), else faint frame fallback. `$textbutton(l,t,w,h,strN,strH,action,…)` draws the evaluated
+- `$button`/`$button2`: render only the NORMAL state (param 6); param 7 (hover) is ignored so themed
+  and base variants don't stack. For `$button` param 6 is an image path → `draw_image`. For `$button2`
+  it's a draw *command* (often `'`-quoted `$imageabs2(...)`, coords relative to the button) → run via
+  `run_subscript` with the draw origin `m_ox/m_oy` set to the button (x,y); a resolved path draws directly;
+  else faint-frame fallback. Compiled commands cached in `m_subcache`. `$textbutton(l,t,w,h,strN,strH,action,…)` draws the evaluated
   normal text in the box + records a click region (renders artist/album track-info). `$calcwidth(text)`
   → pixel width via `GetTextExtentPoint32A` (used to center text). `$imagebutton(l,t,imgN,imgH,action,…)`
   draws the image natural-size + ~11×15 hit box (rating stars).
@@ -124,7 +127,9 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
 - Image loader resolves **wildcard paths** (`image.cpp resolve_wildcard`, FindFirstFile): `*folder*.jpg`
   → `Folder.jpg`. Possible future fallback: broad `*.jpg`/`*.png` if specific patterns miss.
 - Main window needs **WS_CLIPCHILDREN** or the double-buffered WM_PAINT BitBlt paints over hosted panels.
-- Color spec `brushcolor-null` / `pencolor-null` = transparent (no fill/frame).
+- Color spec `brushcolor-null` / `pencolor-null` = transparent (no fill/frame). `$drawrect` honours
+  `alpha-N` (semi-transparent fill via `fill_alpha`/AlphaBlend, msimg32) — needed or the settings panel's
+  `alpha-60` black overlays paint solid and hide everything.
   (Assets recovered — see `tools/recover_fooava_images.py`, staged at `skins/fooava/images/fooAVA/`,
   deployed to `<dll dir>/images/fooAVA/`. Wine resolves the script's mixed-case paths case-insensitively.)
 

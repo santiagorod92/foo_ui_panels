@@ -178,13 +178,18 @@ public:
             std::string spec = param_str(p, 4);
             COLORREF brush = RGB(0,0,0), pen; bool hb = find_color(spec, "brushcolor", brush);
             bool hp = find_color(spec, "pencolor", pen);
+            int alpha = 255; auto ap = spec.find("alpha-");
+            if (ap != std::string::npos) alpha = atoi(spec.c_str() + ap + 6);
             RECT rc = mkrect(param_int(p,0), param_int(p,1), param_int(p,2), param_int(p,3));
-            if (hb) { HBRUSH b = CreateSolidBrush(brush); FillRect(m_dc, &rc, b); DeleteObject(b); }
+            if (hb) {
+                if (alpha < 255) fill_alpha(rc, brush, alpha);
+                else { HBRUSH b = CreateSolidBrush(brush); FillRect(m_dc, &rc, b); DeleteObject(b); }
+            }
             if (hp) { HBRUSH b = CreateSolidBrush(pen); FrameRect(m_dc, &rc, b); DeleteObject(b); }
             return true;
         }
         if (eq(name, len, "drawroundrect") && argc >= 7) {
-            int x = param_int(p,0), y = param_int(p,1), w = param_int(p,2), h = param_int(p,3);
+            int x = param_int(p,0) + m_ox, y = param_int(p,1) + m_oy, w = param_int(p,2), h = param_int(p,3);
             int aw = param_int(p,4), ah = param_int(p,5);
             COLORREF c = parse_rgb(param_str(p,6).c_str());
             HBRUSH b = CreateSolidBrush(c); HPEN pen = CreatePen(PS_SOLID, 1, c);
@@ -194,7 +199,7 @@ public:
             return true;
         }
         if (eq(name, len, "gradientrect") && argc >= 6) {
-            draw_gradient(param_int(p,0), param_int(p,1), param_int(p,2), param_int(p,3),
+            draw_gradient(param_int(p,0) + m_ox, param_int(p,1) + m_oy, param_int(p,2), param_int(p,3),
                           parse_rgb(param_str(p,4).c_str()), parse_rgb(param_str(p,5).c_str()));
             return true;
         }
@@ -204,7 +209,8 @@ public:
         if (eq(name, len, "alignabs") && argc >= 4) {
             // $alignabs(left,top,right,bottom,halign,valign) — box for following literal text
             flush_text();
-            m_alignRect = { param_int(p,0), param_int(p,1), param_int(p,2), param_int(p,3) };
+            m_alignRect = { param_int(p,0) + m_ox, param_int(p,1) + m_oy,
+                            param_int(p,2) + m_ox, param_int(p,3) + m_oy };
             std::string ha = argc >= 5 ? param_str(p,4) : std::string();
             std::string va = argc >= 6 ? param_str(p,5) : std::string();
             UINT f = DT_NOPREFIX | DT_WORD_ELLIPSIS;
@@ -219,13 +225,13 @@ public:
         }
         if (eq(name, len, "imageabs") && argc >= 5) {
             // $imageabs(x,y,w,h,path,align)
-            draw_image(m_dc, resolve(param_str(p,4)), param_int(p,0), param_int(p,1),
+            draw_image(m_dc, resolve(param_str(p,4)), param_int(p,0) + m_ox, param_int(p,1) + m_oy,
                        param_int(p,2), param_int(p,3));
             return true;
         }
         if (eq(name, len, "draw_image") && argc >= 5) {
             // $draw_image(x,y,w,h,path,...)
-            draw_image(m_dc, resolve(param_str(p,4)), param_int(p,0), param_int(p,1),
+            draw_image(m_dc, resolve(param_str(p,4)), param_int(p,0) + m_ox, param_int(p,1) + m_oy,
                        param_int(p,2), param_int(p,3));
             return true;
         }
@@ -245,23 +251,34 @@ public:
             // $imageabs2(maxW,maxH,imgW,imgH,srcX,srcY,dstX,dstY,path,opts)
             int alpha = 255, flip = 0;
             if (argc >= 10) parse_img_opts(param_str(p,9), alpha, flip);
-            draw_image(m_dc, resolve(param_str(p,8)), param_int(p,6), param_int(p,7),
+            draw_image(m_dc, resolve(param_str(p,8)), param_int(p,6) + m_ox, param_int(p,7) + m_oy,
                        param_int(p,0), param_int(p,1), alpha, flip);
             return true;
         }
 
         if ((eq(name, len, "button") || eq(name, len, "button2")) && argc >= 9) {
-            // $button(x,y,?,?,w,h,img1,img2,'action',tooltip)
-            // $button2(x,y,?,?,w,h,draw1,draw2,'action',tooltip) — draws happen during arg eval
-            int x = param_int(p,0), y = param_int(p,1), w = param_int(p,4), h = param_int(p,5);
-            if (w <= 0) w = 22; if (h <= 0) h = 22;
-            bool drew = eq(name, len, "button") && draw_image(m_dc, resolve(param_str(p,6)), x, y, w, h);
-            if (!drew) { // icon PNG missing -> faint clickable marker so the button is visible
-                RECT r = mkrect(x, y, w, h);
-                HBRUSH b = CreateSolidBrush(RGB(70, 80, 110)); FrameRect(m_dc, &r, b); DeleteObject(b);
+            // $button (x,y,?,?,w,h,imgpath_normal,imgpath_hover,'action',tooltip)
+            // $button2(x,y,?,?,w,h,draw_normal,draw_hover,'action',tooltip)
+            // Only the NORMAL state (param 6) is rendered (no hover tracking). For button2 the
+            // arg is a draw command (possibly '-quoted) run at the button origin; for button it
+            // is an image path. param 7 (hover) is ignored so the two don't stack.
+            int x = param_int(p,0), y = param_int(p,1);
+            int rawW = param_int(p,4), rawH = param_int(p,5);
+            int hw = rawW > 0 ? rawW : 22, hh = rawH > 0 ? rawH : 22; // hit box
+            std::string d1 = param_str(p,6);
+            { size_t b = d1.find_first_not_of(" \t\r\n"), e = d1.find_last_not_of(" \t\r\n");
+              if (b == std::string::npos) d1.clear(); else d1 = d1.substr(b, e - b + 1);
+              if (d1.size() >= 2 && d1.front() == '\'' && d1.back() == '\'') d1 = d1.substr(1, d1.size() - 2); }
+            bool drew = false;
+            if (!d1.empty()) {
+                if (d1[0] == '$') { run_subscript(d1, x, y); drew = true; } // draw command
+                else if (d1.find(".png") != std::string::npos || d1.find(".jpg") != std::string::npos)
+                    drew = draw_image(m_dc, resolve(d1), x, y, rawW > 0 ? rawW : 0, rawH > 0 ? rawH : 0);
             }
+            if (!drew) { RECT r = mkrect(x, y, hw, hh);
+                HBRUSH b = CreateSolidBrush(RGB(70, 80, 110)); FrameRect(m_dc, &r, b); DeleteObject(b); }
             std::string act = clean_action(param_str(p,8));
-            if (!act.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, w, h, act });
+            if (!act.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, hw, hh, act });
             return true;
         }
 
@@ -314,7 +331,31 @@ private:
         m_pending.clear();
     }
 
-    RECT mkrect(int x, int y, int w, int h) { RECT r = { x, y, x + w, y + h }; return r; }
+    // Draw origin: normally (0,0); set to a button's (x,y) while running a $button2
+    // sub-draw command so its relative coords land at the button position.
+    int m_ox = 0, m_oy = 0;
+    RECT mkrect(int x, int y, int w, int h) { RECT r = { x + m_ox, y + m_oy, x + m_ox + w, y + m_oy + h }; return r; }
+
+    // Fill a rect with a solid colour at `alpha` (0..255) via AlphaBlend (msimg32).
+    void fill_alpha(const RECT& r, COLORREF c, int alpha) {
+        int w = r.right - r.left, h = r.bottom - r.top;
+        if (w <= 0 || h <= 0) return;
+        HDC md = CreateCompatibleDC(m_dc);
+        BITMAPINFO bi = {}; bi.bmiHeader.biSize = sizeof(BITMAPINFOHEADER);
+        bi.bmiHeader.biWidth = 1; bi.bmiHeader.biHeight = 1; bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
+        void* bits = nullptr;
+        HBITMAP bmp = CreateDIBSection(md, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+        if (bits) { unsigned char* px = (unsigned char*)bits;
+            px[0] = GetBValue(c); px[1] = GetGValue(c); px[2] = GetRValue(c); px[3] = 255; }
+        HGDIOBJ ob = SelectObject(md, bmp);
+        BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)alpha, 0 }; // const alpha, no per-pixel
+        AlphaBlend(m_dc, r.left, r.top, w, h, md, 0, 0, 1, 1, bf);
+        SelectObject(md, ob); DeleteObject(bmp); DeleteDC(md);
+    }
+
+    // Run a $button2 draw-command (titleformat) at offset (ox,oy). Compiled scripts cached.
+    void run_subscript(const std::string& text, int ox, int oy);
 
     // Resolve a skin image path: normalize separators, strip leading ./ or /,
     // and make relative paths absolute against the skin base dir.
@@ -396,6 +437,23 @@ public:
 private:
     SkinHook* m_h; std::string m_buf;
 };
+
+// Run a $button2 draw-command (compiled+cached) with the draw origin set to (ox,oy)
+// so the command's relative coordinates land at the button position.
+void SkinHook::run_subscript(const std::string& text, int ox, int oy) {
+    auto& cache = m_e->m_subcache;
+    auto it = cache.find(text);
+    if (it == cache.end()) {
+        service_ptr_t<titleformat_object> obj;
+        titleformat_compiler::get()->compile_safe(obj, text.c_str());
+        it = cache.emplace(text, obj).first;
+    }
+    if (it->second.is_empty()) return;
+    int sx = m_ox, sy = m_oy; m_ox = ox; m_oy = oy;
+    DrawString out(this);
+    it->second->run(this, out, nullptr);
+    m_ox = sx; m_oy = sy;
+}
 
 // Persistent pvar store (serialized "key=value" lines).
 namespace {

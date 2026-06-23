@@ -74,6 +74,7 @@ private:
     std::vector<Placement> m_placements;
     std::vector<Button> m_buttons;
     std::vector<Button>* m_capture = nullptr; // when set, buttons record here (panel-local)
+    std::map<std::string, service_ptr_t<titleformat_object>> m_subcache; // $button2 draw commands
     std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
     std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;
