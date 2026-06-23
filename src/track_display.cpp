@@ -53,7 +53,9 @@ void TrackDisplay::paint() {
 
     metadb_handle_ptr track;
     playback_control::get()->get_now_playing(track);
-    if (m_engine) m_engine->draw_script(mem, rc.right, rc.bottom, m_script, track);
+    // Capture clickable regions in this panel's own coordinate space (cover-case view switch,
+    // play/pause overlay, rating stars, theme buttons).
+    if (m_engine) m_engine->draw_script(mem, rc.right, rc.bottom, m_script, track, &m_buttons);
 
     BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
     SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
@@ -72,9 +74,21 @@ LRESULT CALLBACK TrackDisplay::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp)
     case WM_PAINT: { PAINTSTRUCT ps; BeginPaint(wnd, &ps); if (self) self->paint(); EndPaint(wnd, &ps); return 0; }
     case WM_TIMER: InvalidateRect(wnd, nullptr, FALSE); return 0;
     case WM_SIZE:  InvalidateRect(wnd, nullptr, FALSE); return 0;
+    case WM_LBUTTONDOWN: if (self) self->on_click((short)LOWORD(lp), (short)HIWORD(lp)); return 0;
     case WM_DESTROY: KillTimer(wnd, 1); return 0;
     }
     return DefWindowProcW(wnd, msg, wp, lp);
+}
+
+void TrackDisplay::on_click(int x, int y) {
+    if (!m_engine) return;
+    for (const auto& b : m_buttons) {
+        if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h) {
+            m_engine->run_button_action(b.action); // repaints all panels on a pvar change
+            InvalidateRect(m_wnd, nullptr, FALSE);
+            return;
+        }
+    }
 }
 
 } // namespace pui

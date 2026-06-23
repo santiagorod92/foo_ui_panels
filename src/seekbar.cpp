@@ -1,4 +1,5 @@
 #include "seekbar.h"
+#include "skin_engine.h"
 #include <windowsx.h>
 
 namespace pui {
@@ -17,8 +18,9 @@ void Seekbar::register_class() {
     RegisterClassExW(&wc);
 }
 
-HWND Seekbar::create(HWND parent) {
+HWND Seekbar::create(HWND parent, SkinEngine* engine) {
     register_class();
+    m_engine = engine;
     m_wnd = CreateWindowExW(0, kClass, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
                             parent, nullptr, GetModuleHandleW(nullptr), this);
     if (m_wnd) SetTimer(m_wnd, 1, 500, nullptr);
@@ -40,7 +42,9 @@ void Seekbar::paint() {
     HBRUSH track = CreateSolidBrush(RGB(40, 40, 50));
     FillRect(mem, &rc, track); DeleteObject(track);
     RECT fill = rc; fill.right = (LONG)(rc.right * frac);
-    HBRUSH prog = CreateSolidBrush(RGB(0, 140, 220));
+    COLORREF accent = RGB(0, 140, 220);
+    if (m_engine) m_engine->theme_color(accent); // follow the skin theme
+    HBRUSH prog = CreateSolidBrush(accent);
     FillRect(mem, &fill, prog); DeleteObject(prog);
 
     BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);

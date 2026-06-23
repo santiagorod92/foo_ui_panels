@@ -4,9 +4,11 @@
 
 namespace pui {
 
+class SkinEngine; // for theme accent colour
+
 class Volume {
 public:
-    HWND create(HWND parent);
+    HWND create(HWND parent, SkinEngine* engine = nullptr);
     HWND wnd() const { return m_wnd; }
     static void register_class();
 
@@ -15,6 +17,7 @@ private:
     void paint();
     void set_from_x(int x);
     HWND m_wnd = nullptr;
+    SkinEngine* m_engine = nullptr;
 };
 
 } // namespace pui

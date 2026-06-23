@@ -1,4 +1,5 @@
 #include "volume.h"
+#include "skin_engine.h"
 #include <windowsx.h>
 
 namespace pui {
@@ -17,8 +18,9 @@ void Volume::register_class() {
     RegisterClassExW(&wc);
 }
 
-HWND Volume::create(HWND parent) {
+HWND Volume::create(HWND parent, SkinEngine* engine) {
     register_class();
+    m_engine = engine;
     m_wnd = CreateWindowExW(0, kClass, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
                             parent, nullptr, GetModuleHandleW(nullptr), this);
     if (m_wnd) SetTimer(m_wnd, 1, 500, nullptr);
@@ -46,7 +48,9 @@ void Volume::paint() {
     HBRUSH track = CreateSolidBrush(RGB(40, 40, 50));
     FillRect(mem, &rc, track); DeleteObject(track);
     RECT fill = rc; fill.right = (LONG)(rc.right * frac);
-    HBRUSH lvl = CreateSolidBrush(RGB(80, 200, 120));
+    COLORREF accent = RGB(80, 200, 120);
+    if (m_engine) m_engine->theme_color(accent); // follow the skin theme
+    HBRUSH lvl = CreateSolidBrush(accent);
     FillRect(mem, &fill, lvl); DeleteObject(lvl);
 
     BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);

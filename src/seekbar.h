@@ -5,9 +5,11 @@
 
 namespace pui {
 
+class SkinEngine; // for theme accent colour
+
 class Seekbar {
 public:
-    HWND create(HWND parent);
+    HWND create(HWND parent, SkinEngine* engine = nullptr);
     HWND wnd() const { return m_wnd; }
     static void register_class();
 
@@ -15,6 +17,7 @@ private:
     static LRESULT CALLBACK WndProc(HWND, UINT, WPARAM, LPARAM);
     void paint();
     HWND m_wnd = nullptr;
+    SkinEngine* m_engine = nullptr;
 };
 
 } // namespace pui

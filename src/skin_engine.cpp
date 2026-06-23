@@ -261,7 +261,7 @@ public:
                 HBRUSH b = CreateSolidBrush(RGB(70, 80, 110)); FrameRect(m_dc, &r, b); DeleteObject(b);
             }
             std::string act = clean_action(param_str(p,8));
-            if (!act.empty()) m_e->m_buttons.push_back({ x, y, w, h, act });
+            if (!act.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, w, h, act });
             return true;
         }
 
@@ -282,7 +282,7 @@ public:
             DrawTextA(m_dc, text.c_str(), (int)text.size(), &r,
                       DT_NOPREFIX | DT_CENTER | DT_SINGLELINE | DT_VCENTER | DT_NOCLIP);
             if (argc >= 7) { std::string a = clean_action(param_str(p,6));
-                if (!a.empty()) m_e->m_buttons.push_back({ x, y, (w>0?w:240), (h>0?h:18), a }); }
+                if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, (w>0?w:240), (h>0?h:18), a }); }
             return true;
         }
         // $imagebutton(left,top,image_normal,image_hover,action,"TOOLTIP",tip) — rating stars etc.
@@ -290,7 +290,7 @@ public:
             int x = param_int(p,0), y = param_int(p,1);
             draw_image(m_dc, resolve(param_str(p,2)), x, y, 0, 0); // natural size
             std::string a = clean_action(param_str(p,4));
-            if (!a.empty()) m_e->m_buttons.push_back({ x, y, 11, 15, a }); // ~star-sized hit box
+            if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, 11, 15, a }); // ~star-sized hit box
             return true;
         }
 
@@ -452,13 +452,13 @@ void SkinEngine::render(HDC dc, int width, int height) {
         }
         if (p.type.find("Seek") != std::string::npos) {
             auto& sb = m_seekbars[p.name];
-            if (!sb) { sb = std::make_unique<Seekbar>(); sb->create(m_parent); }
+            if (!sb) { sb = std::make_unique<Seekbar>(); sb->create(m_parent, this); }
             if (HWND w = sb->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
             continue;
         }
         if (p.type.find("Volume") != std::string::npos) {
             auto& vol = m_volumes[p.name];
-            if (!vol) { vol = std::make_unique<Volume>(); vol->create(m_parent); }
+            if (!vol) { vol = std::make_unique<Volume>(); vol->create(m_parent, this); }
             if (HWND w = vol->wnd()) MoveWindow(w, p.x, p.y, p.w, p.h, TRUE);
             continue;
         }
@@ -516,53 +516,71 @@ static std::string unquote(std::string s) {
     return s;
 }
 
+bool SkinEngine::run_button_action(const std::string& a) {
+    // PVAR:SET:key:value — set a setup variable, persist, and re-layout (mode/theme switch).
+    if (a.compare(0, 9, "PVAR:SET:") == 0) {
+        std::string rest = a.substr(9);
+        size_t c = rest.find(':');
+        if (c != std::string::npos) {
+            m_pvars[unquote(rest.substr(0, c))] = unquote(rest.substr(c + 1));
+            save_pvars();
+            repaint_all();
+        }
+        return true;
+    }
+    // WINDOWSIZE:w:h[:halign:valign] — resize the top-level player window.
+    if (a.compare(0, 11, "WINDOWSIZE:") == 0) {
+        std::string rest = a.substr(11);
+        size_t c = rest.find(':');
+        if (c != std::string::npos) {
+            int w = atoi(unquote(rest.substr(0, c)).c_str());
+            std::string r2 = rest.substr(c + 1);
+            size_t c2 = r2.find(':');
+            int h = atoi(unquote(c2 == std::string::npos ? r2 : r2.substr(0, c2)).c_str());
+            HWND top = m_parent ? GetAncestor(m_parent, GA_ROOT) : nullptr;
+            if (top && w > 0 && h > 0)
+                SetWindowPos(top, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
+        }
+        return true;
+    }
+    // play / pause toggle (cover overlay button).
+    if (a == "play" || a == "pause") { playback_control::get()->play_or_pause(); return true; }
+    // TAG:SET:field:value — writing tags deferred (needs metadb edit transaction).
+    if (a.compare(0, 8, "TAG:SET:") == 0) {
+        console::printf("Panels UI: TAG:SET not yet implemented (%s)", a.c_str());
+        return true;
+    }
+    return run_action(a);
+}
+
 bool SkinEngine::handle_click(int x, int y) {
     for (const auto& b : m_buttons) {
-        if (!(x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)) continue;
-        const std::string& a = b.action;
-
-        // PVAR:SET:key:value — set a setup variable, persist, and re-layout (mode/theme switch).
-        if (a.compare(0, 9, "PVAR:SET:") == 0) {
-            std::string rest = a.substr(9);
-            size_t c = rest.find(':');
-            if (c != std::string::npos) {
-                m_pvars[unquote(rest.substr(0, c))] = unquote(rest.substr(c + 1));
-                save_pvars();
-                if (m_parent) InvalidateRect(GetAncestor(m_parent, GA_ROOT), nullptr, TRUE);
-            }
-            return true;
-        }
-        // WINDOWSIZE:w:h[:halign:valign] — resize the top-level player window.
-        if (a.compare(0, 11, "WINDOWSIZE:") == 0) {
-            std::string rest = a.substr(11);
-            size_t c = rest.find(':');
-            if (c != std::string::npos) {
-                int w = atoi(unquote(rest.substr(0, c)).c_str());
-                std::string r2 = rest.substr(c + 1);
-                size_t c2 = r2.find(':');
-                int h = atoi(unquote(c2 == std::string::npos ? r2 : r2.substr(0, c2)).c_str());
-                HWND top = m_parent ? GetAncestor(m_parent, GA_ROOT) : nullptr;
-                if (top && w > 0 && h > 0)
-                    SetWindowPos(top, nullptr, 0, 0, w, h, SWP_NOMOVE | SWP_NOZORDER);
-            }
-            return true;
-        }
-        // play / pause toggle (cover overlay button).
-        if (a == "play" || a == "pause") { playback_control::get()->play_or_pause(); return true; }
-        // TAG:SET:field:value — writing tags deferred (needs metadb edit transaction).
-        if (a.compare(0, 8, "TAG:SET:") == 0) {
-            console::printf("Panels UI: TAG:SET not yet implemented (%s)", a.c_str());
-            return true;
-        }
-        return run_action(a);
+        if (x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h)
+            return run_button_action(b.action);
     }
     return false;
 }
 
+void SkinEngine::repaint_all() {
+    if (m_parent) InvalidateRect(GetAncestor(m_parent, GA_ROOT), nullptr, TRUE);
+    for (auto& kv : m_track_displays) if (kv.second && kv.second->wnd()) InvalidateRect(kv.second->wnd(), nullptr, TRUE);
+    for (auto& kv : m_seekbars)       if (kv.second && kv.second->wnd()) InvalidateRect(kv.second->wnd(), nullptr, TRUE);
+    for (auto& kv : m_volumes)        if (kv.second && kv.second->wnd()) InvalidateRect(kv.second->wnd(), nullptr, TRUE);
+}
+
+bool SkinEngine::theme_color(COLORREF& out) const {
+    auto it = m_pvars.find("colour");
+    if (it == m_pvars.end() || it->second.empty()) return false;
+    out = parse_rgb(it->second.c_str());
+    return true;
+}
+
 void SkinEngine::draw_script(HDC dc, int w, int h,
                              const service_ptr_t<titleformat_object>& script,
-                             const metadb_handle_ptr& track) {
+                             const metadb_handle_ptr& track,
+                             std::vector<Button>* capture) {
     if (script.is_empty()) return;
+    if (capture) { capture->clear(); m_capture = capture; }
     SkinHook hook(this, dc, w, h);
     DrawString out(&hook);
     // Use playback formatting so dynamic fields (%playback_time%, %isplaying%…) resolve.
@@ -571,6 +589,7 @@ void SkinEngine::draw_script(HDC dc, int w, int h,
             &hook, out, script, nullptr, playback_control::display_level_all);
     else
         script->run(&hook, out, nullptr);
+    m_capture = nullptr;
 }
 
 } // namespace pui

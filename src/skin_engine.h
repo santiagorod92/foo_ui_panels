@@ -9,6 +9,7 @@
 //   $font/$drawrect/$drawstring/$drawroundrect/$gradientrect -> immediate GDI drawing
 #pragma once
 #include "win_sdk.h"
+#include "button.h"
 #include "panel_host.h"
 #include "track_display.h"
 #include "seekbar.h"
@@ -25,11 +26,6 @@ struct Placement {
     int x = 0, y = 0, w = 0, h = 0;
 };
 
-struct Button {
-    int x = 0, y = 0, w = 0, h = 0;
-    std::string action; // main-menu command path, e.g. "Playback/Random"
-};
-
 class SkinEngine {
 public:
     void set_parent(HWND parent) { m_parent = parent; }
@@ -38,9 +34,12 @@ public:
 
     // Run `script` against the draw engine on `dc` (used by native panels like TrackDisplay).
     // If `track` is valid, built-in fields (%title% etc.) resolve from it.
+    // If `capture` is set, clickable regions ($button/$textbutton/…) are recorded into it
+    // (in the panel's own coordinate space) instead of the main button list.
     void draw_script(HDC dc, int w, int h,
                      const service_ptr_t<titleformat_object>& script,
-                     const metadb_handle_ptr& track);
+                     const metadb_handle_ptr& track,
+                     std::vector<Button>* capture = nullptr);
 
     // Paint pass: run the script against `dc` (executes draw funcs + records placements),
     // then create/position hosted panel windows. Called from the canvas WM_PAINT.
@@ -51,6 +50,16 @@ public:
 
     // Hit-test the buttons recorded in the last render and run the clicked one's action.
     bool handle_click(int x, int y);
+
+    // Execute a button action (PVAR:SET / WINDOWSIZE / play / pause / main-menu command).
+    // Panels (TrackDisplay) call this after hit-testing their own captured buttons.
+    bool run_button_action(const std::string& action);
+
+    // Invalidate the canvas + every hosted panel so a pvar (theme/mode) change is reflected.
+    void repaint_all();
+
+    // Current theme accent colour (pvar "colour", "r-g-b"). Returns false if unset.
+    bool theme_color(COLORREF& out) const;
 
 private:
     friend class SkinHook;
@@ -63,6 +72,7 @@ private:
     std::map<std::string, std::string> m_pvars;
     std::vector<Placement> m_placements;
     std::vector<Button> m_buttons;
+    std::vector<Button>* m_capture = nullptr; // when set, buttons record here (panel-local)
     std::map<std::string, std::unique_ptr<PanelHost>> m_hosts;
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
     std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;
