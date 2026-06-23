@@ -48,9 +48,10 @@ See `DESIGN.md` for full roadmap/facts.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, `"Seek Panel"` to a native
   `Seekbar` (`src/seekbar.{h,cpp}` — progress bar + click-to-seek), `"Volume Panel"` to native `Volume`
   (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), others to `PanelHost`. The seek/volume
-  bars draw with the **skin graphics** (`tb.png` groove + themed `progress{colour.b}.png` fill + `point.png`
-  knob, over the blitted parent bg) via `SkinEngine::base_dir()`/`colour_index()`; flat themed rect is the
-  fallback if images are absent.
+  bars draw the played portion in the **theme colour** (`SkinEngine::theme_color()`, pvar `colour`) then
+  overlay `progress.png` (the skin's near-white alpha *gloss* — NOT a colour, so the colour is ours) +
+  `point.png` knob, over the blitted parent bg. (`progress{N}.png`/`tb.png` are gloss/ticked variants, not
+  the colour source.)
 
 ## fooAvA config format (s8.bin) — decoded
 `skins/fooava/config/s8.bin` layout: `[56-byte header][53 pvar KV pairs][length-prefixed script blocks]`.

@@ -49,25 +49,18 @@ void Volume::paint() {
     int fw = (int)(rc.right * frac);
 
     std::string base = m_engine ? m_engine->base_dir() : std::string();
-    int cb = m_engine ? m_engine->colour_index() : 2;
-    bool drew = false;
-    if (!base.empty()) {
-        HWND parent = GetParent(m_wnd);
-        POINT org = { 0, 0 }; MapWindowPoints(m_wnd, parent, &org, 1);
-        HDC pdc = GetDC(parent);
-        BitBlt(mem, 0, 0, rc.right, rc.bottom, pdc, org.x, org.y, SRCCOPY);
-        ReleaseDC(parent, pdc);
-        std::string b = base + "/images/fooAVA/";
-        drew = draw_image(mem, b + "tb.png", 0, 0, rc.right, rc.bottom);
-        if (fw > 0) draw_image(mem, b + "progress" + std::to_string(cb) + ".png", 0, 0, fw, rc.bottom);
-        draw_image(mem, b + "point.png", fw - 2, (rc.bottom - 9) / 2, 0, 0);
+    COLORREF accent = RGB(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
+    HWND parent = GetParent(m_wnd);
+    POINT org = { 0, 0 }; MapWindowPoints(m_wnd, parent, &org, 1);
+    HDC pdc = GetDC(parent);
+    BitBlt(mem, 0, 0, rc.right, rc.bottom, pdc, org.x, org.y, SRCCOPY);
+    ReleaseDC(parent, pdc);
+    if (fw > 0) {
+        RECT pf = { 0, 0, fw, rc.bottom };
+        HBRUSH br = CreateSolidBrush(accent); FillRect(mem, &pf, br); DeleteObject(br);
+        if (!base.empty()) draw_image(mem, base + "/images/fooAVA/progress.png", 0, 0, fw, rc.bottom);
     }
-    if (!drew) {
-        HBRUSH track = CreateSolidBrush(RGB(40, 40, 50)); FillRect(mem, &rc, track); DeleteObject(track);
-        RECT fill = rc; fill.right = fw;
-        COLORREF accent = RGB(80, 200, 120); if (m_engine) m_engine->theme_color(accent);
-        HBRUSH lvl = CreateSolidBrush(accent); FillRect(mem, &fill, lvl); DeleteObject(lvl);
-    }
+    if (!base.empty()) draw_image(mem, base + "/images/fooAVA/point.png", fw - 2, (rc.bottom - 9) / 2, 0, 0);
 
     BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
     SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
