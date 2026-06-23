@@ -88,12 +88,22 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   normal text in the box + records a click region (renders artist/album track-info). `$calcwidth(text)`
   → pixel width via `GetTextExtentPoint32A` (used to center text). `$imagebutton(l,t,imgN,imgH,action,…)`
   draws the image natural-size + ~11×15 hit box (rating stars).
-- `SkinEngine::handle_click` (from main WM_LBUTTONDOWN) dispatches the action: `PVAR:SET:key:value`
-  → set pvar + `save_pvars` + invalidate root (mode/theme switch, e.g. background/onepanel/mini.panels);
-  `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` the top-level window; `play`/`pause` →
+- Action dispatch lives in `SkinEngine::run_button_action(action)`: `PVAR:SET:key:value` → set pvar +
+  `save_pvars` + `repaint_all()` (invalidate canvas + every panel so a mode/theme change shows
+  everywhere); `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` top-level; `play`/`pause` →
   `play_or_pause`; `TAG:SET:field:value` → deferred (needs metadb edit). Else `run_action()` matches the
-  leaf name (e.g. "Playback/Random"→"Random") against registered `mainmenu_commands`. Values may be
-  `'`-quoted (`unquote`).
+  leaf name (e.g. "Playback/Random"→"Random") against `mainmenu_commands`. Values may be `'`-quoted (`unquote`).
+- **Click routing**: the main window's `handle_click` hit-tests `m_buttons` (master-script buttons). But
+  buttons drawn *inside* a native panel (Display's cover-case border `mini.panels` switch, play/pause,
+  rating) are recorded in the panel's OWN coordinate space: `draw_script(...,capture)` sets `m_capture`
+  so `$button*` push into the panel's vector; `TrackDisplay::on_click` (WM_LBUTTONDOWN) hit-tests that and
+  calls `run_button_action`. `Button` is now in its own `button.h` (breaks the skin_engine↔track_display
+  include cycle).
+- **Theme colour**: paths are dynamic — `prev$getpvar(colour.b).png` resolves at arg-eval time. The master
+  runs `$select($getpvar(set.colour),…)` → sets `colour.b` (1-4 image variant) + `colour` (r-g-b for
+  glow/bars). Native Seekbar/Volume read `SkinEngine::theme_color()` (pvar `colour`) so bars match buttons.
+  GAP: no in-player button changes `set.colour` — that control lives in the (not-yet-wired) fooAvA
+  **settings panel** (`FOOAvA_settings.ava`, recovered by the image tool but not loaded).
 - `fooava.txt` = pvar defaults + master. (block_00 init is NOT prepended — its deep-nested cover
   logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the
