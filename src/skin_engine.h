@@ -14,6 +14,7 @@
 #include "track_display.h"
 #include "seekbar.h"
 #include "volume.h"
+#include "popup.h"
 #include <vector>
 #include <map>
 #include <string>
@@ -77,6 +78,7 @@ private:
     std::map<std::string, std::unique_ptr<TrackDisplay>> m_track_displays;
     std::map<std::string, std::unique_ptr<Seekbar>> m_seekbars;
     std::map<std::string, std::unique_ptr<Volume>> m_volumes;
+    std::unique_ptr<Popup> m_popup; // settings/about popup ($button 'POPUP:<file.ava>')
 };
 
 } // namespace pui

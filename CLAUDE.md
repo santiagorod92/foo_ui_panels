@@ -90,9 +90,11 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
   draws the image natural-size + ~11×15 hit box (rating stars).
 - Action dispatch lives in `SkinEngine::run_button_action(action)`: `PVAR:SET:key:value` → set pvar +
   `save_pvars` + `repaint_all()` (invalidate canvas + every panel so a mode/theme change shows
-  everywhere); `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` top-level; `play`/`pause` →
-  `play_or_pause`; `TAG:SET:field:value` → deferred (needs metadb edit). Else `run_action()` matches the
-  leaf name (e.g. "Playback/Random"→"Random") against `mainmenu_commands`. Values may be `'`-quoted (`unquote`).
+  everywhere); `WINDOWSIZE:w:h[:halign:valign]` → `SetWindowPos` top-level; `POPUP:<file.ava>` → open that
+  PanelsUI script in a floating `Popup` window (`src/popup.{h,cpp}`; reads `panels/<file.ava>.txt`);
+  `play`/`pause` → `play_or_pause`; `TAG:SET:field:value` → deferred (needs metadb edit). Else
+  `run_action()` matches the leaf (e.g. "Playback/Random"→"Random") against `mainmenu_commands`. Values
+  may be `'`-quoted (`unquote`).
 - **Click routing**: the main window's `handle_click` hit-tests `m_buttons` (master-script buttons). But
   buttons drawn *inside* a native panel (Display's cover-case border `mini.panels` switch, play/pause,
   rating) are recorded in the panel's OWN coordinate space: `draw_script(...,capture)` sets `m_capture`
@@ -102,8 +104,11 @@ Result installed as `fooava.txt`. Default mode yields ~6 of 75 panels (rest gate
 - **Theme colour**: paths are dynamic — `prev$getpvar(colour.b).png` resolves at arg-eval time. The master
   runs `$select($getpvar(set.colour),…)` → sets `colour.b` (1-4 image variant) + `colour` (r-g-b for
   glow/bars). Native Seekbar/Volume read `SkinEngine::theme_color()` (pvar `colour`) so bars match buttons.
-  GAP: no in-player button changes `set.colour` — that control lives in the (not-yet-wired) fooAvA
-  **settings panel** (`FOOAvA_settings.ava`, recovered by the image tool but not loaded).
+  The theme is chosen in the **settings popup** (gear button, bottom-right → `POPUP:FOOAvA_settings.ava`):
+  three swatches do `PVAR:SET:set.colour:1|2|3` (blue/red/green) + other toggles (coverflow, hide-titlebar,
+  album-art, lyrics…). Settings script extracted from the .exe's `FOOAvA_settings.ava` config (a `04 00 00`
+  PanelsUI blob; its master is the longest text run — same extraction as s8.bin), preprocessed and shipped
+  as `panels/FOOAvA_settings.ava.txt`.
 - `fooava.txt` = pvar defaults + master. (block_00 init is NOT prepended — its deep-nested cover
   logic breaks titleformat → 0 placements.) Instead `read_panel_script()` prepends a simple
   `$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))` so the Display panel finds the

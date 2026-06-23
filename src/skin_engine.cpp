@@ -543,6 +543,16 @@ bool SkinEngine::run_button_action(const std::string& a) {
         }
         return true;
     }
+    // POPUP:<file.ava> — open a PanelsUI script (settings/about) in a floating window.
+    if (a.compare(0, 6, "POPUP:") == 0) {
+        std::string sc = read_panel_script(unquote(a.substr(6)));
+        if (!sc.empty()) {
+            if (!m_popup) m_popup = std::make_unique<Popup>();
+            m_popup->show(m_parent ? GetAncestor(m_parent, GA_ROOT) : nullptr,
+                          this, sc.c_str(), 260, 500, L"fooAvA Settings");
+        }
+        return true;
+    }
     // play / pause toggle (cover overlay button).
     if (a == "play" || a == "pause") { playback_control::get()->play_or_pause(); return true; }
     // TAG:SET:field:value — writing tags deferred (needs metadb edit transaction).
