@@ -275,8 +275,8 @@ public:
                 else if (d1.find(".png") != std::string::npos || d1.find(".jpg") != std::string::npos)
                     drew = draw_image(m_dc, resolve(d1), x, y, rawW > 0 ? rawW : 0, rawH > 0 ? rawH : 0);
             }
-            if (!drew) { RECT r = mkrect(x, y, hw, hh);
-                HBRUSH b = CreateSolidBrush(RGB(70, 80, 110)); FrameRect(m_dc, &r, b); DeleteObject(b); }
+            // No faint-frame fallback: a button whose image is missing stays invisible
+            // (still clickable) instead of showing an empty border.
             std::string act = clean_action(param_str(p,8));
             if (!act.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, hw, hh, act });
             return true;
@@ -611,6 +611,14 @@ bool SkinEngine::run_button_action(const std::string& a) {
         }
         return true;
     }
+    // MENUBAR:toggle — flip the menubar pvar and tell the top-level window to show/hide its menu.
+    if (a == "MENUBAR:toggle") {
+        int cur = m_pvars.count("menubar") ? atoi(m_pvars["menubar"].c_str()) : 1;
+        int nv = cur ? 0 : 1; m_pvars["menubar"] = std::to_string(nv); save_pvars();
+        if (m_parent) PostMessageW(GetAncestor(m_parent, GA_ROOT), PUI_WM_TOGGLE_MENU, (WPARAM)nv, 0);
+        repaint_all();
+        return true;
+    }
     // play / pause toggle (cover overlay button).
     if (a == "play" || a == "pause") { playback_control::get()->play_or_pause(); return true; }
     // TAG:SET:field:value — writing tags deferred (needs metadb edit transaction).
@@ -634,6 +642,18 @@ void SkinEngine::repaint_all() {
     for (auto& kv : m_track_displays) if (kv.second && kv.second->wnd()) InvalidateRect(kv.second->wnd(), nullptr, TRUE);
     for (auto& kv : m_seekbars)       if (kv.second && kv.second->wnd()) InvalidateRect(kv.second->wnd(), nullptr, TRUE);
     for (auto& kv : m_volumes)        if (kv.second && kv.second->wnd()) InvalidateRect(kv.second->wnd(), nullptr, TRUE);
+}
+
+int SkinEngine::pvar_int(const std::string& key, int def) {
+    if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
+    auto it = m_pvars.find(key);
+    return (it != m_pvars.end() && !it->second.empty()) ? atoi(it->second.c_str()) : def;
+}
+
+int SkinEngine::colour_index() const {
+    auto it = m_pvars.find("colour.b");
+    if (it != m_pvars.end()) { int v = atoi(it->second.c_str()); if (v >= 1 && v <= 4) return v; }
+    return 2; // blue default
 }
 
 bool SkinEngine::theme_color(COLORREF& out) const {

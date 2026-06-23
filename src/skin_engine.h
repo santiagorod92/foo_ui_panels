@@ -22,6 +22,10 @@
 
 namespace pui {
 
+// Posted to the top-level window to show/hide the native menu bar (wParam: 1 show, 0 hide).
+// Triggered by the settings popup's "show menu bar" toggle (action "MENUBAR:toggle").
+#define PUI_WM_TOGGLE_MENU (WM_USER + 0x501)
+
 struct Placement {
     std::string name, type;
     int x = 0, y = 0, w = 0, h = 0;
@@ -61,6 +65,15 @@ public:
 
     // Current theme accent colour (pvar "colour", "r-g-b"). Returns false if unset.
     bool theme_color(COLORREF& out) const;
+
+    // Skin base dir + current theme image index (pvar "colour.b": 1 black/2 blue/3 red/4 green).
+    // Used by the native seek/volume bars to draw with the skin's themed bar graphics.
+    const std::string& base_dir() const { return m_base; }
+    int colour_index() const;
+
+    // Read a persisted setup variable as int (loads pvars on first use). For main.cpp to
+    // query e.g. the "menubar" toggle before the first paint.
+    int pvar_int(const std::string& key, int def);
 
 private:
     friend class SkinHook;

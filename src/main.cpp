@@ -156,7 +156,8 @@ private:
             m_groups.push_back({ mgr, base });
             base += kSpan;
         }
-        SetMenu(m_wnd, m_menubar);
+        // Apply the persisted "show menu bar" setting (toggled from the fooAvA settings popup).
+        SetMenu(m_wnd, m_skin.pvar_int("menubar", 1) ? m_menubar : nullptr);
     }
 
     bool exec_command(UINT id) {
@@ -212,6 +213,9 @@ private:
                 if (self->exec_command(LOWORD(wp))) return 0;
             }
             break;
+        case PUI_WM_TOGGLE_MENU: // show/hide the menu bar (from settings popup)
+            if (self) { SetMenu(wnd, wp ? self->m_menubar : nullptr); self->resize_layout(); }
+            return 0;
         case WM_CLOSE:
             standard_commands::main_exit();
             return 0;
