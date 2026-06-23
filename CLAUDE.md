@@ -48,10 +48,12 @@ See `DESIGN.md` for full roadmap/facts.
   `render()` routes `$panel(...,"Track Display",...)` to a `TrackDisplay`, `"Seek Panel"` to a native
   `Seekbar` (`src/seekbar.{h,cpp}` — progress bar + click-to-seek), `"Volume Panel"` to native `Volume`
   (`src/volume.{h,cpp}` — drag slider, set_volume dB −100..0), others to `PanelHost`. The seek/volume
-  bars draw the played portion in the **theme colour** (`SkinEngine::theme_color()`, pvar `colour`) then
-  overlay `progress.png` (the skin's near-white alpha *gloss* — NOT a colour, so the colour is ours) +
-  `point.png` knob, over the blitted parent bg. (`progress{N}.png`/`tb.png` are gloss/ticked variants, not
-  the colour source.)
+  bars are transparent (blit parent bg) with a THIN (~4px, vertically centred) themed fill =
+  `bar/v{colour.b}.png` (a ~3px coloured gloss strip; volume adds the `bar/vol{colour.b}.png` round knob).
+  Fallback `image.cpp fill_gradient_v` (theme colour, light top → dark bottom) if the image is missing.
+  NOTE: don't fill the FULL panel height (looks too thick / misaligned with the volume knob), and don't use
+  `progress*.png`/`tb*.png` — those are near-white gloss/ticked overlays, NOT a colour source. The master's
+  own volume draw uses `%panel_volume%`/`%cwb_volume%` (foo_cwb_hooks, absent) so we must draw natively.
 
 ## fooAvA config format (s8.bin) — decoded
 `skins/fooava/config/s8.bin` layout: `[56-byte header][53 pvar KV pairs][length-prefixed script blocks]`.

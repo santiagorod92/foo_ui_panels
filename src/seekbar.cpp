@@ -43,21 +43,21 @@ void Seekbar::paint() {
     int fw = (int)(rc.right * frac);
 
     std::string base = m_engine ? m_engine->base_dir() : std::string();
+    int cb = m_engine ? m_engine->colour_index() : 2;
     COLORREF accent = RGB(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    // Groove: transparent dark — blit the skin background behind us.
+    // Transparent groove: the bottom bar bg shows through (stays dark like the skin).
     HWND parent = GetParent(m_wnd);
     POINT org = { 0, 0 }; MapWindowPoints(m_wnd, parent, &org, 1);
     HDC pdc = GetDC(parent);
     BitBlt(mem, 0, 0, rc.right, rc.bottom, pdc, org.x, org.y, SRCCOPY);
     ReleaseDC(parent, pdc);
-    // Played portion: theme-coloured base + the skin's white gloss overlay (progress.png is
-    // a near-white alpha gloss, NOT a colour — so the colour comes from us).
-    if (fw > 0) {
-        RECT pf = { 0, 0, fw, rc.bottom };
-        HBRUSH br = CreateSolidBrush(accent); FillRect(mem, &pf, br); DeleteObject(br);
-        if (!base.empty()) draw_image(mem, base + "/images/fooAVA/progress.png", 0, 0, fw, rc.bottom);
-    }
-    if (!base.empty()) draw_image(mem, base + "/images/fooAVA/point.png", fw - 2, (rc.bottom - 9) / 2, 0, 0);
+    // Played portion: thin themed bar graphic (bar/v{colour.b}.png is a ~3px coloured gloss),
+    // vertically centred; fall back to a thin gradient if the image is missing.
+    const int bh = 4, by = (rc.bottom - bh) / 2;
+    bool drew = false;
+    if (fw > 0 && !base.empty())
+        drew = draw_image(mem, base + "/images/fooAVA/bar/v" + std::to_string(cb) + ".png", 0, by, fw, bh);
+    if (fw > 0 && !drew) fill_gradient_v(mem, 0, by, fw, bh, accent);
 
     BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
     SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);

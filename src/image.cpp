@@ -86,6 +86,19 @@ bool draw_image(HDC dc, const std::string& path, int x, int y, int w, int h, int
     return true;
 }
 
+void fill_gradient_v(HDC dc, int x, int y, int w, int h, COLORREF base) {
+    if (w <= 0 || h <= 0) return;
+    auto sc = [](int v, double f) { int r = (int)(v * f); return r < 0 ? 0 : (r > 255 ? 255 : r); };
+    COLORREF top = RGB(sc(GetRValue(base),1.7), sc(GetGValue(base),1.7), sc(GetBValue(base),1.7));
+    COLORREF bot = RGB(sc(GetRValue(base),0.55), sc(GetGValue(base),0.55), sc(GetBValue(base),0.55));
+    TRIVERTEX v[2] = {
+        { x,     y,     (COLOR16)(GetRValue(top)<<8), (COLOR16)(GetGValue(top)<<8), (COLOR16)(GetBValue(top)<<8), 0 },
+        { x + w, y + h, (COLOR16)(GetRValue(bot)<<8), (COLOR16)(GetGValue(bot)<<8), (COLOR16)(GetBValue(bot)<<8), 0 },
+    };
+    GRADIENT_RECT gr = { 0, 1 };
+    GradientFill(dc, v, 2, &gr, 1, GRADIENT_FILL_RECT_V);
+}
+
 void images_shutdown() {
     g_cache.clear();
     if (g_started) { Gdiplus::GdiplusShutdown(g_token); g_started = false; }

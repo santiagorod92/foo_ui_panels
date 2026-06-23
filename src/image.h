@@ -13,6 +13,10 @@ namespace pui {
 bool draw_image(HDC dc, const std::string& path, int x, int y, int w, int h,
                 int alpha = 255, int rotateflip = 0);
 
+// Fill a rect with a smooth vertical gradient derived from `base` (lighter top → darker
+// bottom) — the glossy themed look used by the seek/volume bars. Links msimg32.
+void fill_gradient_v(HDC dc, int x, int y, int w, int h, COLORREF base);
+
 // Free the image cache + shut down GDI+ (call at component shutdown).
 void images_shutdown();
 
