@@ -9,27 +9,12 @@ description: >-
 runs:
   using: composite
   steps:
-    # {GITHUB_WORKSPACE}/
-    #   foobar2000/{SDK,helpers,shared,foobar2000_component_client}  <- SDK bundle
-    #   pfc/                                                         <- SDK bundle
-    #   foo_ui_panels/                                               <- this repo
-    - name: Checkout foobar2000 SDK (reupen/foobar2000-sdk-unmodified)
-      uses: actions/checkout@v6
-      with:
-        repository: reupen/foobar2000-sdk-unmodified
-        path: _sdk-staging
+    - name: Fetch foobar2000 SDK
+      uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
-    - name: Move SDK into the sibling layout
+    - name: Check the Windows import lib is there
       shell: bash
-      run: |
-        set -euo pipefail
-        mkdir -p foobar2000
-        for d in SDK helpers shared foobar2000_component_client; do
-          mv "_sdk-staging/foobar2000/$d" "foobar2000/$d"
-        done
-        mv _sdk-staging/pfc pfc
-        rm -rf _sdk-staging
-        test -f foobar2000/shared/shared-x64.lib
+      run: test -f foobar2000/shared/shared-x64.lib
 
     - name: Install clang-cl / lld-link / cmake / ninja (LLVM 19)
       shell: bash

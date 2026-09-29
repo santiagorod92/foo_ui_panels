@@ -36,13 +36,22 @@ original code is used, the skin format was reverse-engineered from fooAvA's conf
 
 ## Installation
 
-> **Windows only for now** (foobar2000 v2, 64-bit). macOS support is planned — see
-> [Roadmap](#roadmap).
+One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and macOS
+(universal, macOS 11+). **macOS support is experimental** — see [Roadmap](#roadmap).
 
 1. Download `foo_ui_panels_<version>.fb2k-component` from the [Releases](../../releases) page.
 2. Double-click it (or drag it onto foobar2000) and restart foobar2000.
+
+**Windows**
+
 3. Pick **Panels UI (reborn)** as the *User interface module* in **Preferences › Display**.
 4. Point the component at a skin: **Preferences › Display › Panels UI (reborn)** → skin folder.
+
+**macOS** — Panels UI is a layout element there, not a separate UI module:
+
+3. **View › Layout › Edit Layout**, add **Panels UI** and let it fill the window.
+4. Put the skin (its `fooava.txt`, `panels/`, `images/`) in
+   `~/Library/foobar2000-v2/foo_ui_panels/`.
 
 The component ships no skin of its own. fooAvA is distributed by its author (link above); the
 scripts in [`tools/`](tools/) recover its images and scripts from the original installer
@@ -51,8 +60,8 @@ component loads (`extract_fooava.py`).
 
 ## What's implemented
 
-- Full foobar2000 UI replacement (`user_interface` service, same slot as the Default UI or
-  Columns UI).
+- Full foobar2000 UI replacement on Windows (`user_interface` service, same slot as the Default
+  UI or Columns UI); a full-window layout element on macOS.
 - The Panels UI script engine: titleformat-driven canvas with `$panel`, `$button`/`$button2`,
   `$imageabs2`, `$drawrect`, `$font` (incl. glow), `$alignabs`, persistent `$setpvar`/`$getpvar`
   variables and the skin's button actions (transport, playback order, window size, popups…).
@@ -78,16 +87,22 @@ own):
 
 ## Roadmap
 
-- **macOS support** — one `.fb2k-component` for Windows and macOS, the same way foo_navidrome
-  ships today.
+- **macOS support** — builds and ships, but hasn't been runtime-tested on a Mac yet. Known gaps:
+  no Preferences page (skin folder is fixed, see Installation), 1x rendering on Retina
+  displays, and panels that host foobar2000's own UI elements only if a Mac element of the same
+  name exists.
 - A step-by-step guide for setting up fooAvA from its original download.
 
 Feedback, bug reports and ideas are very welcome in [Issues](../../issues).
 
 ## Building from source
 
-Cross-compiled on Linux with `clang-cl` + `lld-link` against the Windows SDK/CRT from
-[xwin](https://github.com/Jake-Shadle/xwin) — no Visual Studio needed.
+The skin engine and every panel are platform-free C++ (`src/core`, `src/panels`) drawing through
+a small canvas/view interface (`src/gfx`, `src/ui`); each platform supplies that layer
+(`src/platform/win`: Win32 + GDI/GDI+, `src/platform/mac`: Cocoa + CoreGraphics/CoreText).
+
+**Windows** — cross-compiled on Linux with `clang-cl` + `lld-link` against the Windows SDK/CRT
+from [xwin](https://github.com/Jake-Shadle/xwin) — no Visual Studio needed.
 
 ```sh
 # prerequisites (Arch shown): clang, lld, llvm, cmake, ninja, and xwin
@@ -111,6 +126,12 @@ copy), and `build.sh` fetches the latest
 
 `make run` builds, installs into a local foobar2000 (Wine) and relaunches it —
 see [`scripts/deploy.sh`](scripts/deploy.sh).
+
+**macOS** — `./scripts/mac-build.sh` (or `make mac-build`) builds the universal
+`build-mac/foo_ui_panels.component`: natively on a Mac (CMake + Ninja + Xcode command line
+tools), or cross-compiled on Linux with `clang` + `ld64.lld` against a `MacOSX.sdk` extracted
+from an Xcode `.xip` ([`scripts/extract-macos-sdk.py`](scripts/extract-macos-sdk.py), default
+location `~/.macos-sdk/MacOSX.sdk`).
 
 ## Releases
 

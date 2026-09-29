@@ -77,6 +77,70 @@ jobs:
         run: npx semantic-release
 
   # --------------------------------------------------------------------------
+  # macOS bundle for the release just cut: built natively (universal) from the release tag, so
+  # version.txt (hence the component version) is the released one, then merged into the
+  # release's .fb2k-component next to the Windows DLL (mac/ + x64/, foo_navidrome's layout).
+  # --------------------------------------------------------------------------
+  release-mac:
+    needs: release
+    if: needs.release.outputs.released_version != ''
+    runs-on: macos-latest
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.release.outputs.released_version }}
+          path: foo_ui_panels
+
+      - name: Fetch foobar2000 SDK
+        uses: ./foo_ui_panels/.github/actions/fetch-sdk
+
+      - name: Install ninja
+        run: brew install ninja
+
+      - name: Build (universal)
+        working-directory: foo_ui_panels
+        run: ./scripts/mac-build.sh
+
+      # A zip, not the bare bundle: upload-artifact drops file modes.
+      - name: Zip bundle
+        working-directory: foo_ui_panels/build-mac
+        run: ditto -c -k --keepParent foo_ui_panels.component foo_ui_panels-mac.zip
+
+      - uses: actions/upload-artifact@v6
+        with:
+          name: foo_ui_panels-mac
+          path: foo_ui_panels/build-mac/foo_ui_panels-mac.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  release-package:
+    needs: [release, release-mac]
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      VERSION: ${{ needs.release.outputs.released_version }}
+    steps:
+      - name: Checkout the release tag
+        uses: actions/checkout@v6
+        with:
+          ref: v${{ needs.release.outputs.released_version }}
+
+      - uses: actions/download-artifact@v6
+        with:
+          name: foo_ui_panels-mac
+
+      - name: Merge the macOS bundle into the release asset
+        run: |
+          set -euo pipefail
+          ASSET="foo_ui_panels_${VERSION}.fb2k-component"
+          gh release download "v${VERSION}" --pattern "$ASSET" --dir win
+          unzip -q "win/$ASSET" -d win/x
+          unzip -q foo_ui_panels-mac.zip -d mac
+          python3 scripts/package.py "$ASSET" --dll win/x/x64/foo_ui_panels.dll --mac mac/foo_ui_panels.component
+          gh release upload "v${VERSION}" "$ASSET" --clobber
+
+  # --------------------------------------------------------------------------
   # Hand the release to the n8n workflow that publishes it to the foobar2000.org
   # components admin panel (n8n holds the site login and the component id; this
   # step only sends public release metadata). Runs on the self-hosted homelab
@@ -90,7 +154,7 @@ jobs:
   # Without it the job is skipped instead of waiting forever for a runner.
   # --------------------------------------------------------------------------
   notify-n8n:
-    needs: release
+    needs: [release, release-package]
     if: needs.release.outputs.released_version != '' && vars.FOOBAR_ORG_PUBLISH == 'true'
     runs-on: [self-hosted, homelab]
     steps:

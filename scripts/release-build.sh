@@ -7,8 +7,8 @@
 # 2. Exports released_version to $GITHUB_OUTPUT (when running in Actions) so later jobs
 #    (notify-n8n) know which release was cut.
 # 3. Cross-builds build/foo_ui_panels.dll (./build.sh).
-# 4. Packages foo_ui_panels_<version>.fb2k-component in the repo root: a zip with the DLL
-#    under x64/ — foobar2000 v2's layout for 64-bit binaries (x86 would sit at the root).
+# 4. Packages foo_ui_panels_<version>.fb2k-component in the repo root (scripts/package.py):
+#    the DLL under x64/ — foobar2000 v2's layout for 64-bit binaries.
 set -euo pipefail
 
 VERSION="${1:?usage: release-build.sh <version>}"
@@ -25,10 +25,6 @@ fi
 
 ASSET="foo_ui_panels_${VERSION}.fb2k-component"
 rm -f "$ASSET"
-python3 - "$ASSET" <<'EOF'
-import sys, zipfile
-with zipfile.ZipFile(sys.argv[1], "w", zipfile.ZIP_DEFLATED) as z:
-    z.write("build/foo_ui_panels.dll", "x64/foo_ui_panels.dll")
-EOF
+# Windows only here; the release workflow adds the macOS bundle (mac/) in a later job.
+python3 scripts/package.py "$ASSET" --dll build/foo_ui_panels.dll
 echo "packaged: $ASSET"
-python3 -m zipfile -l "$ASSET"
