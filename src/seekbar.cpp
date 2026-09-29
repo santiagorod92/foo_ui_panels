@@ -23,7 +23,7 @@ void Seekbar::register_class() {
 HWND Seekbar::create(HWND parent, SkinEngine* engine) {
     register_class();
     m_engine = engine;
-    m_wnd = CreateWindowExW(0, kClass, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+    m_wnd = CreateWindowExW(0, kClass, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, 0, 0,
                             parent, nullptr, GetModuleHandleW(nullptr), this);
     if (m_wnd) SetTimer(m_wnd, 1, 500, nullptr);
     return m_wnd;
@@ -32,6 +32,10 @@ HWND Seekbar::create(HWND parent, SkinEngine* engine) {
 void Seekbar::paint() {
     RECT rc; GetClientRect(m_wnd, &rc);
     HDC dc = GetDC(m_wnd);
+    // The skin script draws this bar itself (rail art, fill, knob — from the playback/volume
+    // fields); show exactly what the canvas rendered beneath us and only handle the mouse here.
+    // The own drawing below is just a fallback until the first canvas snapshot exists.
+    if (m_engine && m_engine->draw_canvas_snapshot(dc, m_wnd)) { ReleaseDC(m_wnd, dc); return; }
     HDC mem = CreateCompatibleDC(dc);
     HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
     HGDIOBJ ob = SelectObject(mem, bmp);
@@ -77,7 +81,7 @@ LRESULT CALLBACK Seekbar::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         double len = pc->playback_get_length();
         if (len > 0 && rc.right > 0 && pc->playback_can_seek())
             pc->playback_seek(len * GET_X_LPARAM(lp) / rc.right);
-        InvalidateRect(wnd, nullptr, FALSE);
+        InvalidateRect(GetParent(wnd), nullptr, FALSE); // canvas redraws the bar, then refresh_bars()
         return 0;
     }
     case WM_DESTROY: KillTimer(wnd, 1); return 0;

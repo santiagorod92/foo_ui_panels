@@ -7,4 +7,4 @@
 #include <windows.h>
 #include <objbase.h>
 #include <mmsystem.h>
-#include "../sdk/foobar2000/SDK/foobar2000.h"
+#include <foobar2000/SDK/foobar2000.h> // SDK_ROOT is on the include path (CMakeLists.txt)

@@ -8,8 +8,9 @@ ground-up reimplementation aiming for skin compatibility, not a recompile.
 
 - **No original source exists.** Closed-source; docs site `panels.fooblog2000.com` is dead.
   Skin-format spec must be recovered from archive.org + real old skin files.
-- **SDK acquired**: `sdk/` = razielanarki/foobar2000-sdk (v2 layout: `foobar2000/`, `pfc/`, `libPPUI/`).
-  Columns UI reference + `columns_ui-sdk` in `columns_ui_ref/` (LGPL — reference only, do not copy).
+- **SDK**: reupen/foobar2000-sdk-unmodified, kept outside the repo as siblings of the checkout
+  (`../foobar2000/`, `../pfc/`; see CLAUDE.md "Build"). Columns UI
+  (https://github.com/reupen/columns_ui, LGPL-3.0) consulted as reference only.
 - **Target service**: full UI replacement via `user_interface` (SDK `foobar2000/SDK/ui.h`,
   versions v1–v4), registered with `FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT`.
   Same slot `foo_ui_classic` / Columns UI occupy.

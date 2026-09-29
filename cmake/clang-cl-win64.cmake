@@ -1,5 +1,5 @@
 # Cross-compile toolchain: Linux clang-cl -> Windows x64 .dll
-# Uses Windows SDK/CRT splatted by xwin into ~/.xwin
+# Uses the Windows SDK/CRT splatted by xwin (default ~/.xwin)
 set(CMAKE_SYSTEM_NAME Windows)
 set(CMAKE_SYSTEM_PROCESSOR AMD64)
 
@@ -9,7 +9,12 @@ if(NOT CMAKE_BUILD_TYPE)
   set(CMAKE_BUILD_TYPE Release CACHE STRING "" FORCE)
 endif()
 
-set(XWIN "$ENV{HOME}/.xwin")
+# xwin splat location: $XWIN if set (build.sh exports it), else ~/.xwin
+if(DEFINED ENV{XWIN})
+  set(XWIN "$ENV{XWIN}")
+else()
+  set(XWIN "$ENV{HOME}/.xwin")
+endif()
 
 set(CMAKE_C_COMPILER   clang-cl)
 set(CMAKE_CXX_COMPILER clang-cl)
