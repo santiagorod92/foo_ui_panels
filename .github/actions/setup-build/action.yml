@@ -41,8 +41,19 @@ runs:
         LLVM=19
         sudo apt-get update
         sudo apt-get install -y "clang-$LLVM" "lld-$LLVM" "llvm-$LLVM" cmake ninja-build
-        for t in clang-cl lld-link llvm-rc llvm-mt llvm-lib llvm-ar; do
-          sudo ln -sf "/usr/lib/llvm-$LLVM/bin/$t" "/usr/local/bin/$t"
+        BIN="/usr/lib/llvm-$LLVM/bin"
+        # clang-cl / lld-link are argv[0] personalities of clang / lld: if the package doesn't
+        # ship the named link, alias the base binary under that name.
+        declare -A base=( [clang-cl]=clang [lld-link]=lld [llvm-lib]=llvm-ar
+                          [llvm-rc]=llvm-rc [llvm-mt]=llvm-mt [llvm-ar]=llvm-ar )
+        for t in "${!base[@]}"; do
+          src=""
+          for c in "$BIN/$t" "/usr/bin/$t-$LLVM" "$BIN/${base[$t]}"; do
+            [ -x "$c" ] && { src="$c"; break; }
+          done
+          [ -n "$src" ] || { echo "missing $t (looked in $BIN)"; ls "$BIN"; exit 1; }
+          sudo ln -sf "$src" "/usr/local/bin/$t"
+          echo "$t -> $src"
         done
         hash -r
         clang-cl --version | head -1
