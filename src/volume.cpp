@@ -23,7 +23,7 @@ void Volume::register_class() {
 HWND Volume::create(HWND parent, SkinEngine* engine) {
     register_class();
     m_engine = engine;
-    m_wnd = CreateWindowExW(0, kClass, L"", WS_CHILD | WS_VISIBLE, 0, 0, 0, 0,
+    m_wnd = CreateWindowExW(0, kClass, L"", WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS, 0, 0, 0, 0,
                             parent, nullptr, GetModuleHandleW(nullptr), this);
     if (m_wnd) SetTimer(m_wnd, 1, 500, nullptr);
     return m_wnd;
@@ -34,12 +34,16 @@ void Volume::set_from_x(int x) {
     if (rc.right <= 0) return;
     float f = (float)x / rc.right; if (f < 0) f = 0; if (f > 1) f = 1;
     playback_control::get()->set_volume(f * 100.0f - 100.0f); // dB: -100..0
-    InvalidateRect(m_wnd, nullptr, FALSE);
+    InvalidateRect(GetParent(m_wnd), nullptr, FALSE); // canvas redraws the bar, then refresh_bars()
 }
 
 void Volume::paint() {
     RECT rc; GetClientRect(m_wnd, &rc);
     HDC dc = GetDC(m_wnd);
+    // The skin script draws this bar itself (rail art, fill, knob — from the playback/volume
+    // fields); show exactly what the canvas rendered beneath us and only handle the mouse here.
+    // The own drawing below is just a fallback until the first canvas snapshot exists.
+    if (m_engine && m_engine->draw_canvas_snapshot(dc, m_wnd)) { ReleaseDC(m_wnd, dc); return; }
     HDC mem = CreateCompatibleDC(dc);
     HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
     HGDIOBJ ob = SelectObject(mem, bmp);

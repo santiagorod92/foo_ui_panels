@@ -3,21 +3,23 @@ build/
 *.dll
 *.lib
 *.pdb
+*.fb2k-component
 
-# vendored third-party (fetch separately; licenses restrict redistribution)
-sdk/
-columns_ui_ref/
+# release tooling (semantic-release is installed ad hoc in CI, see release.yml)
+node_modules/
 
 # xwin cache + Windows SDK downloads (Microsoft, do not redistribute)
 .xwin-cache/
 
-# extracted skin assets (fooAvA is CC-BY-NC-SA; proprietary DLLs) — local only
+# local skin workspace: extracted fooAvA assets (CC BY-NC-SA, by dawxxx666) + legacy Panels UI
+# DLLs — never published; users get fooAvA from its author (see README)
 skins/
 
-# editor
+# editor / assistant
 *.user
 .cache/
 compile_commands.json
+.claude/
 
 # python cache
 __pycache__/

@@ -1,0 +1,35 @@
+name: Build
+
+# Build check on every push / PR: cross-compiles the DLL exactly like local dev
+# (./build.sh: clang-cl + lld-link + xwin on Linux) and uploads it as an artifact.
+# Releases are cut separately by release.yml (semantic-release).
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout foo_ui_panels
+        uses: actions/checkout@v6
+        with:
+          path: foo_ui_panels
+
+      - name: Set up cross-build
+        uses: ./foo_ui_panels/.github/actions/setup-build
+
+      - name: Build
+        working-directory: foo_ui_panels
+        run: ./build.sh
+
+      - name: Upload foo_ui_panels.dll
+        uses: actions/upload-artifact@v6
+        with:
+          name: foo_ui_panels-dll
+          path: foo_ui_panels/build/foo_ui_panels.dll
+          if-no-files-found: error
+          retention-days: 7

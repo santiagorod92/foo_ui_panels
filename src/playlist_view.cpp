@@ -34,7 +34,8 @@ struct PLScripts {
         c->compile_safe(genre,  "[%genre%]");
         c->compile_safe(row,    "$num(%tracknumber%,2). [%title%]");
         c->compile_safe(len,    "[%length%]");
-        c->compile_safe(rating, "[%rating%]");
+        // navidrome:// tracks keep their rating in NAVIDROME_RATING (foo_navidrome), not RATING
+        c->compile_safe(rating, "$if2(%navidrome_rating%,[%rating%])");
         c->compile_safe(cover,  "$replace(%path%,%filename_ext%,*folder*.*)");
         ok = true;
     }
@@ -100,11 +101,14 @@ void PlaylistView::paint() {
         if (!wp.empty()) {
             for (auto& ch : wp) if (ch == '\\') ch = '/';
             std::string wppath = sbase0 + "/images/fooAVA/" + wp;
-            drewbg = draw_image(mem, wppath, 0, 0, rc.right, rc.bottom);
+            // Transparent: show exactly what the skin canvas drew beneath us (its wallpaper at
+            // the skin's own alpha), so the list sits on the same background as the rest.
+            drewbg = m_engine->draw_canvas_snapshot(mem, m_wnd);
+            if (!drewbg) {
+                drewbg = draw_image(mem, wppath, 0, 0, rc.right, rc.bottom);
+                if (drewbg) fill_alpha(mem, 0, 0, rc.right, rc.bottom, RGB(24, 24, 26), 215);
+            }
             if (drewbg) {
-                // Heavy neutral-grey overlay: the skin's playlist bg is dark grey, not the blue
-                // wallpaper — suppress the blue, leaving only a faint texture.
-                fill_alpha(mem, 0, 0, rc.right, rc.bottom, RGB(24, 24, 26), 215);
                 COLORREF avg;
                 if (image_avg_color(wppath, avg)) { // tint highlight to the wallpaper
                     auto up = [](int v){ int r = v * 3; return r > 255 ? 255 : (r < 40 ? 40 : r); };
@@ -113,6 +117,7 @@ void PlaylistView::paint() {
             }
         }
     }
+    if (!drewbg && m_engine) drewbg = m_engine->draw_canvas_snapshot(mem, m_wnd); // wallpaper off
     if (!drewbg) fill_gradient_v(mem, 0, 0, rc.right, rc.bottom, RGB(30, 30, 34));
     SetBkMode(mem, TRANSPARENT);
 
@@ -135,7 +140,8 @@ void PlaylistView::paint() {
             // cover thumb
             if (!sbase.empty()) {
                 pfc::string8 cov = fmt(h0, g_pl.cover);
-                draw_image(mem, cov.get_ptr(), 5, y + 4, 38, 38);
+                // folder.* on disk, else the album-art pipeline (navidrome:// etc. have no folder)
+                draw_cover_art(mem, cov.get_ptr(), h0, 5, y + 4, 38, 38);
             }
             SetTextColor(mem, RGB(235, 240, 255)); SelectObject(mem, fHdr);
             pfc::string8 art = fmt(h0, g_pl.artist);

@@ -3,16 +3,22 @@
 #include "win_sdk.h"
 #include <windowsx.h>
 #include "skin_engine.h"
+#include "skin_paths.h"
 #include "image.h"
 #include <vector>
 #include <string>
 #include <cstdio>
 
+#ifndef PUI_VERSION
+#define PUI_VERSION "0.0.0-dev"
+#endif
+
 DECLARE_COMPONENT_VERSION(
     "Panels UI (reborn)",
-    "0.1.0",
-    "Reimplementation of the discontinued foo_ui_panels for foobar2000 v2.\n"
-    "Phase 1: bare main window. https://github.com/ (WIP)\n");
+    PUI_VERSION,
+    "Reimplementation of the discontinued Panels UI (foo_ui_panels, by Terrestrial) for foobar2000 v2,\n"
+    "revived to run the fooAvA skin by dawxxx666 again.\n"
+    "https://github.com/santiagorod92/foo_ui_panels\n");
 
 VALIDATE_COMPONENT_FILENAME("foo_ui_panels.dll");
 
@@ -32,6 +38,10 @@ public:
         m_hook = hook;
         HINSTANCE inst = core_api::get_my_instance();
 
+        // OLE drag&drop (RegisterDragDrop/DoDragDrop in playlist_view.cpp) needs this on the
+        // UI thread. Safe to call even if fb2k's core already did — OleInitialize ref-counts.
+        m_ole_ok = SUCCEEDED(OleInitialize(nullptr));
+
         WNDCLASSEXW wc = { sizeof(wc) };
         wc.lpfnWndProc   = WndProc;
         wc.hInstance     = inst;
@@ -43,7 +53,7 @@ public:
         m_wnd = CreateWindowExW(
             0, WNDCLASS_NAME, L"foobar2000 — Panels UI (reborn)",
             WS_OVERLAPPEDWINDOW | WS_CLIPCHILDREN, // don't paint over hosted child panels
-            CW_USEDEFAULT, CW_USEDEFAULT, 900, 600,
+            CW_USEDEFAULT, CW_USEDEFAULT, 950, 750,
             nullptr, nullptr, inst, this);
 
         if (!m_wnd) throw exception_win32(GetLastError());
@@ -63,16 +73,20 @@ public:
         "$panel(np,Track Display,190,48,$eval({%_width%}-202),70,)"
         "$panel(pl,Playlist View,190,124,$eval({%_width%}-202),$eval({%_height%}-136),)";
 
+    static const UINT_PTR kCanvasTimer = 77;
+
     void build_layout() {
         m_skin.set_parent(m_wnd);
-        m_skin.set_base_dir(module_dir());
+        // Preferences-page skin folder override if set, else the component's own folder.
+        std::string dir = pui::resolve_skin_dir();
+        m_skin.set_base_dir(dir);
         // Load the real fooAvA master script if present, else the built-in test skin.
-        std::string skin = read_file(module_dir() + "\\fooava.txt");
-        console::printf("Panels UI: fooava.txt read %u bytes from %s",
-                        (unsigned)skin.size(), module_dir().c_str());
+        std::string skin = read_file(dir + "\\fooava.txt");
+        console::printf("Panels UI: fooava.txt read %u bytes from %s", (unsigned)skin.size(), dir.c_str());
         bool ok = m_skin.load(skin.empty() ? kTestSkin : skin.c_str());
         console::printf("Panels UI: compile -> %s", ok ? "ok" : "FAILED");
         InvalidateRect(m_wnd, nullptr, FALSE);
+        SetTimer(m_wnd, kCanvasTimer, 500, nullptr); // progress bar / time readout advance with playback
     }
 
     static std::string read_file(const std::string& path) {
@@ -85,18 +99,6 @@ public:
         return s;
     }
 
-    // Directory of our DLL (UTF-8), used as the skin asset base for now.
-    static std::string module_dir() {
-        wchar_t mod[MAX_PATH] = {};
-        GetModuleFileNameW(core_api::get_my_instance(), mod, MAX_PATH);
-        std::wstring wd(mod);
-        auto s = wd.find_last_of(L"\\/");
-        if (s != std::wstring::npos) wd.resize(s);
-        char u[MAX_PATH * 3] = {};
-        WideCharToMultiByte(CP_UTF8, 0, wd.c_str(), -1, u, sizeof(u), nullptr, nullptr);
-        return std::string(u);
-    }
-
     void resize_layout() { InvalidateRect(m_wnd, nullptr, FALSE); }
 
     void shutdown() override {
@@ -106,6 +108,7 @@ public:
         m_groups.clear();
         pui::images_shutdown();
         UnregisterClassW(WNDCLASS_NAME, core_api::get_my_instance());
+        if (m_ole_ok) { OleUninitialize(); m_ole_ok = false; }
     }
 
     void activate() override {
@@ -125,6 +128,7 @@ private:
     HWND        m_wnd     = nullptr;
     HookProc_t  m_hook    = nullptr;
     HMENU       m_menubar = nullptr;
+    bool        m_ole_ok  = false;
 
     pui::SkinEngine m_skin;
 
@@ -173,6 +177,33 @@ private:
         SetMenu(m_wnd, m_skin.pvar_int("menubar", 1) ? m_menubar : nullptr);
     }
 
+    // The logo button's menu: the same six top-level menus as the bar, as one popup. Fresh
+    // popups every time (an HMENU can only have one parent, and this keeps check states current).
+    void show_main_menu(int x, int y) {
+        struct Root { const GUID& guid; const wchar_t* label; };
+        const Root roots[] = {
+            { mainmenu_groups::file, L"File" }, { mainmenu_groups::edit, L"Edit" },
+            { mainmenu_groups::view, L"View" }, { mainmenu_groups::playback, L"Playback" },
+            { mainmenu_groups::library, L"Library" }, { mainmenu_groups::help, L"Help" },
+        };
+        std::vector<MenuGroup> groups;
+        HMENU pop = CreatePopupMenu();
+        UINT base = 1;
+        for (const auto& r : roots) {
+            auto mgr = mainmenu_manager::get();
+            mgr->instantiate(r.guid);
+            HMENU sub = CreatePopupMenu();
+            mgr->generate_menu_win32(sub, base, kSpan, kMenuFlags);
+            AppendMenuW(pop, MF_POPUP, reinterpret_cast<UINT_PTR>(sub), r.label);
+            groups.push_back({ mgr, base, sub, &r.guid });
+            base += kSpan;
+        }
+        UINT cmd = TrackPopupMenu(pop, TPM_RETURNCMD | TPM_LEFTBUTTON, x, y, 0, m_wnd, nullptr);
+        if (cmd) for (auto& g : groups)
+            if (cmd >= g.base && cmd < g.base + kSpan) { g.mgr->execute_command(cmd - g.base); break; }
+        DestroyMenu(pop); // also destroys the submenus
+    }
+
     bool exec_command(UINT id) {
         for (auto& g : m_groups) {
             if (id >= g.base && id < g.base + kSpan)
@@ -200,8 +231,21 @@ private:
         case WM_LBUTTONDOWN:
             if (self && self->m_skin.handle_click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp))) return 0;
             break;
+        case WM_MOUSEMOVE: {
+            TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, wnd, 0 };
+            TrackMouseEvent(&tme); // arms WM_MOUSELEAVE so hover clears when the cursor exits
+            if (self && self->m_skin.update_hover(GET_X_LPARAM(lp), GET_Y_LPARAM(lp)))
+                InvalidateRect(wnd, nullptr, FALSE);
+            break;
+        }
+        case WM_MOUSELEAVE:
+            if (self && self->m_skin.update_hover(-1, -1)) InvalidateRect(wnd, nullptr, FALSE);
+            break;
         case WM_ERASEBKGND:
             return 1; // we fully paint in WM_PAINT (no flicker)
+        case WM_TIMER:
+            if (wp == kCanvasTimer) { InvalidateRect(wnd, nullptr, FALSE); return 0; }
+            break;
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC dc = BeginPaint(wnd, &ps);
             RECT rc; GetClientRect(wnd, &rc);
@@ -209,8 +253,9 @@ private:
             HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
             HGDIOBJ ob = SelectObject(mem, bmp);
             FillRect(mem, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
-            if (self) self->m_skin.render(mem, rc.right, rc.bottom);
+            if (self) { self->m_skin.render(mem, rc.right, rc.bottom); self->m_skin.snapshot_canvas(mem, rc.right, rc.bottom); }
             BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
+            if (self) self->m_skin.refresh_bars();
             SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
             EndPaint(wnd, &ps);
             return 0;
@@ -229,6 +274,9 @@ private:
         case WM_INITMENUPOPUP: // refresh the opening popup so radios/checks (e.g. Order) are current
             if (self) self->refresh_popup(reinterpret_cast<HMENU>(wp));
             break;
+        case PUI_WM_SHOW_MAINMENU:
+            if (self) self->show_main_menu((int)wp, (int)lp);
+            return 0;
         case PUI_WM_TOGGLE_MENU: // show/hide the menu bar (from settings popup)
             if (self) { SetMenu(wnd, wp ? self->m_menubar : nullptr); self->resize_layout(); }
             return 0;

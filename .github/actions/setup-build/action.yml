@@ -1,0 +1,63 @@
+name: Set up cross-build
+description: >-
+  Lays out the foobar2000 SDK as siblings of the repo checkout (the layout build.sh /
+  CMakeLists.txt expect, same as foo_navidrome) and installs the Linux -> Windows x64
+  cross toolchain: clang-cl, lld-link, llvm-rc/mt, cmake, ninja, plus the xwin-splatted
+  Windows SDK/CRT (cached).
+  Expects the repo to be checked out at $GITHUB_WORKSPACE/foo_ui_panels.
+
+runs:
+  using: composite
+  steps:
+    # {GITHUB_WORKSPACE}/
+    #   foobar2000/{SDK,helpers,shared,foobar2000_component_client}  <- SDK bundle
+    #   pfc/                                                         <- SDK bundle
+    #   foo_ui_panels/                                               <- this repo
+    - name: Checkout foobar2000 SDK (reupen/foobar2000-sdk-unmodified)
+      uses: actions/checkout@v6
+      with:
+        repository: reupen/foobar2000-sdk-unmodified
+        path: _sdk-staging
+
+    - name: Move SDK into the sibling layout
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p foobar2000
+        for d in SDK helpers shared foobar2000_component_client; do
+          mv "_sdk-staging/foobar2000/$d" "foobar2000/$d"
+        done
+        mv _sdk-staging/pfc pfc
+        rm -rf _sdk-staging
+        test -f foobar2000/shared/shared-x64.lib
+
+    - name: Install clang-cl / lld-link / cmake / ninja
+      shell: bash
+      run: |
+        set -euo pipefail
+        sudo apt-get update
+        sudo apt-get install -y clang lld llvm cmake ninja-build
+        # Ubuntu ships the MSVC-style drivers versioned (clang-cl-18 ...) under
+        # /usr/lib/llvm-*/bin; make sure the unversioned names the toolchain file uses exist.
+        for t in clang-cl lld-link llvm-rc llvm-mt; do
+          if ! command -v "$t" >/dev/null; then
+            src=$(ls /usr/lib/llvm-*/bin/"$t" 2>/dev/null | sort -V | tail -1)
+            [ -n "$src" ] && sudo ln -sf "$src" "/usr/local/bin/$t"
+          fi
+          command -v "$t"
+        done
+
+    - name: Cache xwin Windows SDK/CRT splat
+      id: xwin-cache
+      uses: actions/cache@v4
+      with:
+        path: ~/.xwin
+        key: xwin-${{ runner.os }}-v1
+
+    - name: Splat Windows SDK/CRT with xwin
+      if: steps.xwin-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        set -euo pipefail
+        cargo install xwin --locked
+        xwin --accept-license splat --output ~/.xwin

@@ -1,0 +1,143 @@
+name: Release
+
+# semantic-release on every push to main: conventional commits -> semver bump,
+# CHANGELOG.md + version.txt committed back, v<version> tag, GitHub release with
+# foo_ui_panels_<version>.fb2k-component attached (built by scripts/release-build.sh
+# from .releaserc.json's prepareCmd). Then notify-n8n hands the release to the n8n
+# workflow that publishes it on foobar2000.org (same flow as foo_navidrome).
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    # Skip semantic-release's own release commit ([skip ci]) and commit types
+    # .releaserc.json treats as "no release" — no point in a full build to no-op.
+    # Only looks at the push's top commit (head_commit).
+    if: >-
+      !contains(github.event.head_commit.message, '[skip ci]') &&
+      !startsWith(github.event.head_commit.message, 'chore:') &&
+      !startsWith(github.event.head_commit.message, 'chore(') &&
+      !startsWith(github.event.head_commit.message, 'docs:') &&
+      !startsWith(github.event.head_commit.message, 'docs(') &&
+      !startsWith(github.event.head_commit.message, 'style:') &&
+      !startsWith(github.event.head_commit.message, 'style(') &&
+      !startsWith(github.event.head_commit.message, 'test:') &&
+      !startsWith(github.event.head_commit.message, 'test(') &&
+      !startsWith(github.event.head_commit.message, 'ci:') &&
+      !startsWith(github.event.head_commit.message, 'ci(')
+
+    # Written to $GITHUB_OUTPUT by scripts/release-build.sh; empty when no release was cut.
+    outputs:
+      released_version: ${{ steps.semantic_release.outputs.released_version }}
+
+    steps:
+      - name: Checkout foo_ui_panels
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 0          # semantic-release needs full history + tags
+          persist-credentials: true
+          path: foo_ui_panels
+
+      - name: Set up cross-build
+        uses: ./foo_ui_panels/.github/actions/setup-build
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '24'
+
+      - name: Install semantic-release + plugins
+        working-directory: foo_ui_panels
+        run: |
+          npm install --no-save --no-package-lock \
+            semantic-release@22 \
+            conventional-changelog-conventionalcommits@7 \
+            @semantic-release/changelog@6 \
+            @semantic-release/git@10 \
+            @semantic-release/exec@6 \
+            @semantic-release/github@9
+
+      - name: Run semantic-release
+        id: semantic_release
+        working-directory: foo_ui_panels
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: npx semantic-release
+
+  # --------------------------------------------------------------------------
+  # Hand the release to the n8n workflow that publishes it to the foobar2000.org
+  # components admin panel (n8n holds the site login and the component id; this
+  # step only sends public release metadata). Runs on the self-hosted homelab
+  # runner (infra-foundations github_runner role) so the webhook resolves on the
+  # LAN, bypassing Cloudflare.
+  #
+  # Opt-in until that side exists: set the repo variable FOOBAR_ORG_PUBLISH=true
+  # once (1) the component exists on foobar2000.org and its n8n workflow is
+  # imported, (2) this repo has a homelab runner registered, and (3) the secrets
+  # N8N_FOOBAR_RELEASE_WEBHOOK_URL / N8N_FOOBAR_RELEASE_WEBHOOK_SECRET are set.
+  # Without it the job is skipped instead of waiting forever for a runner.
+  # --------------------------------------------------------------------------
+  notify-n8n:
+    needs: release
+    if: needs.release.outputs.released_version != '' && vars.FOOBAR_ORG_PUBLISH == 'true'
+    runs-on: [self-hosted, homelab]
+    steps:
+      - name: Notify n8n for foobar2000.org publish
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.release.outputs.released_version }}
+          N8N_WEBHOOK_URL: ${{ secrets.N8N_FOOBAR_RELEASE_WEBHOOK_URL }}
+          N8N_WEBHOOK_SECRET: ${{ secrets.N8N_FOOBAR_RELEASE_WEBHOOK_SECRET }}
+        run: |
+          set -euo pipefail
+          ASSET="foo_ui_panels_${VERSION}.fb2k-component"
+
+          # The homelab runner has no `gh` CLI - fetch release metadata via the API.
+          RELEASE_JSON=$(curl -sf \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/releases/tags/v${VERSION}")
+          ASSET_URL=$(printf '%s' "$RELEASE_JSON" | jq -r --arg name "$ASSET" \
+            '.assets[] | select(.name == $name) | .url')
+          CHANGELOG=$(printf '%s' "$RELEASE_JSON" | jq -r .body)
+
+          # foobar2000.org's changelog field only takes plain "* item" bullets
+          # (/componentsadmin/help-changelog) - strip semantic-release's markdown
+          # (version header, ### sections, per-item commit links).
+          CHANGELOG_CLEAN=$(printf '%s' "$CHANGELOG" | perl -0pe '
+            s/^## \[.*?\].*\n//m;
+            s/^### /\n/mg;
+            s/\s*\(\[[0-9a-f]{7,40}\]\([^\)]+\)\)//g;
+            s/\n{3,}/\n\n/g;
+            s/^\n+//;
+            s/\n+$/\n/;
+          ')
+
+          if [ -z "$ASSET_URL" ]; then
+            echo "ERROR: could not resolve download url for $ASSET" >&2
+            exit 1
+          fi
+
+          curl -sf -X POST "$N8N_WEBHOOK_URL" \
+            -H "Content-Type: application/json" \
+            -H "X-Webhook-Secret: ${N8N_WEBHOOK_SECRET}" \
+            -d "$(jq -n \
+                  --arg version "$VERSION" \
+                  --arg changelog "$CHANGELOG_CLEAN" \
+                  --arg asset_url "$ASSET_URL" \
+                  --arg asset_name "$ASSET" \
+                  '{version:$version, changelog:$changelog, asset_url:$asset_url, asset_name:$asset_name}')"
+          echo "notified n8n to publish $ASSET (v${VERSION}) to foobar2000.org"
