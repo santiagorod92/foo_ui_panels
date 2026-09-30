@@ -128,6 +128,11 @@ public:
     virtual gfx::Rect client_rect() const = 0;
     virtual void invalidate() = 0;
     virtual void set_titlebar_visible(bool visible) = 0;
+    // Start a native move-the-window drag for the left button press being handled right now.
+    // A skin that hides the title bar leaves nothing to drag the window by, so a press that no
+    // $button consumed moves the window instead — the platform runs its own drag loop, and
+    // nothing happens if the press turns out not to be a drag.
+    virtual void begin_window_drag() = 0;
     // Resize to a client size of w x h, keeping the halign ("LEFT"/"RIGHT"/"CENTER") /
     // valign ("TOP"/"BOTTOM"/"CENTER") edge of the current frame fixed.
     virtual void resize_client(int w, int h, const std::string& halign, const std::string& valign) = 0;

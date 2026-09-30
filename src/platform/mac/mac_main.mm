@@ -53,7 +53,8 @@ public:
         m_skin.refresh_bars();
     }
     void on_mouse_down(const pui::ui::MouseEvent& e) override {
-        if (e.button == pui::ui::MouseButton::Left) m_skin.handle_click(e.x, e.y);
+        if (e.button != pui::ui::MouseButton::Left) return;
+        if (!m_skin.handle_click(e.x, e.y)) begin_window_drag();
     }
     void on_mouse_move(int x, int y, unsigned, bool) override { if (m_skin.update_hover(x, y)) invalidate(); }
     void on_mouse_leave() override { if (m_skin.update_hover(-1, -1)) invalidate(); }
@@ -94,6 +95,14 @@ public:
         win.movableByWindowBackground = !visible;
         [view() setFrame:[win.contentView bounds]];
         invalidate();
+    }
+    void begin_window_drag() override {
+        // As a layout element the window is foobar2000's own, shared with the other elements:
+        // dragging it from our canvas would be a surprise there.
+        if (!m_owns_window) return;
+        NSWindow* win = view().window;
+        NSEvent* ev = NSApp.currentEvent;
+        if (win && ev && ev.type == NSEventTypeLeftMouseDown) [win performWindowDragWithEvent:ev];
     }
     void resize_client(int w, int h, const std::string& halign, const std::string& valign) override {
         NSWindow* win = view().window;

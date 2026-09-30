@@ -119,6 +119,12 @@ public:
         SetWindowPos(m_wnd, nullptr, 0, 0, 0, 0,
             SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
     }
+    void begin_window_drag() override {
+        if (!m_wnd) return;
+        // Hand the press to the window manager as if it had landed on the caption.
+        ReleaseCapture();
+        SendMessageW(m_wnd, WM_NCLBUTTONDOWN, HTCAPTION, 0);
+    }
     void resize_client(int w, int h, const std::string& halign, const std::string& valign) override {
         if (!m_wnd || w <= 0 || h <= 0) return;
         // SetWindowPos takes the OUTER window rect — convert via AdjustWindowRectEx, or every
@@ -254,7 +260,11 @@ private:
             if (self) self->resize_layout();
             return 0;
         case WM_LBUTTONDOWN:
-            if (self && self->m_skin.handle_click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp))) return 0;
+            if (self) {
+                if (self->m_skin.handle_click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp))) return 0;
+                self->begin_window_drag(); // bare canvas doubles as the window's drag handle
+                return 0;
+            }
             break;
         case WM_MOUSEMOVE: {
             TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, wnd, 0 };
