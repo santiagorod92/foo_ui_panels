@@ -26,4 +26,14 @@ LIPO=$(command -v lipo || command -v llvm-lipo)
 # Ad-hoc signature (arm64 macOS refuses unsigned code). ld64.lld already signs each slice on
 # Linux; on a Mac re-sign the whole bundle.
 if command -v codesign >/dev/null; then codesign --force --sign - "$OUT"; fi
-echo "built: $OUT"
+# Both slices have to be there. foobar2000 ships universal and runs native arm64 on Apple
+# Silicon, so a component built for x86_64 alone would not load there at all -- the host
+# process is arm64 and Rosetta never enters into it.
+archs=$("$LIPO" -archs "$OUT/Contents/MacOS/foo_ui_panels")
+for want in arm64 x86_64; do
+  case " $archs " in
+    *" $want "*) ;;
+    *) echo "mac-build: missing $want slice (got: $archs)" >&2; exit 1 ;;
+  esac
+done
+echo "built: $OUT ($archs)"
