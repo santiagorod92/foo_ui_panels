@@ -21,6 +21,7 @@ public:
     void on_mouse_move(int x, int y, unsigned mods, bool left_down) override;
     void on_mouse_leave() override;
     void on_mouse_down(const ui::MouseEvent& e) override;
+    bool on_key_down(int key, unsigned mods) override;
 
 private:
     void on_click(int x, int y, bool dbl, bool shift, bool ctrl);

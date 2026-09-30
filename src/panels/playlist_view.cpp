@@ -263,4 +263,25 @@ void PlaylistView::on_mouse_down(const ui::MouseEvent& e) {
     }
 }
 
+// Ctrl+A / Cmd+A selects the whole playlist, Delete drops the selection from it — what the
+// stock playlist views bind, and the panel has keyboard focus from the click that reached it.
+// macOS reports Command as kCtrl (mods_of in mac_view.mm), and its own Delete key arrives as
+// kKeyBackspace, so both spellings count.
+bool PlaylistView::on_key_down(int key, unsigned mods) {
+    auto pm = playlist_manager::get();
+    if (key == 'A' && (mods & ui::kCtrl) && !(mods & ui::kAlt)) {
+        pm->activeplaylist_set_selection(bit_array_true(), bit_array_true());
+        invalidate();
+        return true;
+    }
+    if ((key == ui::kKeyDelete || key == ui::kKeyBackspace) && !(mods & (ui::kCtrl | ui::kAlt))) {
+        pm->activeplaylist_undo_backup(); // same as the stock views: the removal stays undoable
+        pm->activeplaylist_remove_selection();
+        m_anchor = -1; // the shift-range anchor indexed items that are gone now
+        invalidate();
+        return true;
+    }
+    return false;
+}
+
 } // namespace pui

@@ -270,9 +270,22 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)mouseMoved:(NSEvent*)e { [self move:e]; }
 - (void)mouseDragged:(NSEvent*)e { [self move:e]; }
 - (void)mouseExited:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_leave(); }
-- (void)mouseDown:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Left]); }
+- (void)takeFocus {
+    // Nothing makes a plain NSView the first responder on its own, and without that the view
+    // never sees keyDown: — so a panel's keyboard handling (playlist Cmd+A / Delete) would
+    // depend on whatever happened to hold focus.
+    NSWindow* w = self.window;
+    if (w && w.firstResponder != self) [w makeFirstResponder:self];
+}
+- (void)mouseDown:(NSEvent*)e {
+    [self takeFocus];
+    if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Left]);
+}
 - (void)mouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Left]); }
-- (void)rightMouseDown:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Right]); }
+- (void)rightMouseDown:(NSEvent*)e {
+    [self takeFocus];
+    if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Right]);
+}
 - (void)rightMouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Right]); }
 - (void)otherMouseDown:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Middle]); }
 - (void)otherMouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Middle]); }

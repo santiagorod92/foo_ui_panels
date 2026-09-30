@@ -336,9 +336,11 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
         self->m_tracking = false;
         if (live) v->on_mouse_leave();
         return 0;
-    case WM_LBUTTONDOWN:   if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Left, false)); return 0;
+    // Take keyboard focus on a press: a panel that handles keys (playlist Ctrl+A / Delete)
+    // only gets WM_KEYDOWN while it holds focus, and clicking it is what says "this one".
+    case WM_LBUTTONDOWN:   SetFocus(wnd); if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Left, false)); return 0;
     case WM_LBUTTONDBLCLK: if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Left, true)); return 0;
-    case WM_RBUTTONDOWN:   if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Right, false)); return 0;
+    case WM_RBUTTONDOWN:   SetFocus(wnd); if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Right, false)); return 0;
     case WM_RBUTTONDBLCLK: if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Right, true)); return 0;
     case WM_MBUTTONDOWN:   if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Middle, false)); return 0;
     case WM_LBUTTONUP:     if (live) v->on_mouse_up(self->mouse_event(lp, MouseButton::Left, false)); return 0;
