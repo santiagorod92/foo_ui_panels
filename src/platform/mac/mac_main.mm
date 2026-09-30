@@ -145,6 +145,9 @@ FB2K_SERVICE_FACTORY(ui_element_mac_panels);
 const GUID g_panels_ui_guid =
     { 0x6f0a1b2c, 0x3d4e, 0x4f50, { 0x9a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x60, 0x71 } };
 
+class panels_ui_mac;
+panels_ui_mac* g_active_ui = nullptr; // the live module, for the initquit teardown below
+
 class panels_ui_mac : public user_interface {
 public:
     const char* get_name() override { return "Panels UI (reborn)"; }
@@ -167,15 +170,26 @@ public:
         [win center];
         [win makeKeyAndOrderFront:nil];
         m_window = win;
+        g_active_ui = this;
         // The core hands this back as an NSWindow; it does not own it (see shutdown()).
         return (__bridge void*)win;
     }
 
     void shutdown() override {
-        m_root.reset(); // saves pvars + tears the panels down before the window goes
+        teardown();
         [m_window close];
         m_window = nil;
         pui::images_shutdown();
+    }
+
+    // Drop the canvas while the core is still up. ~PanelsRoot saves the pvars through a
+    // cfg_var, which needs live services: quitting from a skin button reaches NSApplication
+    // terminate: -> exit() without the core ever calling shutdown(), so the only thing left to
+    // destroy the root would be this factory's own static destructor — by then the core is gone
+    // and the cfg_var write crashes in pfc::crashImpl(). initquit::on_quit() calls this first.
+    void teardown() {
+        m_root.reset();
+        if (g_active_ui == this) g_active_ui = nullptr;
     }
 
     void activate() override {
@@ -194,11 +208,20 @@ private:
     NSWindow* m_window = nil; // strong (ARC): nothing else keeps the window alive
     std::unique_ptr<PanelsRoot> m_root;
 };
-static user_interface_factory<panels_ui_mac> g_panels_ui_mac_factory;
+// service_factory_single_v2_t, not user_interface_factory (= service_factory_single_t): the
+// latter holds the instance as a member, so our static destructors — which run before the
+// core's at exit() — destroy the UI module while the core still holds a reference to it, and
+// releasing that reference calls into a destroyed vtable (__cxa_pure_virtual, abort). The v2
+// factory heap-allocates on first access and never frees, which the SDK documents as the fix
+// for "dangling references to our object getting invoked [...] during late shutdown".
+static service_factory_single_v2_t<panels_ui_mac> g_panels_ui_mac_factory;
 
 class panels_initquit : public initquit {
 public:
-    void on_quit() override { pui::images_shutdown(); }
+    void on_quit() override {
+        if (g_active_ui) g_active_ui->teardown(); // pvars saved while the core is still alive
+        pui::images_shutdown();
+    }
 };
 FB2K_SERVICE_FACTORY(panels_initquit);
 
