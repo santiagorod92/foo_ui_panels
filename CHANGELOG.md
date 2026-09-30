@@ -1,3 +1,10 @@
+## [1.1.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.0.0...v1.1.0) (2026-09-30)
+
+
+### Features
+
+* macOS support and platform-free core ([#2](https://github.com/santiagorod92/foo_ui_panels/issues/2)) ([607e1ca](https://github.com/santiagorod92/foo_ui_panels/commit/607e1ca9525d4de9f7e0ace984b28ecb4b72afdf))
+
 ## 1.0.0 (2026-09-29)
 
 
