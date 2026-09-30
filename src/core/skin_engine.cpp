@@ -1003,9 +1003,9 @@ const GUID g_pvars_guid =
 cfg_var_modern::cfg_string g_pvars_cfg(g_pvars_guid, "");
 }
 
-std::map<std::string, std::string> load_all_pvars() {
+PvarMap load_all_pvars() {
     pfc::string8 data = g_pvars_cfg.get();
-    std::map<std::string, std::string> out;
+    PvarMap out;
     std::string s(data.get_ptr(), data.length());
     size_t pos = 0;
     while (pos < s.size()) {
@@ -1019,7 +1019,7 @@ std::map<std::string, std::string> load_all_pvars() {
     return out;
 }
 
-void save_all_pvars(const std::map<std::string, std::string>& pvars) {
+void save_all_pvars(const PvarMap& pvars) {
     std::string out;
     for (auto& kv : pvars) { out += kv.first; out += '='; out += kv.second; out += '\n'; }
     g_pvars_cfg.set(out.c_str());

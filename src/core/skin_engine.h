@@ -27,8 +27,18 @@ namespace pui {
 // needing a live SkinEngine instance (the page runs standalone, before/without a canvas).
 // Reserved keys prefixed "_prefs_" (font/accent overrides) are consulted by SkinHook's own
 // font selection and SkinEngine::theme_color() as a fallback when a skin doesn't set its own.
-std::map<std::string, std::string> load_all_pvars();
-void save_all_pvars(const std::map<std::string, std::string>& pvars);
+// Panels UI matched pvar names without regard to case: fooAvA's settings popup writes
+// PVAR:SET:hidetitlebar while its master script reads $getpvar(Hidetitlebar), and the toggle
+// only works if those are the same variable.
+struct PvarNameLess {
+    bool operator()(const std::string& a, const std::string& b) const {
+        return stricmp_utf8(a.c_str(), b.c_str()) < 0;
+    }
+};
+using PvarMap = std::map<std::string, std::string, PvarNameLess>;
+
+PvarMap load_all_pvars();
+void save_all_pvars(const PvarMap& pvars);
 
 // Built-in fallback skin script (no fooava.txt in the skin folder).
 const char* builtin_test_skin();
@@ -179,7 +189,7 @@ private:
     ui::MainWindow* m_main = nullptr;
     std::string m_base;
     service_ptr_t<titleformat_object> m_script;
-    std::map<std::string, std::string> m_pvars;
+    PvarMap m_pvars;
     // Panels UI's $puts/$get scratch pool (per-run, not persisted) and the cache of compiled
     // argument snippets we re-run to resolve them (skin: "$get(fontAVAsize_3)").
     std::map<std::string, std::string> m_tfvars;
