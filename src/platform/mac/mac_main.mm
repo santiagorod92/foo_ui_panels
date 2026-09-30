@@ -1,8 +1,10 @@
 // foo_ui_panels (reborn) — macOS entry point.
-// foobar2000 for Mac has no replaceable UI module: Panels UI registers a layout element
-// ("Panels UI", ui_element_mac). Add it in View > Layout > Edit Layout and let it fill the
-// window; the element's view is the skin canvas (SkinEngine renders into it) and implements
-// ui::MainWindow for the script actions that act on the window.
+// Two ways in, both backed by the same PanelsRoot canvas (SkinEngine renders into it and it
+// implements ui::MainWindow for the script actions that act on the window):
+//   * user_interface — a full UI module, picked in Preferences > Display > User Interface,
+//     owning its own NSWindow. init() returns that NSWindow as fb2k::hwnd_t (SDK/ui.h).
+//   * ui_element_mac — a "Panels UI" element for the Default UI's layout, added by name in
+//     View > Layout > Edit Layout. Useful to embed the canvas next to stock elements.
 #import <Cocoa/Cocoa.h>
 #include "../../fb2k.h"
 #include "mac_view.h"
@@ -133,6 +135,66 @@ public:
     GUID get_guid() override { return g_element_guid; }
 };
 FB2K_SERVICE_FACTORY(ui_element_mac_panels);
+
+// --- full UI module -------------------------------------------------------------------------
+// Same slot as the Default User Interface: selected in Preferences > Display > User Interface,
+// stored as the ui.module GUID. The macOS menu bar stays the core's, so unlike the Windows
+// build there is no menu of our own to put up.
+
+// {6F0A1B2C-3D4E-4F50-9A1B-2C3D4E5F6071} — same module identity as the Windows build.
+const GUID g_panels_ui_guid =
+    { 0x6f0a1b2c, 0x3d4e, 0x4f50, { 0x9a, 0x1b, 0x2c, 0x3d, 0x4e, 0x5f, 0x60, 0x71 } };
+
+class panels_ui_mac : public user_interface {
+public:
+    const char* get_name() override { return "Panels UI (reborn)"; }
+
+    fb2k::hwnd_t init(HookProc_t) override {
+        m_root = std::make_unique<PanelsRoot>();
+        NSWindow* win = [[NSWindow alloc]
+            initWithContentRect:NSMakeRect(0, 0, 950, 750)
+                      styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
+                                 NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable)
+                        backing:NSBackingStoreBuffered
+                          defer:NO];
+        win.title = @"foobar2000";
+        win.releasedWhenClosed = NO; // we hold the only strong reference, in m_window
+        win.frameAutosaveName = @"foo_ui_panels.mainwindow";
+        NSView* canvas = m_root->view();
+        canvas.frame = [win.contentView bounds];
+        canvas.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
+        [win.contentView addSubview:canvas];
+        [win center];
+        [win makeKeyAndOrderFront:nil];
+        m_window = win;
+        // The core hands this back as an NSWindow; it does not own it (see shutdown()).
+        return (__bridge void*)win;
+    }
+
+    void shutdown() override {
+        m_root.reset(); // saves pvars + tears the panels down before the window goes
+        [m_window close];
+        m_window = nil;
+        pui::images_shutdown();
+    }
+
+    void activate() override {
+        [NSApp activateIgnoringOtherApps:YES];
+        [m_window makeKeyAndOrderFront:nil];
+    }
+    void hide() override { [m_window miniaturize:nil]; }
+    bool is_visible() override { return m_window != nil && m_window.isVisible && !m_window.isMiniaturized; }
+    GUID get_guid() override { return g_panels_ui_guid; }
+
+    void override_statusbar_text(const char*) override {}
+    void revert_statusbar_text() override {}
+    void show_now_playing() override {}
+
+private:
+    NSWindow* m_window = nil; // strong (ARC): nothing else keeps the window alive
+    std::unique_ptr<PanelsRoot> m_root;
+};
+static user_interface_factory<panels_ui_mac> g_panels_ui_mac_factory;
 
 class panels_initquit : public initquit {
 public:
