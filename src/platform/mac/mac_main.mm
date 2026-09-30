@@ -23,7 +23,9 @@ const GUID g_element_guid = { 0x3e5b7c21, 0x9a4d, 0x4f6e, { 0x8b, 0x12, 0x7d, 0x
 // view, and the ui::MainWindow the engine talks to.
 class PanelsRoot : public pui::ui::View, public pui::ui::MainWindow {
 public:
-    PanelsRoot() {
+    // owns_window: the canvas fills a window of ours (the user_interface module) rather than
+    // sitting in foobar2000's own layout — only then may a skin restyle the window chrome.
+    explicit PanelsRoot(bool owns_window = false) : m_owns_window(owns_window) {
         m_host = pui::ui::mac::create_root_view(this, pui::ui::ViewOptions{});
         m_skin.set_main_window(this);
         std::string dir = pui::resolve_skin_dir();
@@ -63,9 +65,36 @@ public:
         return pui::gfx::Rect{ 0, 0, (int)b.size.width, (int)b.size.height };
     }
     void invalidate() override { [view() setNeedsDisplay:YES]; }
-    // The window chrome belongs to foobar2000's own layout here; a skin hiding it would leave
-    // the window unmovable.
-    void set_titlebar_visible(bool) override {}
+
+    // $windowstyle(hidetitlebar|showtitlebar). Hidden means: no title, no traffic lights, and
+    // the canvas extending over the whole frame — the Cocoa equivalent of the Windows build
+    // dropping WS_CAPTION. The skin re-runs this on every repaint, so do nothing when already
+    // in the wanted state.
+    // As a layout element the window is foobar2000's own and shared with other elements, so
+    // leave its chrome alone (m_owns_window).
+    void set_titlebar_visible(bool visible) override {
+        if (!m_owns_window || visible == m_titlebar_visible) return;
+        NSWindow* win = view().window;
+        if (!win) return;
+        m_titlebar_visible = visible;
+        if (visible) win.styleMask &= ~NSWindowStyleMaskFullSizeContentView;
+        else         win.styleMask |= NSWindowStyleMaskFullSizeContentView;
+        win.titlebarAppearsTransparent = !visible;
+        win.titleVisibility = visible ? NSWindowTitleVisible : NSWindowTitleHidden;
+        // With the style mask alone the titlebar view stays on top of the content and keeps
+        // swallowing clicks — which would eat the skin's own close/minimise buttons, drawn in
+        // exactly that strip. Hide the whole container.
+        NSButton* close = [win standardWindowButton:NSWindowCloseButton];
+        for (NSWindowButton b : { NSWindowCloseButton, NSWindowMiniaturizeButton, NSWindowZoomButton })
+            [win standardWindowButton:b].hidden = !visible;
+        if (NSView* titlebar = close.superview) {
+            if (NSView* container = titlebar.superview) container.hidden = !visible;
+        }
+        // Nothing is left to drag the window by once the chrome is gone.
+        win.movableByWindowBackground = !visible;
+        [view() setFrame:[win.contentView bounds]];
+        invalidate();
+    }
     void resize_client(int w, int h, const std::string& halign, const std::string& valign) override {
         NSWindow* win = view().window;
         if (!win || w <= 0 || h <= 0) return;
@@ -104,6 +133,8 @@ public:
 private:
     pui::SkinEngine m_skin;
     std::unique_ptr<pui::ui::ViewHost> m_host;
+    bool m_owns_window = false;
+    bool m_titlebar_visible = true;
 };
 
 } // namespace
@@ -153,7 +184,7 @@ public:
     const char* get_name() override { return "Panels UI (reborn)"; }
 
     fb2k::hwnd_t init(HookProc_t) override {
-        m_root = std::make_unique<PanelsRoot>();
+        m_root = std::make_unique<PanelsRoot>(/*owns_window*/ true);
         NSWindow* win = [[NSWindow alloc]
             initWithContentRect:NSMakeRect(0, 0, 950, 750)
                       styleMask:(NSWindowStyleMaskTitled | NSWindowStyleMaskClosable |
