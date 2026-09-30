@@ -1,34 +1,42 @@
 # foo_ui_panels — reborn (foobar2000 v2)
 
 Ground-up reimplementation of discontinued **Panels UI** (`foo_ui_panels`, ~fb2k 0.9.5.2)
-for **foobar2000 v2 (64-bit), Windows** (macOS planned). Original closed-source — skin compatibility goal, not recompile.
+for **foobar2000 v2 — Windows x64 + macOS (universal)**. Original closed-source — skin compatibility goal, not recompile.
 See `DESIGN.md` for roadmap/facts, `FORMAT.md` for legacy type→DUI mapping.
 
-## Platform scope: Windows now, macOS later (deferred)
-Ships **Windows x64 only** for now. **macOS is a planned future goal** (README "Roadmap"): one
-`.fb2k-component` for both, like `foo_navidrome` (its CLAUDE.md "Working rule"). Deferred by
-the user on 2026-09-29 — don't start the port unprompted. Meanwhile, keep the door open:
-- New logic (script engine, models, actions) goes in platform-free C++ where it costs nothing
-  extra; keep `HWND`/`HDC`/GDI confined to drawing/window/menu code, don't spread it further.
-- When the port starts, this becomes foo_navidrome's rule: every feature/fix lands on BOTH
-  platforms (Win32 `.cpp` + Cocoa `.mm`), both builds + CI legs green, release zip = `mac/`
-  bundle + `x64/` DLL. First step then: verify on the mac-vm (foo_navidrome `scripts/mac-vm/`)
-  whether fb2k Mac allows a `user_interface` module (`init` returns an `NSWindow` per SDK
-  `ui.h`) or needs `ui_element_mac` panels instead.
+## Working rule: every change is cross-platform
+Port started 2026-09-29 (foo_navidrome's rule, its CLAUDE.md "Working rule"): every feature/fix
+lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundle + `x64/` DLL.
+- Logic (script engine, panels, models, actions) is platform-free C++ in `src/core` /
+  `src/panels`, drawing via `gfx::Canvas` and windowing via `ui::View`/`ui::ViewHost`/
+  `ui::MainWindow` + the `ui::` service functions. No `HWND`/`HDC`/Cocoa there — only
+  `#include "../fb2k.h"`, never `win_sdk.h`. `make check-portable` (also in CI) enforces it.
+- A new platform need = a new method/function in `src/gfx/canvas.h` or `src/ui/view.h`,
+  implemented in BOTH `src/platform/win/` and `src/platform/mac/`.
+- macOS integration: a `ui_element_mac` layout element ("Panels UI") hosting the whole canvas,
+  not `user_interface` (whether fb2k Mac accepts a replacement UI module is still unverified).
+- macOS runtime is untested so far: no Mac, and foo_navidrome's `scripts/mac-vm/` needs its
+  one-time manual macOS install (VNC) before it can run anything.
 
 ## Key decisions
-- Target service: full UI replacement via `user_interface` (`foobar2000/SDK/ui.h`, v1–v4),
+- Target service (Windows): full UI replacement via `user_interface` (`foobar2000/SDK/ui.h`, v1–v4),
   `FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT`. Same slot as foo_ui_classic / Columns UI.
 - Build (Windows): **cross-compile on Linux** (clang-cl + lld-link + xwin Windows SDK/CRT). No MSVC.
+- Build (macOS): CMake `APPLE` branch, same SDK/pfc/shared source sets as the SDK's .xcodeproj
+  targets. Native on a Mac/CI, or cross on Linux (clang + ld64.lld, `cmake/clang-macos.cmake`,
+  MacOSX.sdk from an Xcode .xip via `scripts/extract-macos-sdk.py`).
 - Reference skin / format spec source: **fooAvA 1.05** (dawxxx666). Its config XML = the
   Panels-UI format to reverse-engineer. Full fooAvA also needs `foo_chronflow` (dead, not replicated).
 - Architecture: Panels UI is a scripted absolute-positioning canvas (`SkinEngine`), not a
-  splitter tree — `splitter.{h,cpp}` exists but is unused by the current design.
+  splitter tree. Hosted panels live in one name-keyed registry (`SkinEngine::Slot`).
+- Transparent panels show what's beneath them from engine-kept frames, never by reading
+  screen/sibling pixels: `snapshot_canvas`/`draw_canvas_snapshot` (master canvas) and
+  `store_panel_frame`/`backdrop_for` (a panel's last frame, e.g. spectrum over the cover).
 - Cross-component integration (e.g. `foo_navidrome`, same author): when a track needs something
   only another of our own fb2k components can do correctly (e.g. rating a `navidrome://` track —
   a normal file-tag write fails, no real file backs it), that component exposes a small
   `service_base` interface; we vendor a GUID-matched copy of just the contract header
-  (`src/navidrome_rating_api.h`) and find it via `service_enum_t` at runtime — no build coupling,
+  (`src/core/navidrome_rating_api.h`) and find it via `service_enum_t` at runtime — no build coupling,
   no-op if the other component isn't installed. See `skin_engine.cpp`'s `set_rating()`. Pattern +
   full consumer list documented in `foo_navidrome`'s own CLAUDE.md ("Cross-compatibility with
   other same-author components") — add a symmetric note there for any new interface.
@@ -43,45 +51,52 @@ the user on 2026-09-29 — don't start the port unprompted. Meanwhile, keep the 
 - Never commit: `.xwin-cache/` (MS binaries), `skins/` (legacy Panels UI DLLs + fooAvA art,
   CC BY-NC-SA by dawxxx666 — never published, not even in releases), `build/`,
   `*.fb2k-component`. All gitignored — keep local.
-- Repo is headed public: the release ships ONLY the DLL; fooAvA is credited + linked (its
+- Repo is public: the release ships ONLY our binaries (DLL + mac bundle); fooAvA is credited + linked (its
   DeviantArt page) in README, never redistributed.
 
 ## Code map
-- `src/win_sdk.h` — canonical SDK include block (right order for clang-cl). Include this, not raw windows.h.
-- `src/main.cpp` — `user_interface` impl: main window, menu, keyboard, hosts root splitter.
-- `src/splitter.{h,cpp}` — unused legacy layout engine (raw Win32, no ATL/WTL).
-- `src/panel_host.{h,cpp}` — hosts a DUI `ui_element` by name inside a pane.
-- `src/skin_engine.{h,cpp}` — the interpreter: titleformat-based scripted canvas, draw funcs,
-  panel dispatch, button/action handling, theme colour. Core architecture — read this first.
-- `src/track_display.{h,cpp}`, `src/seekbar.{h,cpp}`, `src/volume.{h,cpp}`,
-  `src/playlist_view.{h,cpp}`, `src/spectrum.{h,cpp}`, `src/popup.{h,cpp}`,
-  `src/album_list.{h,cpp}` — native panel impls (`album_list` = "Graphical Browser"/"Album list"
-  legacy panel types — no stock DUI element to host, so it's native like the others, not a
-  pixel-exact fooAvA recreation; scans the Media Library, tile grid, click plays the album).
-- `src/lyrics_panel.{h,cpp}` — native "Lyric Show" panel: cover-art background, LRC sync/highlight,
-  tags → sidecar → cache → lrclib.net lookup; settings are `lyr.*` pvars edited from its right-click menu
-  (also reachable from the CD-case frame).
-- `src/navidrome_library_api.h` — vendored copy of `foo_navidrome`'s library-publishing contract
-  (album list, cover bytes, play album); `album_list.cpp` merges those albums into the Media Library grid.
-- `src/navidrome_rating_api.h` — vendored copy of `foo_navidrome`'s cross-component service
-  contract (see "Cross-component integration" above). Interface + GUID only, no implementation.
-- `src/image.{h,cpp}` — GDI+ image loading/drawing, cover art resolution (incl. wildcard paths).
-- `src/button.h` — shared `Button`/`Placement` types (breaks skin_engine↔track_display include cycle).
-- `src/preferences.cpp` — Preferences page (Display > Panels UI (reborn)): edits fooava.txt and
-  the skin folder override (plain Win32 EDIT/BUTTON controls, no ATL/WTL — not in our toolchain).
-  Applying rewrites the file but doesn't hot-reload; needs_restart tells fb2k to prompt for one.
-- `src/skin_paths.h` — `resolve_skin_dir()`: skin folder override (from preferences.cpp) if set,
-  else the component's own folder. Shared between main.cpp (initial load) and preferences.cpp.
-- Text drawing: **always `DrawTextW`** (via `dtW` UTF-8→UTF-16 helper). `DrawTextA` mojibakes
-  non-ASCII foobar strings (titleformat output, tags).
+- `src/fb2k.h` — the SDK include for platform-free code (pulls `win_sdk.h` only on Windows).
+- `src/gfx/canvas.h` — `gfx::Canvas` (shapes, UTF-8 text, glyph coverage for glow, images,
+  snapshots) + `gfx::Image` + platform image decoding. Text flags mirror DrawText's.
+- `src/ui/view.h` — `ui::View` (panel logic: paint/input/timers), `ui::ViewHost` (platform child
+  window), `ui::MainWindow` (what scripts do to the window), text field, menus, track context
+  menu, colour picker, editor window, embedded foreign UI element.
+- `src/core/skin_engine.{h,cpp}` — the interpreter: titleformat hook, draw funcs, panel
+  registry/dispatch, button actions, pvars, theme colour. Core architecture — read this first.
+- `src/core/image_cache.{h,cpp}` — image cache, wildcard cover paths, album-art pipeline.
+- `src/core/skin_paths.{h,cpp}` — skin folder settings/resolution (`component_dir()` is platform).
+- `src/core/component.cpp` — `DECLARE_COMPONENT_VERSION`, built-in fallback skin.
+- `src/core/button.h`, `fs_util.h` (UTF-8 paths/files), vendored `navidrome_*_api.h` (GUIDs
+  are C++17 `inline` variables — `FOOGUIDDECL` is Windows-only `selectany`).
+- `src/panels/` — native panels, one `ui::View` each: `track_display`, `seekbar`, `volume`,
+  `playlist_view`, `spectrum` (painted on the host's render thread, `render_fps`), `popup`
+  (settings popup), `album_list` ("Graphical Browser"/"Album list"/"Chronflow" — no stock DUI
+  element; Media Library + Navidrome albums, grid or cover flow), `lyrics_panel` ("Lyric Show":
+  LRC sync, tags → sidecar → cache → lrclib.net; `lyr.*` pvars), `quick_search`, `library_tree`
+  ("Playlist switcher", self-drawn tree).
+- `src/platform/win/` — `main.cpp` (`user_interface`, main window = `ui::MainWindow`, menus,
+  keyboard), `win_view.cpp` (`WinViewHost` child HWNDs + every `ui::` service),
+  `gdi_canvas.{h,cpp}` (GDI + GDI+), `panel_host` (hosts a DUI `ui_element` by name),
+  `preferences.cpp` (Preferences page, plain Win32 — no ATL/WTL in our toolchain).
+- `src/platform/mac/` — `mac_main.mm` (`ui_element_mac` "Panels UI", root canvas =
+  `ui::MainWindow`; skins in `~/Library/foobar2000-v2/foo_ui_panels`), `mac_view.mm` (flipped
+  NSView hosts + every `ui::` service), `mac_canvas.{h,mm}` (CoreGraphics/CoreText/ImageIO,
+  1 canvas px = 1 pt, dpi 96). No Preferences page yet.
+- Text drawing on Windows: **always wide APIs** (GdiCanvas converts UTF-8). `DrawTextA`
+  mojibakes non-ASCII foobar strings (titleformat output, tags).
 - fooAvA config decode tooling: `tools/extract_fooava.py` (s8.bin → `fooava.txt` + `panels/*.txt`,
   handles paren-balancing/pvar-seeding needed for fb2k titleformat to actually execute),
   `tools/recover_fooava_images.py` (ClickTeam SFX asset extraction). Don't reintroduce the old
   size-collision image-mapping heuristic — it mismapped same-size PNGs; offset-based mapping is exact.
+- `tools/wclick.c` + `scripts/ui-test.sh` — drive the Wine foobar2000 UI (post clicks/keys/text
+  to the Panels UI windows, screenshot it, edit pvars in config.sqlite, restart with a DLL).
 
 ## Build (Arch Linux cross-compile)
 - Prereqs: `clang-cl`, `lld-link`, `cmake`, `ninja`; `cargo install xwin && xwin --accept-license splat --output ~/.xwin`.
 - Build: `./build.sh` (or `make build`) → `build/foo_ui_panels.dll` (PE32+ x64, exports `foobar2000_get_interface`).
+- macOS: `./scripts/mac-build.sh` (`make mac-build`) → `build-mac/foo_ui_panels.component`
+  (universal; per-arch trees in `build-mac/<arch>`). `make check-portable` = core/panels compile
+  with the host clang, no Windows headers.
 - `make deploy` / `make run` — see Deploy/test below.
 - Toolchain file: `cmake/clang-cl-win64.cmake`.
 - SDK lives OUTSIDE the repo, as siblings of the checkout (same layout as foo_navidrome, which
@@ -95,12 +110,16 @@ the user on 2026-09-29 — don't start the port unprompted. Meanwhile, keep the 
   `DECLARE_COMPONENT_VERSION`.
 
 ## CI / release
-- `.github/workflows/build.yml` — build check + DLL artifact on push/PR.
+- `.github/workflows/build.yml` — build check on push/PR: Windows DLL + `check-portable`
+  (ubuntu) and the universal mac bundle (macos-latest), both as artifacts.
 - `.github/workflows/release.yml` — semantic-release (`.releaserc.json`, Conventional Commits,
   same config as foo_navidrome) on push to main; `scripts/release-build.sh <ver>` builds and
-  packages `foo_ui_panels_<ver>.fb2k-component` (DLL under `x64/`). Commit type = release impact:
+  packages `foo_ui_panels_<ver>.fb2k-component` (DLL under `x64/`, `scripts/package.py`); then
+  `release-mac` builds the bundle from the tag and `release-package` re-uploads the asset with
+  `mac/` added (`--clobber`) before `notify-n8n`. Commit type = release impact:
   `feat` minor, `fix`/`perf`/`refactor` patch, `chore`/`docs`/`ci`/`style`/`test` none.
-- Shared CI setup: `.github/actions/setup-build` (SDK sibling layout + clang-cl/xwin).
+- Shared CI setup: `.github/actions/fetch-sdk` (SDK sibling layout) and
+  `.github/actions/setup-build` (that + clang-cl/xwin).
 - `notify-n8n` job → n8n workflow (infra-foundations `n8n/`) that uploads to foobar2000.org
   componentsadmin. Gated on repo variable `FOOBAR_ORG_PUBLISH=true`; needs a homelab runner
   registered for this repo (infra-foundations `github_runner_instances`) + the

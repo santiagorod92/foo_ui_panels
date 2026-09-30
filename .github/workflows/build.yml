@@ -1,7 +1,11 @@
 name: Build
 
-# Build check on every push / PR: cross-compiles the DLL exactly like local dev
-# (./build.sh: clang-cl + lld-link + xwin on Linux) and uploads it as an artifact.
+# Build check on every push / PR, both platforms, uploaded as artifacts:
+#  - Windows x64 DLL: cross-compiled on Linux exactly like local dev (./build.sh: clang-cl +
+#    lld-link + xwin), plus `make check-portable` (the platform-free code builds without
+#    <windows.h>).
+#  - macOS universal (arm64 + x86_64) .component bundle: native on a macOS runner
+#    (scripts/mac-build.sh).
 # Releases are cut separately by release.yml (semantic-release).
 
 on:
@@ -26,10 +30,40 @@ jobs:
         working-directory: foo_ui_panels
         run: ./build.sh
 
+      - name: Platform-free code builds without Windows headers
+        working-directory: foo_ui_panels
+        run: make check-portable CXX_HOST=clang++-19
+
       - name: Upload foo_ui_panels.dll
         uses: actions/upload-artifact@v6
         with:
           name: foo_ui_panels-dll
           path: foo_ui_panels/build/foo_ui_panels.dll
+          if-no-files-found: error
+          retention-days: 7
+
+  build-mac:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout foo_ui_panels
+        uses: actions/checkout@v6
+        with:
+          path: foo_ui_panels
+
+      - name: Fetch foobar2000 SDK
+        uses: ./foo_ui_panels/.github/actions/fetch-sdk
+
+      - name: Install ninja
+        run: brew install ninja
+
+      - name: Build (universal)
+        working-directory: foo_ui_panels
+        run: ./scripts/mac-build.sh
+
+      - name: Upload foo_ui_panels.component
+        uses: actions/upload-artifact@v6
+        with:
+          name: foo_ui_panels-mac
+          path: foo_ui_panels/build-mac/foo_ui_panels.component
           if-no-files-found: error
           retention-days: 7

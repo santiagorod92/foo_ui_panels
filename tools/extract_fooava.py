@@ -18,7 +18,12 @@
 #   5. fix image path casing against the real images/ dir (PanelsUI was authored on a
 #      case-insensitive Windows fs; our images/ tree doesn't always match the decoded case)
 #
-# Usage: python3 extract_fooava.py <s8.bin> <out fooava.txt>
+# Also handles the standalone popup configs shipped next to it (FOOAvA_settings.ava,
+# "FOOAvA Playlist.ava", FOOAvA_about.ava): same blob format, but with no per-panel region.
+# The skin opens those with POPUP:<file>, which the component reads back as
+# panels/<file>.txt, so extract each one straight to that name.
+#
+# Usage: python3 extract_fooava.py <s8.bin|*.ava> <out fooava.txt | out panels/<file>.ava.txt>
 import os, re, struct, sys
 
 def fix_image_case(text, out_path):
@@ -27,6 +32,9 @@ def fix_image_case(text, out_path):
     # Index keys are relative to the skin dir (e.g. "images/fooAVA/back.png"), matching
     # what the script references look like once the leading '/' is stripped.
     skin_dir = os.path.dirname(out_path) or '.'
+    # A popup script is written straight into the skin's panels/ dir; images/ is its sibling.
+    if os.path.basename(skin_dir) == 'panels':
+        skin_dir = os.path.dirname(skin_dir) or '.'
     images_root = os.path.join(skin_dir, 'images')
     if not os.path.isdir(images_root):
         return text
@@ -290,9 +298,13 @@ def main(src, out):
 
     # Per-panel scripts: records after the master = <u32 nameLen><name><meta><script>.
     # Written (preprocessed) to <out dir>/panels/<name>.txt; the component loads them by panel name.
+    region = data.find(b'///END')
+    if region < 0:
+        # A standalone popup config (*.ava): one script, no per-panel records.
+        print('no per-panel region (standalone popup config)')
+        return
     pdir = os.path.join(os.path.dirname(out) or '.', 'panels')
     os.makedirs(pdir, exist_ok=True)
-    region = data.find(b'///END')
     recs = []; o = region
     while o < len(data) - 8:
         ln = struct.unpack_from('<I', data, o)[0]

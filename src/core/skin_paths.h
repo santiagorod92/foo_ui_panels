@@ -1,0 +1,23 @@
+// Skin-folder resolution + its persisted settings. The Preferences page writes the override;
+// the UI's initial load and the Preferences page both resolve it the same way.
+#pragma once
+#include <string>
+
+namespace pui {
+
+// Skins root folder (one subfolder per skin; "" = single-skin mode) and the active skin name.
+std::string skins_root();
+std::string active_skin();
+void set_skins_root(const std::string& utf8);
+void set_active_skin(const std::string& name);
+
+// The skin folder (fooava.txt + panels/ + images/): <root>/<active> if both are set and the
+// folder exists, else the component's own folder (historical default — next to the binary).
+std::string resolve_skin_dir();
+// Same, for not-yet-saved root/active values (the Preferences page's pending edits).
+std::string resolve_skin_dir_for(const std::string& root, const std::string& active);
+
+// Folder the component binary lives in (UTF-8, no trailing separator). Platform-supplied.
+std::string component_dir();
+
+} // namespace pui

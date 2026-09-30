@@ -1,0 +1,29 @@
+name: Fetch foobar2000 SDK
+description: >-
+  Lays out the foobar2000 SDK as siblings of the repo checkout (the layout build.sh /
+  scripts/mac-build.sh / CMakeLists.txt expect, same as foo_navidrome).
+  Expects the repo to be checked out at $GITHUB_WORKSPACE/foo_ui_panels.
+
+runs:
+  using: composite
+  steps:
+    # {GITHUB_WORKSPACE}/
+    #   foobar2000/{SDK,helpers,shared,foobar2000_component_client}  <- SDK bundle
+    #   pfc/                                                         <- SDK bundle
+    #   foo_ui_panels/                                               <- this repo
+    - name: Checkout foobar2000 SDK (reupen/foobar2000-sdk-unmodified)
+      uses: actions/checkout@v6
+      with:
+        repository: reupen/foobar2000-sdk-unmodified
+        path: _sdk-staging
+
+    - name: Move SDK into the sibling layout
+      shell: bash
+      run: |
+        set -euo pipefail
+        mkdir -p foobar2000
+        for d in SDK helpers shared foobar2000_component_client; do
+          mv "_sdk-staging/foobar2000/$d" "foobar2000/$d"
+        done
+        mv _sdk-staging/pfc pfc
+        rm -rf _sdk-staging
