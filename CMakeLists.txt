@@ -77,6 +77,18 @@ add_library(fb2ksdk STATIC ${SDK_SRC})
 target_include_directories(fb2ksdk PUBLIC "${SDK}" "${SDK}/foobar2000")
 target_link_libraries(fb2ksdk PUBLIC pfc)
 
+if(APPLE)
+  # The SDK's own targets build with ARC (CLANG_ENABLE_OBJC_ARC = YES in foobar2000_SDK.xcodeproj
+  # and pfc.xcodeproj), so their Obj-C sources rely on it for ownership. Without it,
+  # NSObjectWrapperImpl's `id obj` (SDK/commonObjects-Apple.mm) is a non-retaining raw pointer:
+  # fb2k::wrapNSObject() then keeps a dangling reference to an object our ARC code releases on
+  # return, and the host crashes in objc_retain when it later unwraps it (e.g. the NSViewController
+  # returned by ui_element_mac::instantiate).
+  foreach(t pfc fb2ksdk)
+    target_compile_options(${t} PRIVATE $<$<COMPILE_LANGUAGE:OBJC,OBJCXX>:-fobjc-arc>)
+  endforeach()
+endif()
+
 # --- our component ---
 # Platform-free code (skin interpreter, panels, gfx/ui interfaces) + this platform's backend.
 file(GLOB COMP_SRC CONFIGURE_DEPENDS
