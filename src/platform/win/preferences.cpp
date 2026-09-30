@@ -122,7 +122,7 @@ std::vector<std::string> scan_pvar_names(const std::string& script) {
     return names;
 }
 
-std::string serialize_pvars(const std::map<std::string, std::string>& m) {
+std::string serialize_pvars(const PvarMap& m) {
     std::string out;
     for (auto& kv : m) { out += kv.first; out += '='; out += kv.second; out += '\n'; }
     return out;
@@ -677,7 +677,7 @@ private:
     COLORREF m_accentColor = RGB(0, 140, 220);
 
     HFONT m_font = nullptr, m_monoFont = nullptr;
-    std::map<std::string, std::string> m_pvars; // shared by Variables + Overrides tabs
+    PvarMap m_pvars; // shared by Variables + Overrides tabs
     std::string m_appliedRoot, m_appliedActive, m_appliedScript, m_appliedPvars; // has_changed() baseline
     const preferences_page_callback::ptr m_callback;
 };
