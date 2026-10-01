@@ -1,32 +1,39 @@
 # foo_ui_panels — reborn for foobar2000 v2
 
 Goal: reimplement the discontinued **Panels UI** (`foo_ui_panels`, last seen ~fb2k 0.9.5.2)
-as a native component for **foobar2000 v2 (64-bit)**. Original was closed-source — this is a
-ground-up reimplementation aiming for skin compatibility, not a recompile.
+as a native component for **foobar2000 v2 — Windows x64 and macOS (universal)**. Original was
+closed-source — this is a ground-up reimplementation aiming for skin compatibility, not a recompile.
 
-## Established facts (Phase 0)
+## Established facts
 
 - **No original source exists.** Closed-source; docs site `panels.fooblog2000.com` is dead.
-  Skin-format spec must be recovered from archive.org + real old skin files.
+  The skin format was recovered from real skin files (fooAvA 1.05) and the original binaries —
+  see `FORMAT.md`.
 - **SDK**: reupen/foobar2000-sdk-unmodified, kept outside the repo as siblings of the checkout
   (`../foobar2000/`, `../pfc/`; see CLAUDE.md "Build"). Columns UI
   (https://github.com/reupen/columns_ui, LGPL-3.0) consulted as reference only.
-- **Target service**: full UI replacement via `user_interface` (SDK `foobar2000/SDK/ui.h`,
-  versions v1–v4), registered with `FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT`.
-  Same slot `foo_ui_classic` / Columns UI occupy.
-- **Engine shape** (from archived overview): nested layout = splitters → sub-layouts → panels;
-  scripting panels; buttons; transparency; "setup panel"; mini-player mode. Title-format driven.
+- **Target service**: Windows — full UI replacement via `user_interface` (SDK
+  `foobar2000/SDK/ui.h`), the slot `foo_ui_classic` / Columns UI occupy. macOS — a
+  `ui_element_mac` layout element hosting the whole canvas.
+- **Engine shape**: not a splitter tree. A skin is a titleformat script re-evaluated on every
+  repaint that places panels at absolute computed rects (`$panel`) and draws directly
+  (`SkinEngine`, `src/core/skin_engine.cpp`).
+- **Toolchain**: Windows DLL cross-compiled on Linux (clang-cl + lld-link + xwin); macOS bundle
+  built natively in CI or cross on Linux (clang + ld64.lld). No MSVC/Xcode needed.
 
-## Open blocker
+## Status
 
-- **Toolchain**: dev host is Arch Linux. fb2k components need MSVC + Windows SDK.
-  Decision pending: Windows machine/VM vs Linux `clang-cl` cross-build.
+Done: skeleton DLL, scripted canvas engine, skin loader + per-skin `foo_ui_panels.ini`, native
+panels (track display, seek bar, volume, grouped playlist, spectrum, peak meter, album art,
+album browser / cover flow, playlist switcher, quick search, lyrics), tray icon, hot reload, skin diagnostics, macOS port, release
+pipeline. User-facing detail: README "What's implemented".
 
-## Roadmap
+## Open
 
-0. Foundation — SDK + spec recovery + toolchain  ← current
-1. Skeleton DLL: loads in v2, registers `user_interface`, shows in Preferences
-2. Layout engine: splitter/panel tree, resize, persist
-3. Skin loader: parse original format → build tree (load one real old skin)
-4. Built-in panels: playlist, album art, spectrum, buttons, text display
-5. Title-format eval, fonts/colors, packaging
+- macOS runtime is unverified (builds in CI, never loaded in a real foobar2000 for Mac).
+- Accepted but not implemented: `$scplsetlayout` — it only appears in Single Column Playlist's
+  own layout scripts, which the native playlist doesn't run.
+- Panel types without a native view are hosted DUI elements by name, so on macOS they only work
+  if a Mac element of that name exists.
+- No separate mini-player mode: skins build theirs from `WINDOWSIZE:` + a height check (fooAvA
+  does), which works as is.
