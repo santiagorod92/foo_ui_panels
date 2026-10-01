@@ -1,7 +1,9 @@
-// wclick <x> <y> [top:<window title>] [l|r|dbl|move|close|wheelN|key:VK|type:TEXT]
+// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT]
 // Dev tool: posts a mouse/key event to the deepest visible child of the Panels UI main window
 // (or another top-level window by title) at client point (x,y). Runs inside Wine next to
-// foobar2000, so UI tests never touch the host's real mouse. Built by scripts/ui-test.sh.
+// foobar2000, so UI tests never touch the host's real mouse — except `hover`, which moves the
+// real pointer there (SetCursorPos): tooltips check the actual cursor position, so a posted
+// WM_MOUSEMOVE alone never shows one. Built by scripts/ui-test.sh.
 #include <windows.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,6 +32,10 @@ int main(int argc, char** argv) {
     LPARAM lp = MAKELPARAM(cp.x, cp.y);
     wchar_t cls[128]; GetClassNameW(target, cls, 128);
     printf("target %ls at %ld,%ld\n", cls, cp.x, cp.y);
+    if (!strcmp(what, "hover")) {
+        POINT s = cp; ClientToScreen(target, &s);
+        SetCursorPos(s.x, s.y);
+    }
     PostMessageW(target, WM_MOUSEMOVE, 0, lp);
     if (!strcmp(what, "l")) {
         PostMessageW(target, WM_LBUTTONDOWN, MK_LBUTTON, lp); PostMessageW(target, WM_LBUTTONUP, 0, lp);

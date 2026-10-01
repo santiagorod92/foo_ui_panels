@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # ui-test.sh — drive the Panels UI running in the local Wine foobar2000 (dev aid, Hyprland host).
-#   ui-test.sh click X Y [top:TITLE] [l|r|dbl|move|close|wheelN|key:VK|type:TEXT]
+#   ui-test.sh click X Y [top:TITLE] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT]
+#                                     (hover moves the host's real pointer: tooltips need it)
 #   ui-test.sh shot FILE.png          screenshot of the Panels UI window
 #   ui-test.sh pvars k=v ...          edit persisted pvars (foobar2000 must be stopped)
 #   ui-test.sh restart [DLL]          graceful close, install DLL (default build/), relaunch + play
@@ -17,10 +18,13 @@ build_wclick() {
   lld-link /nologo "$OUT/wclick.obj" /libpath:"$X/crt/lib/x86_64" /libpath:"$X/sdk/lib/um/x86_64" \
     /libpath:"$X/sdk/lib/ucrt/x86_64" user32.lib /out:"$EXE"
 }
+# The main window's title is the skin's ($settitle: "artist - title"), so find it as the largest
+# foobar2000.exe window (popups like the settings window are smaller).
 geom() {
   hyprctl clients -j | python3 -c "import json,sys
-for c in json.load(sys.stdin):
-    if 'Panels UI' in c['title']: print('%d,%d %dx%d' % (c['at'][0], c['at'][1], c['size'][0], c['size'][1])); break"
+cs = [c for c in json.load(sys.stdin) if c['class'].lower() == 'foobar2000.exe']
+c = max(cs, key=lambda c: c['size'][0] * c['size'][1])
+print('%d,%d %dx%d' % (c['at'][0], c['at'][1], c['size'][0], c['size'][1]))"
 }
 click() { build_wclick; WINEPREFIX="$PREFIX" WINEDEBUG=-all wine "$EXE" "$@"; }
 
