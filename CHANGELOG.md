@@ -1,3 +1,15 @@
+## [1.3.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.2.0...v1.3.0) (2026-10-01)
+
+
+### Features
+
+* native peak meter and album art, tray icon, playlist keyboard and drag & drop, macOS preferences and Retina ([976811c](https://github.com/santiagorod92/foo_ui_panels/commit/976811cb55ed82239591fe1c7277a9b8a34709de))
+
+
+### Documentation
+
+* refresh DESIGN.md and FORMAT.md to the current engine ([ff1cabe](https://github.com/santiagorod92/foo_ui_panels/commit/ff1cabe8b775c02bea48854b152773574f89f8cd))
+
 ## [1.2.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.1.0...v1.2.0) (2026-10-01)
 
 
