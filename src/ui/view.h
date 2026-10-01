@@ -50,6 +50,9 @@ public:
     virtual void on_resize(int /*w*/, int /*h*/) {}
     virtual void on_visibility(bool /*shown*/) {}
     virtual void on_focus() {}
+    // Files/folders dropped from the OS file manager (UTF-8 native paths), at view-local (x,y).
+    // Only delivered to views created with ViewOptions::accept_files.
+    virtual void on_drop_files(const std::vector<std::string>& /*paths*/, int /*x*/, int /*y*/) {}
     // The host exists now (attach_host done): start timers etc. here, not in the constructor.
     virtual void on_attached() {}
     // The host is about to be destroyed: stop anything that could still call back into it.
@@ -69,6 +72,9 @@ struct ViewOptions {
     // > 0: the host repaints the view at this rate from a dedicated render thread instead of on
     // demand (the spectrum analyser — UI-thread repaints of the other panels stalled it).
     int render_fps = 0;
+    // Files dragged from Explorer/Finder can be dropped on this view (View::on_drop_files).
+    // Elsewhere in the window they go to the main window, which adds them to the active playlist.
+    bool accept_files = false;
 };
 
 class ViewHost {
@@ -143,6 +149,10 @@ public:
     virtual void show_main_menu() = 0;             // the full File/Edit/.../Help menu, at the cursor
     virtual void set_title(const std::string& utf8) = 0;   // window/taskbar title ($settitle)
     virtual void set_tooltip(const std::string& utf8) = 0; // as ViewHost::set_tooltip, over the canvas
+    // $settray: a notification-area icon (Windows) / menu-bar status item (macOS) with this
+    // tooltip, whose click shows SkinEngine::show_tray_menu(). "" removes it. Called on every
+    // repaint: the same text again must be a no-op.
+    virtual void set_tray(const std::string& utf8) = 0;
 };
 
 // A foreign (non-View) panel embedded in the root window — e.g. a hosted Default UI element.

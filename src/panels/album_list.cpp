@@ -210,15 +210,20 @@ int AlbumList::item_at(int x, int y) const {
     return (idx >= 0 && idx < (int)m_groups.size()) ? idx : -1;
 }
 
+gfx::Color AlbumList::color_of(const char* role, gfx::Color def) const {
+    return m_engine ? m_engine->color("album_list", role, def) : def;
+}
+
 void AlbumList::paint(gfx::Canvas& cv) {
     ensure_built();
     const int W = cv.width(), H = cv.height();
     // No backdrop at all behind us? Start from black (the gradient below covers it anyway).
     bool drewbg = m_engine && m_engine->draw_canvas_background(cv, *host());
-    if (!drewbg) fill_gradient_v(cv, 0, 0, W, H, gfx::Color(28, 28, 32));
-    else if (m_coverflow) fill_alpha(cv, 0, 0, W, H, gfx::Color(20, 20, 22), 90); // reflections need a darker floor
+    if (!drewbg) fill_gradient_v(cv, 0, 0, W, H, color_of("background", gfx::Color(28, 28, 32)));
+    else if (m_coverflow) fill_alpha(cv, 0, 0, W, H, color_of("overlay", gfx::Color(20, 20, 22)), 90); // reflections need a darker floor
 
-    gfx::Color accent(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
+    gfx::Color accent(0, 140, 220);
+    if (m_engine && !m_engine->configured_color("album_list", "highlight", accent)) m_engine->theme_color(accent);
     static const gfx::FontSpec fTitle{ "Segoe UI", 11, false, true };
     static const gfx::FontSpec fArtist{ "Segoe UI", 10, false };
 
@@ -235,7 +240,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
         else msg = library_manager::get()->is_library_enabled()
             ? "No albums found in the Media Library." : "Media Library is not configured (Preferences > Media Library).";
         cv.draw_text(msg.get_ptr(), gfx::Rect{ 0, 0, W, H }, gfx::kAlignCenter | gfx::kVCenter | gfx::kSingleLine,
-                     gfx::Color(200, 205, 220));
+                     color_of("text_secondary", gfx::Color(200, 205, 220)));
     }
 
     const bool cf = m_coverflow && !m_groups.empty();
@@ -248,7 +253,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
         const auto& g = m_groups[i];
         // No tile backdrop: the skin wallpaper shows through around each case.
         if ((int)i == m_selected || (int)i == m_hover) {
-            gfx::Color hlc = (int)i == m_selected ? accent : gfx::Color(255, 255, 255);
+            gfx::Color hlc = (int)i == m_selected ? accent : color_of("hover", gfx::Color(255, 255, 255));
             int a = (int)i == m_selected ? 70 : 32;
             fill_alpha(cv, x, y, cellW, cellH, hlc, a);
         }
@@ -267,7 +272,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
             } else {
                 request_cover(g.remote_cover, 160);
                 if (m_cover_failed.count(ck) && !nocover.empty()) drew = draw_image(cv, nocover, cx, cy, cw, ch);
-                if (!drew) fill_alpha(cv, cx, cy, cw, ch, gfx::Color(40, 42, 52), 200);
+                if (!drew) fill_alpha(cv, cx, cy, cw, ch, color_of("placeholder", gfx::Color(40, 42, 52)), 200);
                 drew = true;
             }
         } else {
@@ -275,16 +280,16 @@ void AlbumList::paint(gfx::Canvas& cv) {
             drew = draw_cover_art(cv, cov.get_ptr(), g.cover_track, cx, cy, cw, ch);
         }
         if (!drew && !nocover.empty()) drew = draw_image(cv, nocover, cx, cy, cw, ch);
-        if (!drew) fill_alpha(cv, cx, cy, cw, ch, gfx::Color(40, 42, 52), 200);
+        if (!drew) fill_alpha(cv, cx, cy, cw, ch, color_of("placeholder", gfx::Color(40, 42, 52)), 200);
         if (!ca.img.empty()) draw_image(cv, ca.img, ax, ay, caseW, caseH);
         const int art = caseH; // label rows start below the case
 
         cv.set_font(fTitle);
         cv.draw_text(pfc::stringToUpper(g.album).get_ptr(),
-                     gfx::Rect::ltrb(x + 3, ay + art + 3, x + cellW - 3, ay + art + 17), kCaption, gfx::Color(235, 240, 255));
+                     gfx::Rect::ltrb(x + 3, ay + art + 3, x + cellW - 3, ay + art + 17), kCaption, color_of("text", gfx::Color(235, 240, 255)));
         cv.set_font(fArtist);
         cv.draw_text(pfc::stringToUpper(g.artist).get_ptr(),
-                     gfx::Rect::ltrb(x + 3, ay + art + 17, x + cellW - 3, ay + art + 30), kCaption, gfx::Color(150, 160, 185));
+                     gfx::Rect::ltrb(x + 3, ay + art + 17, x + cellW - 3, ay + art + 30), kCaption, color_of("text_dim", gfx::Color(150, 160, 185)));
     }
     int rows = ((int)m_groups.size() + cols - 1) / cols;
     m_content_h = margin * 2 + rows * (cellH + gutter);
@@ -349,7 +354,7 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
         } else {
             gfx::PointF q[4] = { { x0, yMid - h0 / 2 }, { x1, yMid - h1 / 2 },
                                  { x1, yMid + h1 / 2 }, { x0, yMid + h0 / 2 } };
-            cv.fill_polygon(q, 4, gfx::Color(58, 62, 76));
+            cv.fill_polygon(q, 4, color_of("placeholder", gfx::Color(58, 62, 76)));
         }
         gfx::Rect hit = gfx::Rect::ltrb((int)x0, (int)(yMid - std::max(h0, h1) / 2), (int)x1, (int)(yMid + std::max(h0, h1) / 2));
         m_cf_hits.push_back({ idx, hit });
@@ -363,11 +368,11 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
     static const gfx::FontSpec fTitle{ "Segoe UI", 17, false, true };
     static const gfx::FontSpec fSub{ "Segoe UI", 13, false };
     cv.set_font(fTitle);
-    cv.draw_text(cg.album.get_ptr(), gfx::Rect::ltrb(12, H - 50, W - 12, H - 28), kCaption, gfx::Color(245, 247, 255));
+    cv.draw_text(cg.album.get_ptr(), gfx::Rect::ltrb(12, H - 50, W - 12, H - 28), kCaption, color_of("text", gfx::Color(245, 247, 255)));
     cv.set_font(fSub);
     char sub[64]; snprintf(sub, sizeof sub, "  -  %d / %d", c + 1, n);
     pfc::string8 line = cg.artist; line << sub;
-    cv.draw_text(line.get_ptr(), gfx::Rect::ltrb(12, H - 28, W - 12, H - 8), kCaption, gfx::Color(175, 185, 210));
+    cv.draw_text(line.get_ptr(), gfx::Rect::ltrb(12, H - 28, W - 12, H - 8), kCaption, color_of("text_dim", gfx::Color(175, 185, 210)));
 }
 
 // Replaces the dedicated "Album Browser" playlist with this album and starts playing it —

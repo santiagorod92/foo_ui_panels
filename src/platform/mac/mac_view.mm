@@ -97,6 +97,9 @@ public:
         m_ns.host = this;
         m_ns.cursor = cursor_of(opts.cursor);
         m_ns.wantsLayer = YES;
+        // Unregistered views pass a file drag on to the nearest registered ancestor (the root
+        // canvas), so only views that take files ask for them.
+        if (opts.accept_files) [m_ns registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
     }
     ~MacViewHost() override {
         for (auto& kv : m_timers) [kv.second invalidate];
@@ -197,7 +200,9 @@ public:
         NSRect b = m_ns.bounds;
         const int w = (int)b.size.width, h = (int)b.size.height;
         if (w <= 0 || h <= 0 || !live()) return;
-        gfx::CGCanvas cv(w, h);
+        // Retina: render at the window's pixel density; the canvas still works in points.
+        const double scale = m_ns.window ? m_ns.window.backingScaleFactor : 1.0;
+        gfx::CGCanvas cv(w, h, scale);
         m_view->paint(cv);
         CGImageRef img = cv.copy_image();
         if (!img) return;
@@ -242,6 +247,8 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (BOOL)acceptsFirstMouse:(NSEvent*)e { return YES; }
 - (BOOL)wantsUpdateLayer { return NO; }
 - (void)drawRect:(NSRect)dirty { if (auto* h = host_of(self)) h->paint(); }
+// Moved to a display with another pixel density: re-render at the new backingScaleFactor.
+- (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self setNeedsDisplay:YES]; }
 - (void)setFrameSize:(NSSize)s {
     [super setFrameSize:s];
     if (auto* h = host_of(self); h && h->live()) h->view()->on_resize((int)s.width, (int)s.height);
@@ -306,6 +313,24 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
     auto* h = host_of(self);
     if (h && h->live() && h->view()->on_key_down(map_key(e), mods_of(e))) return;
     [super keyDown:e];
+}
+// NSDraggingDestination: files from Finder (registered in MacViewHost when accept_files).
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)s {
+    auto* h = host_of(self);
+    return h && h->live() ? NSDragOperationCopy : NSDragOperationNone;
+}
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)s { return [self draggingEntered:s]; }
+- (BOOL)performDragOperation:(id<NSDraggingInfo>)s {
+    auto* h = host_of(self);
+    if (!h || !h->live()) return NO;
+    NSArray<NSURL*>* urls = [s.draggingPasteboard readObjectsForClasses:@[ NSURL.class ]
+                                                                options:@{ NSPasteboardURLReadingFileURLsOnlyKey: @YES }];
+    std::vector<std::string> paths;
+    for (NSURL* u in urls) if (const char* p = u.fileSystemRepresentation) paths.emplace_back(p);
+    if (paths.empty()) return NO;
+    NSPoint p = [self convertPoint:s.draggingLocation fromView:nil];
+    h->view()->on_drop_files(paths, (int)p.x, (int)p.y);
+    return YES;
 }
 @end
 

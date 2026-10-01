@@ -7,10 +7,15 @@ namespace pui {
 static const char* kResultsPlaylist = "Search results";
 enum { kTimerDebounce = 1, kDebounceMs = 350 };
 
+// The skin config's `color.quick_search.<role>` / `color.<role>`, else `def`.
+gfx::Color QuickSearch::col(const char* role, gfx::Color def) const {
+    return m_engine ? m_engine->color("quick_search", role, def) : def;
+}
+
 void QuickSearch::on_attached() {
     ui::TextFieldStyle st;
-    st.text = gfx::Color(236, 238, 245);
-    st.background = gfx::Color(26, 27, 32);
+    st.text = col("text", gfx::Color(236, 238, 245));
+    st.background = col("background", gfx::Color(26, 27, 32));
     st.font = gfx::FontSpec{ "Segoe UI", 13, false };
     st.placeholder = "Search...";
     m_edit = ui::create_text_field(*host(), this, st);
@@ -20,8 +25,8 @@ void QuickSearch::on_attached() {
 
 void QuickSearch::paint(gfx::Canvas& cv) {
     gfx::Rect r{ 0, 0, cv.width(), cv.height() };
-    cv.fill_rect(r, gfx::Color(26, 27, 32));
-    cv.frame_rect(r, gfx::Color(90, 96, 110)); // 1px frame drawn by the panel, edit inset inside it
+    cv.fill_rect(r, col("background", gfx::Color(26, 27, 32)));
+    cv.frame_rect(r, col("frame", gfx::Color(90, 96, 110))); // 1px frame drawn by the panel, edit inset inside it
 }
 
 void QuickSearch::on_resize(int w, int h) {

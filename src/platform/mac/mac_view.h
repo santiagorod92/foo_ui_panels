@@ -2,6 +2,7 @@
 #pragma once
 #include "../../ui/view.h"
 #include <memory>
+#include <string>
 
 namespace pui::ui::mac {
 
@@ -10,3 +11,13 @@ namespace pui::ui::mac {
 std::unique_ptr<ViewHost> create_root_view(View* view, const ViewOptions& opts);
 
 } // namespace pui::ui::mac
+
+namespace pui::mac {
+
+// Live Panels UI canvases (mac_main.mm), for the Preferences page (mac_preferences.mm): re-resolve
+// the skin folder and reload it in every one, or set a persisted variable through their engines
+// (written straight to the store when none is open).
+void reload_skin_everywhere();
+void set_pvar_everywhere(const std::string& key, const std::string& value);
+
+} // namespace pui::mac

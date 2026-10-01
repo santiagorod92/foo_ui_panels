@@ -3,6 +3,7 @@
 #include <algorithm>
 #include "skin_engine.h"
 #include "image_cache.h"
+#include "script_util.h"
 #include "fs_util.h"
 #include "navidrome_rating_api.h"
 #include "../panels/track_display.h"
@@ -11,6 +12,8 @@
 #include "../panels/popup.h"
 #include "../panels/playlist_view.h"
 #include "../panels/spectrum.h"
+#include "../panels/peak_meter.h"
+#include "../panels/album_art.h"
 #include "../panels/album_list.h"
 #include "../panels/lyrics_panel.h"
 #include "../panels/quick_search.h"
@@ -35,59 +38,6 @@ static int param_int(titleformat_hook_function_params* p, size_t i) {
     return atoi(param_str(p, i).c_str());
 }
 
-// fooAvA's text buttons are $button2(...,$font(face,size,style,colour)Label,...). The label that
-// trails the draw-command prefix is the visible text; return it ("" for a pure-command body such
-// as a replayed $imageabs2, which the button handler already drew).
-static std::string trailing_literal(const std::string& body) {
-    size_t i = 0;
-    while (i < body.size()) {
-        while (i < body.size() && (body[i] == ' ' || body[i] == '\t' || body[i] == '\r')) ++i;
-        if (i >= body.size()) break;
-        if (body[i] != '$') return body.substr(i);
-        size_t op = body.find('(', i);
-        if (op == std::string::npos) return std::string();
-        int depth = 1;
-        size_t j = op + 1;
-        for (; j < body.size() && depth > 0; ++j) {
-            if (body[j] == '(') ++depth;
-            else if (body[j] == ')') --depth;
-        }
-        if (depth > 0) return std::string();
-        i = j;
-    }
-    return std::string();
-}
-
-// Parse a bare hex COLORREF string (no separators, e.g. "ff0000") as Columns UI style-script
-// colours do: the numeric value of the hex text IS the COLORREF (R=low byte, G=mid, B=high byte).
-static unsigned long parse_hex_colorref(const std::string& s) {
-    return strtoul(s.c_str(), nullptr, 16);
-}
-static std::string hex_colorref(unsigned long c) {
-    char buf[16]; snprintf(buf, sizeof buf, "%lx", c & 0xFFFFFFul); return buf;
-}
-
-// Parse "r-g-b" or "r-g-b-a" starting at s (alpha ignored).
-gfx::Color parse_rgb(const char* s) {
-    int v[4] = { 0,0,0,255 }, n = 0;
-    while (*s && n < 4) {
-        while (*s && (*s < '0' || *s > '9')) ++s; // skip non-digit (prefix/dashes)
-        if (!*s) break;
-        int x = 0; while (*s >= '0' && *s <= '9') { x = x * 10 + (*s - '0'); ++s; }
-        v[n++] = x;
-        if (*s == '-') ++s; else break;
-    }
-    return gfx::Color(v[0], v[1], v[2]);
-}
-// Trim whitespace and surrounding single quotes from a $button action argument.
-static std::string clean_action(std::string a) {
-    size_t b = a.find_first_not_of(" \t"), e = a.find_last_not_of(" \t");
-    if (b == std::string::npos) return {};
-    a = a.substr(b, e - b + 1);
-    if (a.size() >= 2 && a.front() == '\'' && a.back() == '\'') a = a.substr(1, a.size() - 2);
-    return a;
-}
-
 // A button's tooltip argument at index i: TOOLTIP:"text" in one argument ($button/$button2), or
 // TOOLTIP followed by the text as the next argument ($imagebutton/$textbutton). Quotes stripped.
 static std::string tooltip_arg(titleformat_hook_function_params* p, size_t argc, size_t i) {
@@ -99,33 +49,6 @@ static std::string tooltip_arg(titleformat_hook_function_params* p, size_t argc,
     else return {};
     if (t.size() >= 2 && t.front() == '"' && t.back() == '"') t = t.substr(1, t.size() - 2);
     return t;
-}
-
-// Parse image option string, e.g. "alpha-200nokeepaspectROTATEFLIP-6".
-static void parse_img_opts(const std::string& o, int& alpha, int& flip) {
-    auto a = o.find("alpha-");        if (a != std::string::npos) alpha = atoi(o.c_str() + a + 6);
-    auto r = o.find("ROTATEFLIP-");   if (r != std::string::npos) flip  = atoi(o.c_str() + r + 11);
-}
-
-// $drawstring/$draw_text option string -> text flags. (A "vcenter" option also matches "center",
-// which is how the legacy engine behaved: vertically centred text is horizontally centred too.)
-static unsigned text_opts(const std::string& o) {
-    unsigned f = gfx::kEndEllipsis;
-    if (o.find("center")  != std::string::npos) f |= gfx::kAlignCenter;
-    if (o.find("right")   != std::string::npos) f |= gfx::kAlignRight;
-    if (o.find("vcenter") != std::string::npos) f |= gfx::kVCenter | gfx::kSingleLine;
-    return f;
-}
-
-// Find "key-r-g-b" inside spec (e.g. brushcolor-..., pencolor-...).
-static bool find_color(const std::string& spec, const char* key, gfx::Color& out) {
-    auto p = spec.find(key);
-    if (p == std::string::npos) return false;
-    const char* v = spec.c_str() + p + strlen(key);
-    while (*v == '-' || *v == ' ') ++v;
-    if (strncmp(v, "null", 4) == 0) return false; // transparent
-    out = parse_rgb(v);
-    return true;
 }
 
 // Tag-write filter: sets (or clears) one meta field on a track. Used by TAG:SET:rating:N.
@@ -140,59 +63,6 @@ public:
 private:
     pfc::string8 m_field, m_value;
 };
-
-// --- $eval integer expression evaluator ------------------------------------
-namespace {
-struct Expr {
-    const char* s;
-    void skip() { while (*s == ' ') ++s; }
-    long number() {
-        skip();
-        // {} and () are both grouping in PanelsUI $eval.
-        if (*s == '(' || *s == '{') {
-            char close = (*s == '(') ? ')' : '}';
-            ++s; long v = expr(); skip(); if (*s == close) ++s; return v;
-        }
-        long sign = 1; if (*s == '-') { sign = -1; ++s; }
-        long v = 0; while (*s >= '0' && *s <= '9') { v = v * 10 + (*s - '0'); ++s; }
-        return sign * v;
-    }
-    long term() { long v = number();
-        for (;;) { skip();
-            if (*s == '*') { ++s; v *= number(); }
-            else if (*s == '/') { ++s; long d = number(); v = d ? v / d : 0; }
-            else if (*s == '%') { ++s; long d = number(); v = d ? v % d : 0; }
-            else break; } return v; }
-    long expr() { long v = term();
-        for (;;) { skip();
-            if (*s == '+') { ++s; v += term(); }
-            else if (*s == '-') { ++s; v -= term(); }
-            else break; } return v; }
-};
-long eval_expr(const std::string& in) { Expr e{ in.c_str() }; return e.expr(); }
-}
-
-// --- legacy panel type -> DUI element search string ------------------------
-static const char* map_type(const std::string& t) {
-    auto has = [&](const char* k) { return t.find(k) != std::string::npos; };
-    if (has("Channel spectrum") || t == "Spectrum")      return "Spectrum";
-    if (has("Single Column Playlist") || has("ELPlaylist")) return "Playlist View";
-    if (has("Peakmeter") || has("Peak"))  return "Peak Meter";
-    if (has("Album Art"))         return "Album Art";
-    if (has("Track Display") || has("Lyric") || has("Playlist switcher") || has("Seek") || has("Volume") || has("Chronflow") ||
-        has("Quick Search") || has("Album list") || has("Graphical Browser"))
-        return nullptr; // native (Album list/Graphical Browser: no stock DUI element to host)
-    return t.c_str();
-}
-
-// Pull "glowexpand-N"/"glowalpha-N" out of a token tail -- the skin sometimes glues them straight
-// onto the colour ("glow-114-114-114glowexpand-0"), so they don't always arrive as their own token.
-static void parse_glow_tail(const std::string& t, int& expand, int& alpha) {
-    size_t e = t.find("glowexpand-");
-    if (e != std::string::npos) expand = atoi(t.c_str() + e + 11);
-    size_t a = t.find("glowalpha-");
-    if (a != std::string::npos) alpha = atoi(t.c_str() + a + 10);
-}
 
 // A face the skin asks for that isn't installed: the stand-in the skin config names for it
 // (`font.alias.<face> = <installed face>`, matched case-insensitively), so layout metrics stay sane
@@ -210,12 +80,11 @@ static const char* const kHookFunctions[] = {
     "windowstyle", "font", "set_font", "drawrect", "drawroundrect", "gradientrect", "drawstring",
     "draw_text", "alignabs", "textcolor", "set_font_color", "imageabs", "draw_image", "fileexists",
     "cwb_fileexists", "greater", "imageabs2", "button", "button2", "calcwidth", "textbutton",
-    "imagebutton", "settitle", "gp_set_brush", "gp_fill_rectangle",
+    "imagebutton", "settitle", "settray", "gp_set_brush", "gp_fill_rectangle", "gp_set_pen", "gp_draw_rectangle",
 };
-// Accepted (so they render nothing instead of an error) but not implemented yet: $settray (no
-// tray icon yet), $gp_set_pen (no $gp_* outline call uses it), $scplsetlayout (Single Column
-// Playlist's own layouts).
-static const char* const kStubFunctions[] = { "scplsetlayout", "gp_set_pen", "settray" };
+// Accepted (so they render nothing instead of an error) but not implemented: $scplsetlayout
+// (Single Column Playlist's own layout scripts, which the native playlist doesn't run).
+static const char* const kStubFunctions[] = { "scplsetlayout" };
 
 static bool listed(const char* const* list, size_t n, const std::string& name) {
     for (size_t i = 0; i < n; ++i) if (name == list[i]) return true;
@@ -795,6 +664,11 @@ public:
             return true;
         }
 
+        // $settray(tooltip): the skin wants a tray icon (see ui::MainWindow::set_tray).
+        if (eq(name, len, "settray")) {
+            if (m_e->m_main) m_e->m_main->set_tray(argc >= 1 ? param_str(p, 0) : std::string("foobar2000"));
+            return true;
+        }
         // $settitle(text) — the window/taskbar title; fooAvA: "fooAvA" while stopped/paused, else
         // "%artist% - %title%". Re-run every paint; the platform skips unchanged text.
         if (eq(name, len, "settitle") && argc >= 1) {
@@ -804,15 +678,28 @@ public:
         // GDI+ brush fills: $gp_set_brush(A-R-G-B) (or R-G-B, opaque), then
         // $gp_fill_rectangle(x,y,w,h) — e.g. a translucent black veil, $gp_set_brush(85-0-0-0).
         if (eq(name, len, "gp_set_brush") && argc >= 1) {
-            std::string c = param_str(p, 0);
-            int v[4] = { 0, 0, 0, 0 }, n = 0;
-            for (const char* q = c.c_str(); *q && n < 4;) {
-                if (*q < '0' || *q > '9') { ++q; continue; }
-                v[n++] = atoi(q);
-                while (*q >= '0' && *q <= '9') ++q;
+            parse_argb(param_str(p, 0), m_gpBrush, m_gpAlpha);
+            return true;
+        }
+        // GDI+ outlines: $gp_set_pen(A-R-G-B,width[,dash,join]) — dash/join ignored — then
+        // $gp_draw_rectangle(x,y,w,h), the pen centred on the rectangle's edges like GDI+.
+        if (eq(name, len, "gp_set_pen") && argc >= 1) {
+            parse_argb(param_str(p, 0), m_gpPen, m_gpPenAlpha);
+            m_gpPenWidth = argc >= 2 ? std::max(1, param_int(p, 1)) : 1;
+            return true;
+        }
+        if (eq(name, len, "gp_draw_rectangle") && argc >= 4 && m_gpPenAlpha > 0) {
+            const int w = m_gpPenWidth, lo = w / 2;
+            gfx::Rect r = mkrect(param_int(p,0), param_int(p,1), param_int(p,2), param_int(p,3));
+            const gfx::Rect o{ r.x - lo, r.y - lo, r.w + w, r.h + w }; // outer edge of the stroke
+            // Four non-overlapping bands, so a translucent pen doesn't double up at the corners.
+            const gfx::Rect bands[] = { { o.x, o.y, o.w, w }, { o.x, o.y + o.h - w, o.w, w },
+                                        { o.x, o.y + w, w, o.h - 2 * w }, { o.x + o.w - w, o.y + w, w, o.h - 2 * w } };
+            for (const gfx::Rect& b : bands) {
+                if (b.w <= 0 || b.h <= 0) continue;
+                if (m_gpPenAlpha >= 255) m_cv.fill_rect(b, m_gpPen);
+                else m_cv.fill_rect_alpha(b, m_gpPen, m_gpPenAlpha);
             }
-            if (n >= 4) { m_gpAlpha = v[0]; m_gpBrush = gfx::Color(v[1], v[2], v[3]); }
-            else if (n == 3) { m_gpAlpha = 255; m_gpBrush = gfx::Color(v[0], v[1], v[2]); }
             return true;
         }
         if (eq(name, len, "gp_fill_rectangle") && argc >= 4) {
@@ -1030,6 +917,7 @@ private:
     int m_depth = 0; // nesting depth for snippet evaluation (see run_into/eval_arg)
     gfx::Color m_glowCol; int m_glowExpand = 0, m_glowAlpha = 0;
     gfx::Color m_gpBrush; int m_gpAlpha = 255; // $gp_set_brush state for $gp_fill_rectangle
+    gfx::Color m_gpPen; int m_gpPenAlpha = 255, m_gpPenWidth = 1; // $gp_set_pen for $gp_draw_rectangle
 
     // positional literal-text state. Text is read from the DrawString buffer (m_buf) rather than
     // accumulated per-write: titleformat appends a $if/$ifequal condition's value to the buffer then
@@ -1064,6 +952,52 @@ void SkinEngine::set_main_window(ui::MainWindow* w) {
     }
 }
 
+void SkinEngine::add_files(const std::vector<std::string>& paths, t_size at) {
+    if (paths.empty()) return;
+    pfc::list_t<const char*> urls;
+    for (auto& p : paths) urls.add_item(p.c_str()); // process_locations_async copies them
+    auto notify = process_locations_notify::create([at](metadb_handle_list_cref items) {
+        auto pm = playlist_manager::get();
+        t_size pl = pm->get_active_playlist();
+        if (pl == pfc_infinite) { pl = pm->create_playlist_autoname(); pm->set_active_playlist(pl); }
+        const t_size n = pm->playlist_get_item_count(pl);
+        const t_size base = (at == pfc_infinite || at > n) ? n : at;
+        pm->playlist_undo_backup(pl);
+        pm->playlist_clear_selection(pl);
+        pm->playlist_insert_items(pl, base, items, bit_array_true());
+    });
+    playlist_incoming_item_filter_v2::get()->process_locations_async(
+        urls, playlist_incoming_item_filter_v2::op_flag_delay_ui, nullptr, nullptr,
+        core_api::get_main_window(), notify);
+}
+
+void SkinEngine::show_tray_menu() {
+    if (!m_main) return;
+    enum { kPlayPause = 1, kStop, kPrev, kNext, kShow, kHide, kExit };
+    auto pc = playback_control::get();
+    auto item = [](const char* label, int id) { ui::MenuItem m; m.label = label; m.id = id; return m; };
+    ui::Menu menu;
+    menu.push_back(item(pc->is_playing() && !pc->is_paused() ? "Pause" : "Play", kPlayPause));
+    menu.push_back(item("Stop", kStop));
+    menu.push_back(item("Previous", kPrev));
+    menu.push_back(item("Next", kNext));
+    menu.push_back(ui::MenuItem::sep());
+    menu.push_back(item("Show foobar2000", kShow));
+    menu.push_back(item("Hide foobar2000", kHide));
+    menu.push_back(ui::MenuItem::sep());
+    menu.push_back(item("Exit", kExit));
+    switch (ui::popup_menu_at_cursor(*m_main, menu)) {
+    case kPlayPause: pc->play_or_pause(); break;
+    case kStop:      pc->stop(); break;
+    case kPrev:      pc->previous(); break;
+    case kNext:      pc->next(); break;
+    case kShow:      standard_commands::main_activate(); break;
+    case kHide:      standard_commands::main_hide(); break;
+    case kExit:      standard_commands::main_exit(); break;
+    default: break;
+    }
+}
+
 bool SkinEngine::playback_ticking() {
     auto pc = playback_control::get();
     return pc->is_playing() && !pc->is_paused();
@@ -1089,6 +1023,7 @@ bool SkinEngine::load(const char* script) {
 
 bool SkinEngine::load_skin(const std::string& dir) {
     m_base = dir;
+    if (m_main) m_main->set_tray(""); // only while the (new) skin keeps asking for it
     m_cfg.load(dir);
     if (!m_cfg.empty()) console::printf("Panels UI: skin config %s loaded", SkinConfig::kFileName);
     if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
@@ -1372,8 +1307,10 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     }
     case Kind::Seekbar:     s.view = std::make_unique<Seekbar>(this); opts.cursor = ui::Cursor::Hand; break;
     case Kind::Volume:      s.view = std::make_unique<Volume>(this); opts.cursor = ui::Cursor::Hand; break;
-    case Kind::Playlist:    s.view = std::make_unique<PlaylistView>(this); opts.double_clicks = true; break;
+    case Kind::Playlist:    s.view = std::make_unique<PlaylistView>(this); opts.double_clicks = true; opts.accept_files = true; break;
     case Kind::Spectrum:    s.view = std::make_unique<Spectrum>(this); opts.render_fps = 60; break;
+    case Kind::PeakMeter:   s.view = std::make_unique<PeakMeter>(this); opts.render_fps = 60; break;
+    case Kind::AlbumArt:    s.view = std::make_unique<AlbumArt>(this); break;
     case Kind::AlbumList:
         s.view = std::make_unique<AlbumList>(this, p.type.find("Chronflow") != std::string::npos);
         opts.double_clicks = true;
@@ -1420,6 +1357,8 @@ void SkinEngine::dispatch_placement(const Placement& p, int offsetX, int offsetY
     else if (has("Volume"))                              { kind = Kind::Volume; top = false; }
     else if (has("Single Column Playlist") || has("ELPlaylist")) { kind = Kind::Playlist; top = false; }
     else if (has("Album list") || has("Graphical Browser") || has("Chronflow")) kind = Kind::AlbumList;
+    else if (has("Peakmeter") || has("Peak Meter"))      { kind = Kind::PeakMeter; top = true; }
+    else if (has("Album Art"))                           kind = Kind::AlbumArt;
     else if (has("spectrum") || has("Spectrum"))         { kind = Kind::Spectrum; top = true; }
     else                                                 { kind = Kind::Embedded; top = false; }
 
@@ -1495,34 +1434,52 @@ bool SkinEngine::save_panel_script(const std::string& name, const std::string& t
     return true;
 }
 
-// Run a skin button action ("Playback/Random", "Previous", "New Playlist", …) by
-// matching the leaf name against registered main-menu commands.
-static bool run_action(const std::string& action) {
-    std::string leaf = action;
-    auto s = leaf.find_last_of('/');
-    if (s != std::string::npos) leaf = leaf.substr(s + 1);
-
-    service_enum_t<mainmenu_commands> e;
-    service_ptr_t<mainmenu_commands> p;
-    while (e.next(p)) {
+// Main-menu commands by lower-cased full path ("playback/random", "library/album list"),
+// built once: the group chain comes from mainmenu_group(_popup) display names (menu_label).
+// Components can't register commands after startup, so no invalidation.
+struct MenuCommands { std::vector<std::string> paths; std::vector<GUID> guids; };
+static const MenuCommands& menu_commands() {
+    static MenuCommands mc;
+    if (!mc.paths.empty()) return mc;
+    struct Group { GUID parent; std::string name; };
+    struct Less { bool operator()(const GUID& a, const GUID& b) const { return memcmp(&a, &b, sizeof a) < 0; } };
+    std::map<GUID, Group, Less> groups;
+    for (auto g : mainmenu_group::enumerate()) {
+        Group gr{ g->get_parent(), {} };
+        mainmenu_group_popup::ptr pop;
+        if (g->service_query_t(pop)) { pfc::string8 n; pop->get_display_string(n); gr.name = menu_label(n); }
+        groups[g->get_guid()] = gr;
+    }
+    auto group_path = [&](GUID id) {
+        std::string path;
+        for (int depth = 0; id != pfc::guid_null && depth < 16; ++depth) {
+            auto it = groups.find(id);
+            if (it == groups.end()) break;
+            if (!it->second.name.empty()) path = it->second.name + (path.empty() ? "" : "/") + path;
+            id = it->second.parent;
+        }
+        return path;
+    };
+    for (auto p : mainmenu_commands::enumerate()) {
+        const std::string prefix = group_path(p->get_parent());
         const t_uint32 n = p->get_command_count();
         for (t_uint32 i = 0; i < n; ++i) {
-            pfc::string8 nm;
-            p->get_name(i, nm);
-            if (stricmp_utf8(nm.get_ptr(), leaf.c_str()) == 0) {
-                p->execute(i, service_ptr_t<service_base>());
-                return true;
-            }
+            pfc::string8 nm; p->get_name(i, nm);
+            mc.paths.push_back(prefix.empty() ? menu_label(nm) : prefix + "/" + menu_label(nm));
+            mc.guids.push_back(p->get_command(i));
         }
     }
-    console::printf("Panels UI: no command for action '%s'", action.c_str());
-    return false;
+    return mc;
 }
 
-// Strip surrounding single quotes (PanelsUI quotes WINDOWSIZE/PVAR values like '736').
-static std::string unquote(std::string s) {
-    if (s.size() >= 2 && s.front() == '\'' && s.back() == '\'') s = s.substr(1, s.size() - 2);
-    return s;
+// Run a skin button action ("Playback/Random", "Library/Album List", "New Playlist", …) through
+// the main-menu command best_menu_match() picks for it.
+static bool run_action(const std::string& action) {
+    const MenuCommands& mc = menu_commands();
+    const int i = best_menu_match(mc.paths, action);
+    if (i >= 0 && mainmenu_commands::g_execute(mc.guids[(size_t)i])) return true;
+    console::printf("Panels UI: no command for action '%s'", action.c_str());
+    return false;
 }
 
 bool SkinEngine::run_button_action(const std::string& action) {
@@ -1782,6 +1739,16 @@ int SkinEngine::theme_index() const {
     return m_cfg.num("theme.index_default", 1);
 }
 
+bool SkinEngine::configured_color(const char* panel, const char* role, gfx::Color& out) const {
+    return parse_config_color(m_cfg.str(std::string("color.") + panel + "." + role), out)
+        || parse_config_color(m_cfg.str(std::string("color.") + role), out);
+}
+
+gfx::Color SkinEngine::color(const char* panel, const char* role, gfx::Color def) const {
+    gfx::Color c;
+    return configured_color(panel, role, c) ? c : def;
+}
+
 std::string SkinEngine::asset(const std::string& key, int n) const {
     std::string a = m_cfg.str("asset." + key);
     if (a.empty() || m_base.empty()) return {};
@@ -1827,22 +1794,12 @@ void SkinEngine::snapshot_canvas(gfx::Canvas& cv, int w, int h) {
     m_snapshot = std::move(snap);
 }
 
-// Draw the (x,y,w,h) region of `img` at (0,0) of `cv`; parts outside the image stay untouched.
-static bool draw_region(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int w, int h) {
-    int sx = std::max(0, x), sy = std::max(0, y);
-    int ex = std::min(img.width(), x + w), ey = std::min(img.height(), y + h);
-    if (ex <= sx || ey <= sy) return false;
-    cv.draw_image(img, gfx::RectF{ (float)(sx - x), (float)(sy - y), (float)(ex - sx), (float)(ey - sy) },
-                  gfx::RectF{ (float)sx, (float)sy, (float)(ex - sx), (float)(ey - sy) });
-    return true;
-}
-
 bool SkinEngine::draw_canvas_snapshot(gfx::Canvas& cv, const ui::ViewHost& host) const {
     gfx::ImagePtr snap;
     { std::lock_guard<std::mutex> lk(m_framesMx); snap = m_snapshot; }
     if (!snap) return false;
     gfx::Rect b = host.bounds();
-    return draw_region(cv, *snap, b.x, b.y, b.w, b.h);
+    return draw_image_region(cv, *snap, b.x, b.y, b.w, b.h);
 }
 
 void SkinEngine::store_panel_frame(const std::string& name, gfx::ImagePtr frame, const gfx::Rect& bounds) {

@@ -1,17 +1,11 @@
 #include "skin_config.h"
 #include "fs_util.h"
-#include "../fb2k.h"
 #include <algorithm>
 #include <cstdlib>
 
 namespace pui {
 
 namespace {
-// {7B3E1D52-9A4C-4F8B-B1E6-2D5C8A9F0E31} — cfg_string: main script file name override.
-const GUID g_main_script_guid =
-    { 0x7b3e1d52, 0x9a4c, 0x4f8b, { 0xb1, 0xe6, 0x2d, 0x5c, 0x8a, 0x9f, 0x0e, 0x31 } };
-cfg_var_modern::cfg_string g_main_script_cfg(g_main_script_guid, "");
-
 std::string trim(const std::string& s) {
     size_t b = s.find_first_not_of(" \t\r\n"), e = s.find_last_not_of(" \t\r\n");
     return b == std::string::npos ? std::string() : s.substr(b, e - b + 1);
@@ -79,10 +73,6 @@ std::map<std::string, std::string> SkinConfig::with_prefix(const std::string& pr
     return out;
 }
 
-std::string resolve_main_script(const std::string& dir, const SkinConfig& cfg, std::string* why) {
-    return resolve_main_script_with(dir, cfg, main_script_override(), why);
-}
-
 std::vector<std::string> main_script_candidates(const std::string& dir) {
     std::vector<std::string> found;
     std::error_code ec;
@@ -117,11 +107,5 @@ std::string resolve_main_script_with(const std::string& dir, const SkinConfig& c
     }
     return {};
 }
-
-std::string main_script_override() {
-    pfc::string8 s = g_main_script_cfg.get();
-    return std::string(s.get_ptr(), s.length());
-}
-void set_main_script_override(const std::string& name) { g_main_script_cfg.set(name.c_str()); }
 
 } // namespace pui

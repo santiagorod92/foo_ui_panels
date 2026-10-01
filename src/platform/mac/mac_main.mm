@@ -13,8 +13,22 @@
 #include "../../core/skin_paths.h"
 #include "../../core/image_cache.h"
 #include "../../core/fs_util.h"
+#include <algorithm>
+#include <vector>
+
+// Target of the $settray status item's click: the engine's tray menu.
+@interface FooUIPanelsTrayTarget : NSObject
+@property (nonatomic, assign) pui::SkinEngine* engine;
+- (void)clicked:(id)sender;
+@end
+@implementation FooUIPanelsTrayTarget
+- (void)clicked:(id)sender { if (self.engine) self.engine->show_tray_menu(); }
+@end
 
 namespace {
+
+class PanelsRoot;
+std::vector<PanelsRoot*> g_roots; // live canvases (main thread only)
 
 // {3E5B7C21-9A4D-4F6E-8B12-7D0C4A9E6F53}
 const GUID g_element_guid = { 0x3e5b7c21, 0x9a4d, 0x4f6e, { 0x8b, 0x12, 0x7d, 0x0c, 0x4a, 0x9e, 0x6f, 0x53 } };
@@ -26,16 +40,33 @@ public:
     // owns_window: the canvas fills a window of ours (the user_interface module) rather than
     // sitting in foobar2000's own layout — only then may a skin restyle the window chrome.
     explicit PanelsRoot(bool owns_window = false) : m_owns_window(owns_window) {
-        m_host = pui::ui::mac::create_root_view(this, pui::ui::ViewOptions{});
+        pui::ui::ViewOptions opts;
+        opts.accept_files = true; // dropped anywhere but the playlist: appended to it
+        m_host = pui::ui::mac::create_root_view(this, opts);
         m_skin.set_main_window(this);
         m_skin.load_skin(pui::resolve_skin_dir()); // its main script, else the built-in test skin
+        g_roots.push_back(this);
     }
     ~PanelsRoot() override {
+        set_tray("");
+        g_roots.erase(std::remove(g_roots.begin(), g_roots.end(), this), g_roots.end());
         m_skin.save_pvars();
         m_skin.destroy_panels(); // child views go before the view they live in
         m_host.reset();
     }
     NSView* view() const { return (__bridge NSView*)m_host->native(); }
+    pui::SkinEngine& skin() { return m_skin; }
+
+    // Preferences switched the skin folder / main script: drop the old skin's panels and load the
+    // newly resolved one in place (destroy_panels also drops the play callback; set_main_window
+    // brings it back).
+    void reload_skin() {
+        m_skin.save_pvars();
+        m_skin.destroy_panels();
+        m_skin.set_main_window(this);
+        m_skin.load_skin(pui::resolve_skin_dir());
+        invalidate();
+    }
 
     // --- ui::View (the canvas) ---
     void on_attached() override { host()->set_timer(1, 500); } // progress bar / time readout
@@ -58,6 +89,7 @@ public:
     }
     void on_mouse_move(int x, int y, unsigned, bool) override { if (m_skin.update_hover(x, y)) invalidate(); }
     void on_mouse_leave() override { if (m_skin.update_hover(-1, -1)) invalidate(); }
+    void on_drop_files(const std::vector<std::string>& paths, int, int) override { pui::SkinEngine::add_files(paths); }
 
     // --- ui::MainWindow ---
     void* native() const override { return m_host ? m_host->native() : nullptr; }
@@ -146,15 +178,52 @@ public:
         if (![t isEqualToString:win.title]) win.title = t;
     }
     void set_tooltip(const std::string& utf8) override { if (m_host) m_host->set_tooltip(utf8); }
+    // $settray: macOS has no notification area — a menu-bar status item (the app icon) plays
+    // that role, its click opening the same tray menu as on Windows.
+    void set_tray(const std::string& utf8) override {
+        if (utf8.empty()) {
+            if (m_status) [[NSStatusBar systemStatusBar] removeStatusItem:m_status];
+            m_status = nil; m_trayTip.clear();
+            return;
+        }
+        if (!m_status) {
+            m_status = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
+            NSImage* icon = [NSApp.applicationIconImage copy];
+            icon.size = NSMakeSize(18, 18);
+            m_status.button.image = icon;
+            if (!m_trayTarget) { m_trayTarget = [FooUIPanelsTrayTarget new]; m_trayTarget.engine = &m_skin; }
+            m_status.button.target = m_trayTarget;
+            m_status.button.action = @selector(clicked:);
+        }
+        if (utf8 == m_trayTip) return;
+        m_trayTip = utf8;
+        m_status.button.toolTip = [NSString stringWithUTF8String:utf8.c_str()] ?: @"";
+    }
 
 private:
     pui::SkinEngine m_skin;
     std::unique_ptr<pui::ui::ViewHost> m_host;
     bool m_owns_window = false;
     bool m_titlebar_visible = true;
+    NSStatusItem* m_status = nil;
+    FooUIPanelsTrayTarget* m_trayTarget = nil;
+    std::string m_trayTip;
 };
 
 } // namespace
+
+namespace pui::mac {
+void reload_skin_everywhere() { for (auto* r : g_roots) r->reload_skin(); }
+void set_pvar_everywhere(const std::string& key, const std::string& value) {
+    if (g_roots.empty()) {
+        PvarMap m = load_all_pvars();
+        if (value.empty()) m.erase(key); else m[key] = value;
+        save_all_pvars(m);
+        return;
+    }
+    for (auto* r : g_roots) { r->skin().set_pvar(key, value); r->skin().repaint_all(); }
+}
+} // namespace pui::mac
 
 @interface FooUIPanelsController : NSViewController
 @end

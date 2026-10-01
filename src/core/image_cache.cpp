@@ -359,4 +359,13 @@ void images_shutdown() {
     gfx::platform_images_shutdown();
 }
 
+bool draw_image_region(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int w, int h) {
+    int sx = std::max(0, x), sy = std::max(0, y);
+    int ex = std::min(img.width(), x + w), ey = std::min(img.height(), y + h);
+    if (ex <= sx || ey <= sy) return false;
+    cv.draw_image(img, gfx::RectF{ (float)(sx - x), (float)(sy - y), (float)(ex - sx), (float)(ey - sy) },
+                  gfx::RectF{ (float)sx, (float)sy, (float)(ex - sx), (float)(ey - sy) });
+    return true;
+}
+
 } // namespace pui

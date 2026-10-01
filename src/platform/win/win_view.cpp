@@ -6,6 +6,7 @@
 #include "gdi_canvas.h"
 #include "panel_host.h"
 #include "tooltip.h"
+#include "drop_files.h"
 #include "../../ui/view.h"
 #include "../../core/skin_paths.h"
 #include <atomic>
@@ -89,6 +90,7 @@ public:
         m_wnd = CreateWindowExW(0, m_opts.double_clicks ? kClassDbl : kClass, L"",
                                 WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0, 0, 0,
                                 parent, nullptr, module(), this);
+        if (m_wnd && m_opts.accept_files) DragAcceptFiles(m_wnd, TRUE);
         return m_wnd != nullptr;
     }
 
@@ -363,6 +365,14 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
         break;
     case WM_SHOWWINDOW: if (live) v->on_visibility(wp != 0); break;
     case WM_SETFOCUS: if (live) v->on_focus(); return 0;
+    case WM_DROPFILES: {
+        HDROP drop = (HDROP)wp;
+        POINT pt = {};
+        auto paths = win::dropped_files(drop, pt);
+        DragFinish(drop);
+        if (live && !paths.empty()) v->on_drop_files(paths, pt.x, pt.y);
+        return 0;
+    }
     case WM_COMMAND:
         if (WinTextField* tf = WinTextField::from((HWND)lp)) { tf->on_command(HIWORD(wp)); return 0; }
         break;

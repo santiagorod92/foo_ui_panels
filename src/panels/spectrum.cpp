@@ -1,5 +1,6 @@
 #include "spectrum.h"
 #include "../core/skin_engine.h"
+#include "../core/image_cache.h"
 #include <cmath>
 #include <algorithm>
 
@@ -96,14 +97,7 @@ void Spectrum::paint(gfx::Canvas& cv) {
     Cfg cfg; { std::lock_guard<std::mutex> lk(m_cfgMx); cfg = m_cfg; }
 
     cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color());
-    if (cfg.backdrop) {
-        const gfx::Image& img = *cfg.backdrop;
-        int sx = std::max(0, cfg.bx), sy = std::max(0, cfg.by);
-        int ex = std::min(img.width(), cfg.bx + W), ey = std::min(img.height(), cfg.by + H);
-        if (ex > sx && ey > sy)
-            cv.draw_image(img, gfx::RectF{ (float)(sx - cfg.bx), (float)(sy - cfg.by), (float)(ex - sx), (float)(ey - sy) },
-                          gfx::RectF{ (float)sx, (float)sy, (float)(ex - sx), (float)(ey - sy) });
-    }
+    if (cfg.backdrop) draw_image_region(cv, *cfg.backdrop, cfg.bx, cfg.by, W, H);
 
     const gfx::Color accent = cfg.accent;
     const bool barsMode = cfg.bars, logScale = cfg.log, mirror = cfg.mirror;

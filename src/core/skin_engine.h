@@ -45,8 +45,6 @@ void save_all_pvars(const PvarMap& pvars);
 // Built-in fallback skin script (no main script found in the skin folder).
 const char* builtin_test_skin();
 
-// Parse "r-g-b" / "r-g-b-a" (any non-digit prefix skipped; alpha ignored).
-gfx::Color parse_rgb(const char* s);
 
 class PopupView;
 
@@ -131,6 +129,14 @@ public:
     // seek, pause, volume) repaint through the engine's own play_callback instead.
     static bool playback_ticking();
 
+    // The $settray icon's menu (transport, show/hide, exit), at the mouse cursor.
+    void show_tray_menu();
+
+    // Files/folders dropped from the OS file manager: resolved by foobar2000 (folders expanded,
+    // playlists parsed, the user's sort/filter settings applied) and inserted into the active
+    // playlist at `at` (pfc_infinite = appended), selected.
+    static void add_files(const std::vector<std::string>& paths, t_size at = pfc_infinite);
+
     // Current theme accent colour: the "r-g-b" pvar the config names `theme.accent_pvar`, else the
     // Preferences accent override. Returns false if neither is set.
     bool theme_color(gfx::Color& out) const;
@@ -147,6 +153,11 @@ public:
     // Art a native panel draws, from the config's `asset.<key>` (relative to `images`), with
     // {theme} -> theme_index() and {n} -> n. "" when the skin declares none: draw without it.
     std::string asset(const std::string& key, int n = 0) const;
+    // A native panel's colour for `role` ("text", "background", …): the config's
+    // `color.<panel>.<role>`, else `color.<role>`, else `def` (the panel's built-in look). Values
+    // are "r g b", "r-g-b" or "#rrggbb".
+    gfx::Color color(const char* panel, const char* role, gfx::Color def) const;
+    bool configured_color(const char* panel, const char* role, gfx::Color& out) const; // false = not set
     // A $panel() the config renames/retypes (`panel.remap.<name> = <new name>|<new type>`).
     Placement remap_panel(const Placement& p) const;
     bool is_lyrics_panel(const std::string& name) const; // a hosted native Lyric Show panel
@@ -223,8 +234,8 @@ private:
     void dispatch_placement(const Placement& p, int offsetX, int offsetY); // shared by render()/host_child_panel
 
     // One hosted panel: a native view in a platform host, or an embedded foreign element.
-    enum class Kind { TrackDisplay, Seekbar, Volume, Playlist, Spectrum, AlbumList, Lyrics,
-                      QuickSearch, LibraryTree, Embedded };
+    enum class Kind { TrackDisplay, Seekbar, Volume, Playlist, Spectrum, PeakMeter, AlbumArt, AlbumList,
+                      Lyrics, QuickSearch, LibraryTree, Embedded };
     struct Slot {
         Kind kind = Kind::Embedded;
         std::unique_ptr<ui::View> view;               // destroyed after the host (declared first)

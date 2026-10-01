@@ -28,6 +28,7 @@ private:
     void on_enter() override { run_search(); }
     void on_escape() override;
     void run_search();
+    gfx::Color col(const char* role, gfx::Color def) const;
 
     SkinEngine* m_engine = nullptr;
     std::unique_ptr<ui::TextField> m_edit;

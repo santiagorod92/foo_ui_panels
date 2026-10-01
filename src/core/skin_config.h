@@ -40,6 +40,8 @@ std::string resolve_main_script_with(const std::string& dir, const SkinConfig& c
 std::vector<std::string> main_script_candidates(const std::string& dir);
 
 // Preferences override for the main script: a file name inside the skin folder, "" = automatic.
+// Persisted, so these and resolve_main_script() live in skin_paths.cpp (skin_config.cpp has no
+// SDK dependency — it's compiled into the unit tests).
 std::string main_script_override();
 void set_main_script_override(const std::string& name);
 

@@ -52,7 +52,9 @@ One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and m
 
 3. **View › Layout › Edit Layout**, add **Panels UI** and let it fill the window.
 4. Put the skin (its main script, `panels/`, images and `foo_ui_panels.ini` if it has one) in
-   `~/Library/foobar2000-v2/foo_ui_panels/`.
+   `~/Library/foobar2000-v2/foo_ui_panels/` — or keep several skins in one folder (one subfolder
+   each) and pick it, the active skin and its main script in **Preferences › Display › Panels UI
+   (reborn)**. Changes there apply immediately.
 
 The component ships no skin of its own. fooAvA is distributed by its author (link above); the
 scripts in [`tools/`](tools/) recover its images and scripts from the original installer
@@ -86,6 +88,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `action.remap.<action>` | Run another button action instead. |
 | `onboarding.pvars` | First-run flags set to 1 when a popup opens: names, `prefix*`, `!exclusion`. |
 | `pvar.once.<name>` | Set this variable once, then leave it to the user. |
+| `color.<role>`, `color.<panel>.<role>` | Native panels' colours (`r g b`, `r-g-b` or `#rrggbb`); the panel-specific key wins. Panels: `playlist`, `album_list`, `quick_search`, `lyrics`, `seekbar`, `volume`. Roles: `background`, `overlay` (dimming over the wallpaper), `text`, `text_secondary`, `text_dim`, `highlight` (selection; default: the theme accent), `separator`, `row_text`, `row_text_selected` (playlist), `hover`, `placeholder` (album browser), `frame` (quick search). Unset: the built-in dark look. |
 
 ## What's implemented
 
@@ -95,8 +98,16 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   `$imageabs2`, `$drawrect`, `$font` (incl. glow), `$alignabs`, persistent `$setpvar`/`$getpvar`
   variables and the skin's button actions (transport, playback order, window size, popups…).
 - Native versions of the panels fooAvA uses: track display (CD case, rating stars), seek bar,
-  volume, grouped playlist, spectrum analyser, album browser + cover flow, playlist switcher,
-  quick search and a synced-lyrics panel.
+  volume, grouped playlist, spectrum analyser, peak meter, album art, album browser + cover
+  flow, playlist switcher, quick search and a synced-lyrics panel — all drawn by the component
+  itself, so they work the same on macOS.
+- Grouped playlist: keyboard navigation (arrows, Page Up/Down, Home/End with Shift to extend
+  the selection, Enter to play, type a few letters to jump to a title or album artist), drag
+  selected tracks to reorder them, and drop files or folders from Explorer / Finder onto it
+  (dropped anywhere else in the window, they're added to the end of the active playlist).
+- Lyrics panel: a timing correction per track on top of the global one, "Search online again"
+  to replace wrong lyrics (even ones from tags or a sidecar file), and lrclib.net's
+  instrumental tracks shown as such.
 - Right-click **Edit code…** on a panel, with **Apply** to reload its script live — or edit
   the skin's scripts or `foo_ui_panels.ini` in any editor: saved changes are picked up within a
   second.
@@ -105,11 +116,15 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - The player window reopens where you left it, at the same size.
 - Button tooltips and the skin's own window title (`$settitle`, e.g. "artist - title" while
   playing).
+- The skin's tray icon (`$settray`): on Windows a notification-area icon — click to show/hide the
+  player, right-click for play/pause, stop, previous/next, show/hide and exit — and minimising
+  sends the player to the tray; on macOS the same menu from a menu-bar icon.
+- GDI+-style outlines (`$gp_set_pen` + `$gp_draw_rectangle`) next to the existing brush fills.
 - **macOS support**: the same engine and panels run on macOS (Cocoa + CoreGraphics/CoreText),
-  shipped in the same `.fb2k-component` as the Windows build. Current limitations: no
-  Preferences page yet (the skin folder is fixed, see Installation), 1x rendering on Retina
-  displays, and panels that host foobar2000's own UI elements only work if a Mac element of the
-  same name exists.
+  shipped in the same `.fb2k-component` as the Windows build, with its own Preferences page
+  (skin folder, active skin, main script, accent colour) and full-resolution Retina rendering.
+  Panels that host foobar2000's own UI elements only work if a Mac element of the same name
+  exists.
 
 ## Works with foo_navidrome
 
@@ -128,7 +143,6 @@ own):
 
 ## Roadmap
 
-- macOS polish: a Preferences page (skin folder picker) and Retina (2x) rendering.
 - A step-by-step guide for setting up fooAvA from its original download.
 
 ## Contributing
@@ -156,6 +170,9 @@ wrong, a function isn't supported, or a panel is missing, just
   (also run in CI) verifies the core compiles without Windows headers.
 - Both builds should pass: `./build.sh` (Windows) and `./scripts/mac-build.sh` (macOS) — CI
   checks both on every PR.
+- `make test` runs the unit tests (`tests/`, host compiler, under ASan/UBSan — also in CI). They
+  cover the parts of the engine that don't need foobar2000: script/config parsing, `$eval`, menu
+  action matching, LRC/lrclib parsing, playlist reordering. Add a case when you touch those.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, …): they
   drive the automated releases (see [Releases](#releases)).
 - Update this README when you add or change a feature (e.g. *What's implemented*, *Roadmap*),

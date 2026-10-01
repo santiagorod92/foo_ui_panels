@@ -72,24 +72,32 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   registry/dispatch, button actions, pvars, theme colour. Core architecture — read this first.
 - `src/core/image_cache.{h,cpp}` — image cache, wildcard cover paths, album-art pipeline.
 - `src/core/skin_config.{h,cpp}` — per-skin `foo_ui_panels.ini` + main-script resolution.
-- `src/core/skin_paths.{h,cpp}` — skin folder settings/resolution (`component_dir()` is platform).
+- `src/core/skin_paths.{h,cpp}` — skin folder settings/resolution (`component_dir()` is platform);
+  also the persisted main-script override (keeps `skin_config.cpp` SDK-free).
+- SDK-free, unit-tested (`tests/`, `make test`): `script_util` (script/ini parsing, `$eval`,
+  menu-action matching), `lyrics_parse` (LRC, lrclib JSON), `playlist_ops.h`, `meter_math.h`,
+  `skin_config`.
+  `make test` compiles them WITHOUT the SDK include path — never `#include "../fb2k.h"` there;
+  new pure logic goes in one of these (or a new SDK-free file added to `TEST_SRC`) with a test.
 - `src/core/component.cpp` — `DECLARE_COMPONENT_VERSION`, built-in fallback skin.
 - `src/core/button.h`, `fs_util.h` (UTF-8 paths/files), vendored `navidrome_*_api.h` (GUIDs
   are C++17 `inline` variables — `FOOGUIDDECL` is Windows-only `selectany`).
 - `src/panels/` — native panels, one `ui::View` each: `track_display`, `seekbar`, `volume`,
-  `playlist_view`, `spectrum` (painted on the host's render thread, `render_fps`), `popup`
+  `playlist_view`, `spectrum` and `peak_meter` (painted on the host's render thread,
+  `render_fps`), `album_art` (now-playing cover, "Album Art"), `popup`
   (settings popup), `album_list` ("Graphical Browser"/"Album list"/"Chronflow" — no stock DUI
   element; Media Library + Navidrome albums, grid or cover flow), `lyrics_panel` ("Lyric Show":
   LRC sync, tags → sidecar → cache → lrclib.net; `lyr.*` pvars), `quick_search`, `library_tree`
   ("Playlist switcher", self-drawn tree).
 - `src/platform/win/` — `main.cpp` (`user_interface`, main window = `ui::MainWindow`, menus,
-  keyboard), `win_view.cpp` (`WinViewHost` child HWNDs + every `ui::` service),
+  keyboard, `$settray` icon via `tray.h`), `win_view.cpp` (`WinViewHost` child HWNDs + every `ui::` service),
   `gdi_canvas.{h,cpp}` (GDI + GDI+), `panel_host` (hosts a DUI `ui_element` by name),
   `preferences.cpp` (Preferences page, plain Win32 — no ATL/WTL in our toolchain).
 - `src/platform/mac/` — `mac_main.mm` (`ui_element_mac` "Panels UI", root canvas =
   `ui::MainWindow`; skins in `~/Library/foobar2000-v2/foo_ui_panels`), `mac_view.mm` (flipped
   NSView hosts + every `ui::` service), `mac_canvas.{h,mm}` (CoreGraphics/CoreText/ImageIO,
-  1 canvas px = 1 pt, dpi 96). No Preferences page yet.
+  1 canvas unit = 1 pt at backingScaleFactor px, dpi 96), `mac_preferences.mm` (General-tab
+  subset of the Windows page, applies live via `pui::mac::reload_skin_everywhere`).
 - Text drawing on Windows: **always wide APIs** (GdiCanvas converts UTF-8). `DrawTextA`
   mojibakes non-ASCII foobar strings (titleformat output, tags).
 - fooAvA config decode tooling: `tools/extract_fooava.py` (s8.bin → `fooava.txt` + `panels/*.txt`,
@@ -118,8 +126,8 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `DECLARE_COMPONENT_VERSION`.
 
 ## CI / release
-- `.github/workflows/build.yml` — build check on push/PR: Windows DLL + `check-portable`
-  (ubuntu) and the universal mac bundle (macos-latest), both as artifacts.
+- `.github/workflows/build.yml` — build check on push/PR: Windows DLL + `check-portable` +
+  `make test` (ubuntu) and the universal mac bundle (macos-latest), both as artifacts.
 - `.github/workflows/release.yml` — semantic-release (`.releaserc.json`, Conventional Commits,
   same config as foo_navidrome) on push to main; `scripts/release-build.sh <ver>` builds and
   packages `foo_ui_panels_<ver>.fb2k-component` (DLL under `x64/`, `scripts/package.py`); then

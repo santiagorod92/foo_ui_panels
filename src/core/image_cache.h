@@ -28,6 +28,10 @@ bool draw_image(gfx::Canvas& cv, const std::string& path, int x, int y, int w, i
 bool draw_cover_art(gfx::Canvas& cv, const std::string& path, const metadb_handle_ptr& track,
                     int x, int y, int w, int h, int alpha = 255, int rotateflip = 0);
 
+// Draw the (x,y,w,h) region of `img` at (0,0) of `cv` — a transparent panel showing the frame
+// beneath it at its own offset. Parts outside the image stay untouched; false if none overlap.
+bool draw_image_region(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int w, int h);
+
 // Called (main thread) whenever album art that a draw_cover_art/cover_image call had to wait for
 // arrives — the pipeline is queried off the UI thread, so the first paint gets nothing and the
 // owner repaints from here. One owner (the skin engine); pass nullptr to detach.

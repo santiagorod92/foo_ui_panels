@@ -6,6 +6,8 @@
 #include <windowsx.h>
 #include "gdi_canvas.h"
 #include "tooltip.h"
+#include "drop_files.h"
+#include "tray.h"
 #include "../../core/skin_engine.h"
 #include "../../core/skin_paths.h"
 #include "../../core/image_cache.h"
@@ -79,6 +81,9 @@ public:
         wc.lpszClassName = WNDCLASS_NAME;
         wc.hCursor       = LoadCursor(nullptr, IDC_ARROW);
         wc.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+        wc.hIcon         = (HICON)ui_control::get()->get_main_icon(); // taskbar / Alt+Tab
+        wc.hIconSm       = (HICON)ui_control::get()->load_main_icon(GetSystemMetrics(SM_CXSMICON),
+                                                                    GetSystemMetrics(SM_CYSMICON));
         RegisterClassExW(&wc);
 
         m_wnd = CreateWindowExW(
@@ -88,6 +93,7 @@ public:
             nullptr, nullptr, inst, this);
 
         if (!m_wnd) throw exception_win32(GetLastError());
+        DragAcceptFiles(m_wnd, TRUE); // files dropped anywhere but the playlist: append to it
         build_menu();
         const int show = restore_placement(m_wnd);
         build_layout();
@@ -112,6 +118,7 @@ public:
         if (m_wnd) save_placement(m_wnd);
         m_skin.destroy_panels(); // child views go before the window they live in
         m_tooltip.destroy();
+        m_tray.remove();
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
         if (m_menubar) { DestroyMenu(m_menubar); m_menubar = nullptr; }
         m_groups.clear();
@@ -123,9 +130,10 @@ public:
 
     void activate() override {
         if (!m_wnd) return;
-        ShowWindow(m_wnd, SW_SHOW);
+        ShowWindow(m_wnd, IsIconic(m_wnd) ? SW_RESTORE : SW_SHOW); // also back from the tray
         SetForegroundWindow(m_wnd);
     }
+    // Minimised; with a tray icon the WM_SIZE handler then takes it off the taskbar.
     void hide() override { if (m_wnd) ShowWindow(m_wnd, SW_MINIMIZE); }
     bool is_visible() override { return m_wnd && IsWindowVisible(m_wnd) && !IsIconic(m_wnd); }
     GUID get_guid() override { return g_panels_ui_guid; }
@@ -193,6 +201,16 @@ public:
     void set_tooltip(const std::string& utf8) override {
         m_tooltip.set(m_wnd, pfc::stringcvt::string_wide_from_utf8(utf8.c_str()).get_ptr());
     }
+    void set_tray(const std::string& utf8) override {
+        if (!m_wnd) return;
+        if (utf8.empty()) {
+            if (m_tray.active() && !IsWindowVisible(m_wnd)) activate(); // never strand it hidden
+            m_tray.remove();
+            return;
+        }
+        m_tray.set(m_wnd, (HICON)ui_control::get()->get_main_icon(),
+                   pfc::stringcvt::string_wide_from_utf8(utf8.c_str()).get_ptr());
+    }
 
 private:
     HWND        m_wnd     = nullptr;
@@ -201,6 +219,7 @@ private:
     bool        m_ole_ok  = false;
     std::string m_title;
     pui::win::Tooltip m_tooltip;
+    pui::win::TrayIcon m_tray;
 
     pui::SkinEngine m_skin;
 
@@ -296,9 +315,22 @@ private:
             LRESULT ret = 0;
             if (self->m_hook(wnd, msg, wp, lp, &ret)) return ret;
         }
+        if (self && msg == pui::win::TrayIcon::taskbar_created_message()) { self->m_tray.readd(); return 0; }
         switch (msg) {
         case WM_SIZE:
+            // Minimised while the skin has a tray icon: live in the tray, off the taskbar.
+            if (self && wp == SIZE_MINIMIZED && self->m_tray.active()) { ShowWindow(wnd, SW_HIDE); return 0; }
             if (self) self->resize_layout();
+            return 0;
+        case pui::win::TrayIcon::kMessage:
+            if (!self) return 0;
+            if (lp == WM_LBUTTONUP) {
+                if (IsWindowVisible(wnd) && !IsIconic(wnd)) self->hide(); else self->activate();
+            } else if (lp == WM_RBUTTONUP || lp == WM_CONTEXTMENU) {
+                SetForegroundWindow(wnd);          // or the menu won't close on an outside click
+                self->m_skin.show_tray_menu();
+                PostMessageW(wnd, WM_NULL, 0, 0);
+            }
             return 0;
         case WM_LBUTTONDOWN:
             if (self) {
@@ -352,6 +384,14 @@ private:
             if (keyboard_shortcut_manager::get()->on_keydown_auto(wp))
                 return 0;
             break;
+        case WM_DROPFILES: {
+            HDROP drop = (HDROP)wp;
+            POINT pt = {};
+            auto paths = pui::win::dropped_files(drop, pt);
+            DragFinish(drop);
+            pui::SkinEngine::add_files(paths);
+            return 0;
+        }
         case WM_COMMAND:
             if (self && HIWORD(wp) == 0 && lp == 0) { // menu item
                 if (self->exec_command(LOWORD(wp))) return 0;

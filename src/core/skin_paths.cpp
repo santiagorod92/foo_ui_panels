@@ -1,4 +1,5 @@
 #include "skin_paths.h"
+#include "skin_config.h"
 #include "fs_util.h"
 #include "../fb2k.h"
 
@@ -16,12 +17,28 @@ cfg_var_modern::cfg_string g_skins_root_cfg(g_skins_root_guid, "");
 const GUID g_active_skin_guid =
     { 0x2a7e4c11, 0x8b3f, 0x4d6a, { 0x9e, 0x52, 0x1c, 0x8f, 0x3a, 0x6b, 0x0d, 0x24 } };
 cfg_var_modern::cfg_string g_active_skin_cfg(g_active_skin_guid, "");
+
+// {7B3E1D52-9A4C-4F8B-B1E6-2D5C8A9F0E31} — cfg_string: main script file name override.
+const GUID g_main_script_guid =
+    { 0x7b3e1d52, 0x9a4c, 0x4f8b, { 0xb1, 0xe6, 0x2d, 0x5c, 0x8a, 0x9f, 0x0e, 0x31 } };
+cfg_var_modern::cfg_string g_main_script_cfg(g_main_script_guid, "");
 } // namespace
 
 std::string skins_root() { pfc::string8 s = g_skins_root_cfg.get(); return std::string(s.get_ptr(), s.length()); }
 std::string active_skin() { pfc::string8 s = g_active_skin_cfg.get(); return std::string(s.get_ptr(), s.length()); }
 void set_skins_root(const std::string& utf8) { g_skins_root_cfg.set(utf8.c_str()); }
 void set_active_skin(const std::string& name) { g_active_skin_cfg.set(name.c_str()); }
+
+// The persisted halves of skin_config.h (kept here so skin_config.cpp stays SDK-free).
+std::string main_script_override() {
+    pfc::string8 s = g_main_script_cfg.get();
+    return std::string(s.get_ptr(), s.length());
+}
+void set_main_script_override(const std::string& name) { g_main_script_cfg.set(name.c_str()); }
+
+std::string resolve_main_script(const std::string& dir, const SkinConfig& cfg, std::string* why) {
+    return resolve_main_script_with(dir, cfg, main_script_override(), why);
+}
 
 std::string resolve_skin_dir_for(const std::string& root, const std::string& active) {
     if (!root.empty() && !active.empty()) {

@@ -10,8 +10,10 @@ namespace pui::gfx {
 
 class CGCanvas : public Canvas {
 public:
-    // A w x h RGBA bitmap canvas (1 canvas pixel = 1 point; the host scales it on screen).
-    CGCanvas(int w, int h);
+    // A w x h RGBA bitmap canvas in points (1 canvas unit = 1 point), backed by w*scale x h*scale
+    // pixels: scale = the window's backingScaleFactor, so Retina displays get full resolution
+    // while every coordinate the portable code sees stays in points.
+    CGCanvas(int w, int h, double scale = 1.0);
     ~CGCanvas() override;
     CGContextRef context() const { return m_ctx; }
     // Current contents as an image (for putting on screen).
@@ -44,6 +46,7 @@ public:
 private:
     CGContextRef m_ctx = nullptr;
     int m_w, m_h;
+    double m_scale = 1.0;
     CTFontRef m_font = nullptr;   // current font (owned)
     bool m_underline = false;
 };

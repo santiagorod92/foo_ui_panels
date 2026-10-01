@@ -64,6 +64,8 @@ private:
     void merge_remote(std::vector<Group>&& add);    // UI thread; keeps selection
     void request_cover(const std::string& coverId, int size); // async fetch for a visible remote tile
     void paint_coverflow(gfx::Canvas& cv, int W, int H);
+    // The skin config's `color.album_list.<role>` / `color.<role>`, else `def`.
+    gfx::Color color_of(const char* role, gfx::Color def) const;
     void set_target(int idx);   // cover-flow: glide to album idx
     int  group_index_for_now_playing() const;
 

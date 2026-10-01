@@ -2,6 +2,7 @@
 #include "../core/skin_engine.h"
 #include "../core/image_cache.h"
 #include "../core/fs_util.h"
+#include "../core/lyrics_parse.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -18,13 +19,7 @@ const int kTickMs = 50;
 std::vector<LyricsPanel*> g_panels;      // live instances, for repaint-all after a setting/fetch change
 unsigned g_version = 0;                  // bumped whenever a fetch stores a new cache file
 std::set<std::string> g_fetching, g_failed;
-
-std::string trim(const std::string& s) {
-    size_t a = 0, b = s.size();
-    while (a < b && (unsigned char)s[a] <= ' ') ++a;
-    while (b > a && (unsigned char)s[b - 1] <= ' ') --b;
-    return s.substr(a, b - a);
-}
+std::set<std::string> g_preferCache; // keys the user re-searched: the fresh download beats tags/sidecars
 
 std::string lower(std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; }
 
@@ -65,76 +60,6 @@ Settings read_settings(SkinEngine* e) {
     return s;
 }
 
-// ---- lyric text parsing ------------------------------------------------------------------
-bool parse_time(const std::string& tag, double& out) {
-    int m = 0, sec = 0; size_t i = 0;
-    if (tag.empty() || !isdigit((unsigned char)tag[0])) return false;
-    while (i < tag.size() && isdigit((unsigned char)tag[i])) m = m * 10 + (tag[i++] - '0');
-    if (i >= tag.size() || tag[i] != ':') return false;
-    ++i;
-    if (i >= tag.size() || !isdigit((unsigned char)tag[i])) return false;
-    while (i < tag.size() && isdigit((unsigned char)tag[i])) sec = sec * 10 + (tag[i++] - '0');
-    double frac = 0;
-    if (i < tag.size() && (tag[i] == '.' || tag[i] == ':')) {
-        ++i; double scale = 0.1;
-        while (i < tag.size() && isdigit((unsigned char)tag[i])) { frac += (tag[i++] - '0') * scale; scale /= 10; }
-    }
-    if (i != tag.size()) return false;
-    out = m * 60.0 + sec + frac;
-    return true;
-}
-
-// LRC (or plain) text -> lines. Lines with no [mm:ss.xx] tag are kept only for plain lyrics.
-bool parse_lyrics(std::string text, std::vector<std::pair<double, std::string>>& lines, bool& synced) {
-    if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
-    lines.clear(); synced = false;
-    std::vector<std::pair<double, std::string>> timed, plain;
-    double offset = 0;
-    size_t pos = 0;
-    while (pos <= text.size()) {
-        size_t nl = text.find('\n', pos);
-        std::string line = text.substr(pos, nl == std::string::npos ? std::string::npos : nl - pos);
-        pos = (nl == std::string::npos) ? text.size() + 1 : nl + 1;
-        while (!line.empty() && (line.back() == '\r')) line.pop_back();
-
-        std::vector<double> ts; size_t p = 0; bool meta = false;
-        while (p < line.size() && line[p] == '[') {
-            size_t e = line.find(']', p);
-            if (e == std::string::npos) break;
-            std::string tag = line.substr(p + 1, e - p - 1);
-            double t;
-            if (parse_time(tag, t)) { ts.push_back(t); p = e + 1; }
-            else {
-                if (ts.empty()) {
-                    meta = true;
-                    if (lower(tag).compare(0, 7, "offset:") == 0) offset = atof(tag.c_str() + 7) / 1000.0;
-                }
-                break;
-            }
-        }
-        if (meta && ts.empty()) continue;
-        std::string body = line.substr(p);
-        // strip inline word timestamps <mm:ss.xx>
-        std::string clean;
-        for (size_t i = 0; i < body.size(); ++i) {
-            if (body[i] == '<') { size_t e = body.find('>', i); double t; if (e != std::string::npos && parse_time(body.substr(i + 1, e - i - 1), t)) { i = e; continue; } }
-            clean += body[i];
-        }
-        body = trim(clean);
-        if (!ts.empty()) for (double t : ts) timed.push_back({ t - offset, body });
-        else plain.push_back({ -1, body });
-    }
-    if (!timed.empty()) {
-        std::stable_sort(timed.begin(), timed.end(), [](auto& a, auto& b) { return a.first < b.first; });
-        lines = timed; synced = true;
-    } else {
-        while (!plain.empty() && plain.back().second.empty()) plain.pop_back();
-        while (!plain.empty() && plain.front().second.empty()) plain.erase(plain.begin());
-        lines = plain;
-    }
-    return !lines.empty();
-}
-
 // ---- file helpers -------------------------------------------------------------------------
 bool read_small_file(const std::string& native, std::string& out) {
     FILE* f = fs_open(native, "rb");
@@ -159,6 +84,41 @@ std::string cache_dir() {
     std::error_code ec;
     std::filesystem::create_directory(fs_path(d), ec);
     return d;
+}
+
+// Per-track timing corrections (ms), keyed like the cache ("artist - title", lower-cased) and kept
+// in <cache dir>/offsets.txt as "<ms>\t<key>" lines: lyrics drift track by track, not globally.
+std::map<std::string, int>& track_offsets() {
+    static std::map<std::string, int> m;
+    static bool loaded = false;
+    if (!loaded) {
+        loaded = true;
+        std::string text, dir = cache_dir();
+        if (!dir.empty() && read_small_file(dir + kPathSep + "offsets.txt", text)) {
+            size_t pos = 0;
+            while (pos < text.size()) {
+                size_t nl = text.find('\n', pos); if (nl == std::string::npos) nl = text.size();
+                std::string line = text.substr(pos, nl - pos); pos = nl + 1;
+                size_t tab = line.find('\t');
+                if (tab != std::string::npos && tab + 1 < line.size()) m[line.substr(tab + 1)] = atoi(line.c_str());
+            }
+        }
+    }
+    return m;
+}
+
+void set_track_offset(const std::string& key, int ms) {
+    auto& m = track_offsets();
+    if (ms) m[key] = ms; else m.erase(key);
+    std::string dir = cache_dir(), text;
+    if (dir.empty()) return;
+    for (auto& [k, v] : m) text += std::to_string(v) + "\t" + k + "\n";
+    write_file(dir + kPathSep + "offsets.txt", text);
+}
+
+int track_offset(const std::string& key) {
+    auto& m = track_offsets(); auto it = m.find(key);
+    return it == m.end() ? 0 : it->second;
 }
 
 std::string sanitize(std::string s) {
@@ -197,6 +157,10 @@ bool load_local(const metadb_handle_ptr& np, const TrackIds& ids,
                 std::vector<std::pair<double, std::string>>& lines, bool& synced) {
     static const char* kFields[] = { "syncedlyrics", "synced lyrics", "lyrics", "unsyncedlyrics",
                                      "unsynced lyrics", "unsynced_lyrics" };
+    std::string cached;
+    if (g_preferCache.count(ids.key) && !ids.cache.empty() && read_small_file(ids.cache, cached)
+        && parse_lyrics(cached, lines, synced))
+        return true;
     file_info_impl info;
     bool have = false;
     std::vector<std::pair<double, std::string>> l; bool s = false;
@@ -228,73 +192,9 @@ bool load_local(const metadb_handle_ptr& np, const TrackIds& ids,
 }
 
 // ---- lrclib.net ----------------------------------------------------------------------------
-std::string urlenc(const std::string& s) {
-    static const char* hex = "0123456789ABCDEF";
-    std::string o;
-    for (unsigned char c : s) {
-        if (isalnum(c) || c == '-' || c == '_' || c == '.' || c == '~') o += (char)c;
-        else { o += '%'; o += hex[c >> 4]; o += hex[c & 15]; }
-    }
-    return o;
-}
-
-void utf8_append(std::string& o, unsigned cp) {
-    if (cp < 0x80) o += (char)cp;
-    else if (cp < 0x800) { o += (char)(0xC0 | (cp >> 6)); o += (char)(0x80 | (cp & 63)); }
-    else if (cp < 0x10000) { o += (char)(0xE0 | (cp >> 12)); o += (char)(0x80 | ((cp >> 6) & 63)); o += (char)(0x80 | (cp & 63)); }
-    else { o += (char)(0xF0 | (cp >> 18)); o += (char)(0x80 | ((cp >> 12) & 63)); o += (char)(0x80 | ((cp >> 6) & 63)); o += (char)(0x80 | (cp & 63)); }
-}
-
-// First non-null string value of `"key":` in the JSON text (also works on the search array).
-bool json_string(const std::string& j, const char* key, std::string& out) {
-    std::string k = std::string("\"") + key + "\"";
-    size_t from = 0;
-    for (;;) {
-        size_t p = j.find(k, from);
-        if (p == std::string::npos) return false;
-        p += k.size(); from = p;
-        while (p < j.size() && (j[p] == ' ' || j[p] == ':' || j[p] == '\n' || j[p] == '\t')) ++p;
-        if (p >= j.size() || j[p] != '"') continue; // null
-        ++p; out.clear();
-        while (p < j.size() && j[p] != '"') {
-            if (j[p] == '\\' && p + 1 < j.size()) {
-                ++p;
-                switch (j[p]) {
-                case 'n': out += '\n'; break;
-                case 't': out += '\t'; break;
-                case 'r': break;
-                case 'u': {
-                    // \uXXXX, a surrogate pair as two of them. Malformed input (truncated, a lone
-                    // or mismatched surrogate) becomes U+FFFD instead of reading past the body.
-                    auto hex4 = [&](size_t at, unsigned& v) {
-                        if (at + 4 > j.size()) return false;
-                        v = 0;
-                        for (size_t k = at; k < at + 4; ++k) {
-                            char c = j[k]; v <<= 4;
-                            if (c >= '0' && c <= '9') v |= c - '0';
-                            else if (c >= 'a' && c <= 'f') v |= c - 'a' + 10;
-                            else if (c >= 'A' && c <= 'F') v |= c - 'A' + 10;
-                            else return false;
-                        }
-                        return true;
-                    };
-                    unsigned cp = 0, lo = 0;
-                    if (!hex4(p + 1, cp)) { out += "\xEF\xBF\xBD"; break; }
-                    p += 4;
-                    if (cp >= 0xD800 && cp < 0xDC00) {
-                        if (j.compare(p + 1, 2, "\\u") == 0 && hex4(p + 3, lo) && lo >= 0xDC00 && lo < 0xE000) {
-                            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00); p += 6;
-                        } else cp = 0xFFFD;
-                    } else if (cp >= 0xDC00 && cp < 0xE000) cp = 0xFFFD;
-                    utf8_append(out, cp); break; }
-                default: out += j[p];
-                }
-            } else out += j[p];
-            ++p;
-        }
-        if (!trim(out).empty()) return true;
-    }
-}
+// lrclib marks tracks without vocals instead of giving them lyrics: cached as this one line, so
+// the panel says so instead of "No lyrics found" and doesn't search again.
+const char* const kInstrumental = "\xE2\x99\xAA Instrumental \xE2\x99\xAA";
 
 bool http_get(const std::string& url, std::string& body, abort_callback& ab) {
     try {
@@ -317,6 +217,8 @@ void finish_fetch(const std::string& key, bool ok, const std::string& text, cons
     g_fetching.erase(key);
     if (ok && !cacheFile.empty()) {
         write_file(cacheFile, text);
+        // An explicit search replaces whatever was showing (tags/sidecar included) this session.
+        g_preferCache.insert(key);
         ++g_version;
     } else if (!ok) g_failed.insert(key);
     for (auto* p : g_panels) p->invalidate();
@@ -343,8 +245,10 @@ void LyricsPanel::refresh_track() {
     m_key = key; m_version = g_version;
     if (trackChanged) { m_scroll = 0; m_holdUntil = 0; }
     m_lyrics = Lyrics();
+    m_idsKey.clear();
     if (!np.is_valid()) return;
     TrackIds ids = ids_for(np);
+    m_idsKey = ids.key;
     std::vector<std::pair<double, std::string>> lines; bool synced = false;
     if (load_local(np, ids, lines, synced)) {
         m_lyrics.synced = synced;
@@ -369,14 +273,17 @@ void LyricsPanel::start_fetch() {
             // must not hold up closing the player.
             abort_callback& ab = fb2k::mainAborter();
             const std::string base = "https://lrclib.net/api/";
-            std::string q = "artist_name=" + urlenc(ids.artist) + "&track_name=" + urlenc(ids.title);
+            std::string q = "artist_name=" + url_encode(ids.artist) + "&track_name=" + url_encode(ids.title);
             std::string exact = q;
-            if (!ids.album.empty()) exact += "&album_name=" + urlenc(ids.album);
+            if (!ids.album.empty()) exact += "&album_name=" + url_encode(ids.album);
             if (ids.duration > 0) exact += "&duration=" + std::to_string(ids.duration);
-            if (http_get(base + "get?" + exact, body, ab))
-                ok = json_string(body, "syncedLyrics", text) || json_string(body, "plainLyrics", text);
-            if (!ok && http_get(base + "search?" + q, body, ab))
-                ok = json_string(body, "syncedLyrics", text) || json_string(body, "plainLyrics", text);
+            auto pick = [&]() {
+                if (json_string(body, "syncedLyrics", text) || json_string(body, "plainLyrics", text)) return true;
+                if (json_true(body, "instrumental")) { text = kInstrumental; return true; }
+                return false;
+            };
+            if (http_get(base + "get?" + exact, body, ab)) ok = pick();
+            if (!ok && http_get(base + "search?" + q, body, ab)) ok = pick();
         } catch (...) {}
         fb2k::inMainThread([ids, ok, text]() { finish_fetch(ids.key, ok, text, ids.cache); });
     });
@@ -394,7 +301,7 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
     refresh_track();
     const Settings s = read_settings(m_engine);
 
-    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(22, 22, 26));
+    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, m_engine ? m_engine->color("lyrics", "background", gfx::Color(22, 22, 26)) : gfx::Color(22, 22, 26));
 
     metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
     if (np.is_valid()) {
@@ -448,7 +355,8 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
         // Current line: last timestamp at/before the playback position.
         int cur = -1;
         if (m_lyrics.synced && np.is_valid()) {
-            double pos = playback_control::get()->playback_get_position() + s.offsetMs / 1000.0;
+            const int ms = s.offsetMs + track_offset(m_idsKey);
+            double pos = playback_control::get()->playback_get_position() + ms / 1000.0;
             for (size_t i = 0; i < m_lyrics.lines.size(); ++i) if (m_lyrics.lines[i].t <= pos) cur = (int)i; else break;
         }
         const int topPad = H / 3;
@@ -484,8 +392,13 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
 void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, int x, int y) {
     if (!engine) return;
     const Settings s = read_settings(engine);
-    enum { kSize = 100, kDim = 200, kOffset = 300, kColPlain = 1, kColSynced = 2, kColCur = 3,
-           kOnline = 4, kFetchNow = 5, kReset = 6 };
+    enum { kSize = 100, kDim = 200, kOffset = 300, kTrackOffset = 400, kColPlain = 1, kColSynced = 2, kColCur = 3,
+           kOnline = 4, kFetchNow = 5, kReset = 6, kTrackOffsetReset = 7 };
+    static const int kTrackSteps[] = { -500, -100, 100, 500 };
+    // The now-playing track's key (per-track offset) and whether it has lyrics showing.
+    std::string key; bool haveLyrics = false;
+    for (auto* p : g_panels) if (!p->m_idsKey.empty()) { key = p->m_idsKey; haveLyrics = !p->m_lyrics.lines.empty(); break; }
+    const int trackMs = key.empty() ? 0 : track_offset(key);
     static const int kSizes[] = { 11, 13, 15, 17, 20, 24, 28 };
     static const int kDims[] = { 0, 25, 45, 65, 80, 90 };
     static const int kOffsets[] = { -2000, -1000, -500, 0, 500, 1000, 2000 };
@@ -496,11 +409,15 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     auto sub = [](std::string label, ui::Menu children) {
         ui::MenuItem m; m.label = std::move(label); m.children = std::move(children); return m;
     };
-    ui::Menu sizes, dims, offs, cols;
+    ui::Menu sizes, dims, offs, cols, toffs;
     char l[32];
     for (int i = 0; i < 7; ++i) { snprintf(l, sizeof l, "%d pt", kSizes[i]); sizes.push_back(item(l, kSize + i, s.size == kSizes[i])); }
     for (int i = 0; i < 6; ++i) { snprintf(l, sizeof l, "%d%%", kDims[i]); dims.push_back(item(l, kDim + i, s.dim == kDims[i])); }
     for (int i = 0; i < 7; ++i) { snprintf(l, sizeof l, "%+.1f s", kOffsets[i] / 1000.0); offs.push_back(item(l, kOffset + i, s.offsetMs == kOffsets[i])); }
+    for (int i = 0; i < 4; ++i) { snprintf(l, sizeof l, "%+.1f s", kTrackSteps[i] / 1000.0); toffs.push_back(item(l, kTrackOffset + i)); }
+    toffs.push_back(ui::MenuItem::sep());
+    snprintf(l, sizeof l, "Reset (now %+.1f s)", trackMs / 1000.0);
+    toffs.push_back(item(l, kTrackOffsetReset));
     cols.push_back(item("Lyrics without timestamps...", kColPlain));
     cols.push_back(item("Timestamped lines...", kColSynced));
     cols.push_back(item("Current line...", kColCur));
@@ -508,9 +425,10 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     menu.push_back(sub("Font size", sizes));
     menu.push_back(sub("Colours", cols));
     menu.push_back(sub("Cover darkening", dims));
-    menu.push_back(sub("Timing offset", offs));
+    menu.push_back(sub("Timing offset (all tracks)", offs));
+    if (!key.empty()) menu.push_back(sub("Timing offset (this track)", toffs));
     menu.push_back(ui::MenuItem::sep());
-    menu.push_back(item("Search lyrics online now (lrclib.net)", kFetchNow));
+    menu.push_back(item(haveLyrics ? "Search online again (replace these lyrics)" : "Search lyrics online now (lrclib.net)", kFetchNow));
     menu.push_back(item("Search online automatically", kOnline, s.online));
     menu.push_back(ui::MenuItem::sep());
     menu.push_back(item("Reset lyrics settings", kReset));
@@ -524,6 +442,8 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     if (cmd >= kSize && cmd < kSize + 7) engine->set_pvar("lyr.size", std::to_string(kSizes[cmd - kSize]));
     else if (cmd >= kDim && cmd < kDim + 6) engine->set_pvar("lyr.dim", std::to_string(kDims[cmd - kDim]));
     else if (cmd >= kOffset && cmd < kOffset + 7) engine->set_pvar("lyr.offset", std::to_string(kOffsets[cmd - kOffset]));
+    else if (cmd >= kTrackOffset && cmd < kTrackOffset + 4) set_track_offset(key, trackMs + kTrackSteps[cmd - kTrackOffset]);
+    else if (cmd == kTrackOffsetReset) set_track_offset(key, 0);
     else if (cmd == kColPlain) pick("lyr.col.plain", s.plain);
     else if (cmd == kColSynced) pick("lyr.col.synced", s.synced);
     else if (cmd == kColCur) pick("lyr.col.current", s.current);

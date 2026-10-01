@@ -38,6 +38,7 @@ private:
 
     SkinEngine* m_engine = nullptr;
     std::string m_key;      // now-playing path#subsong the loaded lyrics belong to
+    std::string m_idsKey;   // its "artist - title" key (cache / per-track offset)
     unsigned m_version = 0; // last seen cache version (a fetch finished)
     Lyrics m_lyrics;
     double m_scroll = 0;

@@ -26,24 +26,29 @@ void set_fill(CGContextRef ctx, Color c, CGFloat a = 1.0) {
 
 CGRect to_cg(const Rect& r) { return CGRectMake(r.x, r.y, r.w, r.h); }
 
-// A top-left-origin, y-down bitmap context (premultiplied BGRA, sRGB).
-CGContextRef make_bitmap_context(int w, int h) {
-    CGContextRef ctx = CGBitmapContextCreate(nullptr, (size_t)std::max(1, w), (size_t)std::max(1, h), 8, 0, srgb(),
+// A top-left-origin, y-down bitmap context (premultiplied BGRA, sRGB) of w x h points at
+// `scale` pixels per point.
+CGContextRef make_bitmap_context(int w, int h, double scale = 1.0) {
+    const size_t pw = (size_t)std::max(1L, std::lround(w * scale)), ph = (size_t)std::max(1L, std::lround(h * scale));
+    CGContextRef ctx = CGBitmapContextCreate(nullptr, pw, ph, 8, 0, srgb(),
                                              kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
     if (!ctx) return nullptr;
-    CGContextTranslateCTM(ctx, 0, h);
-    CGContextScaleCTM(ctx, 1, -1);
+    CGContextTranslateCTM(ctx, 0, (CGFloat)ph);
+    CGContextScaleCTM(ctx, scale, -scale);
     CGContextSetShouldSmoothFonts(ctx, false);
     return ctx;
 }
 
 // --- images -------------------------------------------------------------------------------
+// `scale` pixels per unit: decoded files are 1 (sizes in pixels, like on Windows); snapshots of a
+// Retina canvas keep its scale so their size and source rects stay in points.
 class MacImage : public Image {
 public:
-    explicit MacImage(CGImageRef img) : m_img(img) {} // takes ownership
+    explicit MacImage(CGImageRef img, double scale = 1.0) : m_img(img), m_scale(scale) {} // takes ownership
     ~MacImage() override { if (m_img) CGImageRelease(m_img); }
-    int width() const override { return (int)CGImageGetWidth(m_img); }
-    int height() const override { return (int)CGImageGetHeight(m_img); }
+    int width() const override { return (int)std::lround(CGImageGetWidth(m_img) / m_scale); }
+    int height() const override { return (int)std::lround(CGImageGetHeight(m_img) / m_scale); }
+    double scale() const { return m_scale; }
     Color average_color() const override {
         uint8_t px[4] = {};
         CGContextRef ctx = CGBitmapContextCreate(px, 1, 1, 8, 4, srgb(),
@@ -57,6 +62,7 @@ public:
     CGImageRef image() const { return m_img; }
 private:
     CGImageRef m_img;
+    double m_scale;
 };
 
 // --- fonts --------------------------------------------------------------------------------
@@ -218,8 +224,8 @@ void platform_images_shutdown() {
 }
 
 // --- CGCanvas ---------------------------------------------------------------------------------
-CGCanvas::CGCanvas(int w, int h) : m_w(w), m_h(h) {
-    m_ctx = make_bitmap_context(w, h);
+CGCanvas::CGCanvas(int w, int h, double scale) : m_w(w), m_h(h), m_scale(scale > 0 ? scale : 1.0) {
+    m_ctx = make_bitmap_context(w, h, m_scale);
 }
 
 CGCanvas::~CGCanvas() {
@@ -371,8 +377,9 @@ void CGCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcIn
     CGImageRef sub = nullptr;
     if (srcIn.w > 0 && srcIn.h > 0 &&
         (srcIn.x > 0 || srcIn.y > 0 || srcIn.w < img.width() || srcIn.h < img.height())) {
-        CGRect sr = CGRectMake(std::floor(srcIn.x), std::floor(srcIn.y),
-                               std::max<CGFloat>(1, std::round(srcIn.w)), std::max<CGFloat>(1, std::round(srcIn.h)));
+        const CGFloat s = mi->scale(); // source rects are in the image's units; CG crops in pixels
+        CGRect sr = CGRectMake(std::floor(srcIn.x * s), std::floor(srcIn.y * s),
+                               std::max<CGFloat>(1, std::round(srcIn.w * s)), std::max<CGFloat>(1, std::round(srcIn.h * s)));
         sub = CGImageCreateWithImageInRect(ci, sr);
         if (sub) ci = sub;
     }
@@ -388,10 +395,12 @@ ImagePtr CGCanvas::snapshot(const Rect& r) {
     if (r.empty() || !m_ctx) return nullptr;
     CGImageRef full = CGBitmapContextCreateImage(m_ctx);
     if (!full) return nullptr;
+    const CGFloat s = m_scale;
     CGImageRef part = (r.x == 0 && r.y == 0 && r.w == m_w && r.h == m_h)
-        ? (CGImageRef)CGImageRetain(full) : CGImageCreateWithImageInRect(full, to_cg(r));
+        ? (CGImageRef)CGImageRetain(full)
+        : CGImageCreateWithImageInRect(full, CGRectMake(r.x * s, r.y * s, r.w * s, r.h * s));
     CGImageRelease(full);
-    return part ? std::make_shared<MacImage>(part) : nullptr;
+    return part ? std::make_shared<MacImage>(part, m_scale) : nullptr;
 }
 
 } // namespace pui::gfx

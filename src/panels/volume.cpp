@@ -38,7 +38,7 @@ void Volume::paint(gfx::Canvas& cv) {
     int fw = (int)(W * frac);
 
     gfx::Color accent(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(12, 12, 14)); // dark groove
+    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, m_engine ? m_engine->color("volume", "background", gfx::Color(12, 12, 14)) : gfx::Color(12, 12, 14)); // dark groove
     // Level bar: the skin's `asset.bar_fill` (else a theme-colour gradient), plus its
     // `asset.volume_knob` centred on the level, at its natural size, if it has one.
     const int bh = 4, by = (H - bh) / 2;

@@ -19,7 +19,7 @@ void Seekbar::paint(gfx::Canvas& cv) {
     int fw = (int)(W * frac);
 
     gfx::Color accent(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(12, 12, 14)); // dark groove
+    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, m_engine ? m_engine->color("seekbar", "background", gfx::Color(12, 12, 14)) : gfx::Color(12, 12, 14)); // dark groove
     // Played portion: the skin's `asset.bar_fill` (a thin coloured gloss) if it has one,
     // vertically centred, else a thin gradient in the theme colour.
     const int bh = 4, by = (H - bh) / 2;
