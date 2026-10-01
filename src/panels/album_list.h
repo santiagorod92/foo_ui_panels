@@ -51,6 +51,10 @@ private:
 
     void rebuild();          // re-scan the library (on create + manual refresh)
     void layout_metrics(int clientW, int& cols, int& cellW, int& cellH, int& gutter, int& margin) const;
+    // The skin's album case art (asset.cd_case) and the cover's window inside it
+    // (asset.cd_case_window = x y w h, in the case image's pixels). No case: a bare square cover.
+    struct CaseArt { std::string img; int iw = 1, ih = 1, wx = 0, wy = 0, ww = 1, wh = 1; };
+    CaseArt case_art() const;
     int  item_at(int x, int y) const; // group index under client (x,y), or -1
     void on_click(int x, int y, bool dbl);
     void on_rclick(int x, int y);

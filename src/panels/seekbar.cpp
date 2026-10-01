@@ -5,8 +5,6 @@
 
 namespace pui {
 
-void Seekbar::on_attached() { host()->set_timer(1, 500); }
-
 void Seekbar::paint(gfx::Canvas& cv) {
     // The skin script draws this bar itself (rail art, fill, knob — from the playback/volume
     // fields); show exactly what the canvas rendered beneath us and only handle the mouse here.
@@ -20,17 +18,14 @@ void Seekbar::paint(gfx::Canvas& cv) {
     if (frac < 0) frac = 0; if (frac > 1) frac = 1;
     int fw = (int)(W * frac);
 
-    std::string base = m_engine ? m_engine->base_dir() : std::string();
-    int cb = m_engine ? m_engine->colour_index() : 2;
     gfx::Color accent(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    // Solid dark groove matching the skin's near-black bottom bar.
-    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(12, 12, 14));
-    // Played portion: thin themed bar graphic (bar/v{colour.b}.png is a ~3px coloured gloss),
-    // vertically centred; fall back to a thin gradient if the image is missing.
+    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(12, 12, 14)); // dark groove
+    // Played portion: the skin's `asset.bar_fill` (a thin coloured gloss) if it has one,
+    // vertically centred, else a thin gradient in the theme colour.
     const int bh = 4, by = (H - bh) / 2;
     bool drew = false;
-    if (fw > 0 && !base.empty())
-        drew = draw_image(cv, base + "/images/fooAVA/bar/v" + std::to_string(cb) + ".png", 0, by, fw, bh);
+    const std::string fill = m_engine ? m_engine->asset("bar_fill") : std::string();
+    if (fw > 0 && !fill.empty()) drew = draw_image(cv, fill, 0, by, fw, bh);
     if (fw > 0 && !drew) fill_gradient_v(cv, 0, by, fw, bh, accent);
 }
 

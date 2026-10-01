@@ -20,7 +20,7 @@ public:
 
     void on_attached() override;
     void paint(gfx::Canvas& cv) override;
-    void on_timer(int) override { invalidate(); }
+    void on_timer(int) override;
     void on_resize(int, int) override { invalidate(); }
     void on_mouse_down(const ui::MouseEvent& e) override;
     void on_mouse_up(const ui::MouseEvent& e) override;

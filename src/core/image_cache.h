@@ -4,12 +4,14 @@
 #pragma once
 #include "../fb2k.h"
 #include "../gfx/canvas.h"
+#include <functional>
 #include <string>
 
 namespace pui {
 
 // Decoded + cached image at `path` (UTF-8; '*'/'?' wildcards in the file name resolve to the
-// first match, e.g. "C:/Album/*folder*.*"). nullptr if it can't load.
+// first match, e.g. "C:/Album/*folder*.*"). nullptr if it can't load. The cache is LRU-bounded
+// and a miss is retried after a while (art added later shows up without a restart).
 gfx::ImagePtr load_image(const std::string& path);
 
 // Draw `path` into the rect (x,y,w,h). w/h == 0 => natural size.
@@ -21,9 +23,15 @@ bool draw_image(gfx::Canvas& cv, const std::string& path, int x, int y, int w, i
 // Like draw_image, but if `path` can't be loaded from disk (e.g. the track's %path% isn't a
 // filesystem path — a streaming source like foo_navidrome) and `track` is valid, falls back to
 // album_art_manager_v2 (queries whatever album_art_extractor is registered for that track, local
-// or remote — the same API the default DUI/CUI album art views use). Result cached per track path.
+// or remote — the same API the default DUI/CUI album art views use), asynchronously: false until
+// it arrives (see set_art_ready_callback). Result cached per track path.
 bool draw_cover_art(gfx::Canvas& cv, const std::string& path, const metadb_handle_ptr& track,
                     int x, int y, int w, int h, int alpha = 255, int rotateflip = 0);
+
+// Called (main thread) whenever album art that a draw_cover_art/cover_image call had to wait for
+// arrives — the pipeline is queried off the UI thread, so the first paint gets nothing and the
+// owner repaints from here. One owner (the skin engine); pass nullptr to detach.
+void set_art_ready_callback(std::function<void()> cb);
 
 // Same resolution as draw_cover_art (disk path, then the album-art pipeline) without drawing.
 gfx::ImagePtr cover_image(const std::string& path, const metadb_handle_ptr& track);

@@ -45,18 +45,47 @@ One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and m
 **Windows**
 
 3. Pick **Panels UI (reborn)** as the *User interface module* in **Preferences › Display**.
-4. Point the component at a skin: **Preferences › Display › Panels UI (reborn)** → skin folder.
+4. Point the component at a skin: **Preferences › Display › Panels UI (reborn)** → skin folder
+   (and, if the folder has more than one `.txt` at its top level, which one is the main script).
 
 **macOS** — Panels UI is a layout element there, not a separate UI module:
 
 3. **View › Layout › Edit Layout**, add **Panels UI** and let it fill the window.
-4. Put the skin (its `fooava.txt`, `panels/`, `images/`) in
+4. Put the skin (its main script, `panels/`, images and `foo_ui_panels.ini` if it has one) in
    `~/Library/foobar2000-v2/foo_ui_panels/`.
 
 The component ships no skin of its own. fooAvA is distributed by its author (link above); the
 scripts in [`tools/`](tools/) recover its images and scripts from the original installer
 (`recover_fooava_images.py`) and convert its Panels UI configuration into the scripts this
-component loads (`extract_fooava.py`).
+component loads (`extract_fooava.py`, which also writes fooAvA's `foo_ui_panels.ini`).
+
+### Skin configuration
+
+The component is skin-agnostic: everything a particular skin needs beyond its scripts lives in
+an optional `foo_ui_panels.ini` in the skin folder (`key = value` lines, `#` comments). Without
+it, a skin gets neutral defaults. Edits are picked up live, like script edits.
+
+| Key | Meaning (default) |
+|---|---|
+| `script` | Main script file. Default: the only `.txt` in the folder's top level. The Preferences page can override it. |
+| `panels` | Folder of the per-panel scripts (`panels`). |
+| `images` | Folder the native panels' art below is relative to (the skin folder). |
+| `theme.accent_pvar` | Variable holding the accent colour, `r-g-b` (none: the Preferences accent override). |
+| `theme.index_pvar`, `theme.index_default` | Variable holding the theme number used as `{theme}` in art names (`1`). |
+| `font.face_pvar` | Variable holding the face when a script's `$font` names it through a variable. |
+| `font.default` | Face used when none is named (`Tahoma`). |
+| `font.alias.<face>` | Installed face to use when `<face>` isn't installed. |
+| `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
+| `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
+| `asset.nocover`, `asset.cd_case`, `asset.cd_case_window` | Album browser: missing-cover art, case art and the cover's window inside it (`x y w h`, case pixels). |
+| `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
+| `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
+| `popup.size`, `popup.size.<file>` | Size of a `POPUP:` window, `W H` (`400 500`). |
+| `cover.pvar`, `cover.pattern` | Set this variable to the track folder's cover (`*folder*.*`) before each panel script runs. |
+| `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
+| `action.remap.<action>` | Run another button action instead. |
+| `onboarding.pvars` | First-run flags set to 1 when a popup opens: names, `prefix*`, `!exclusion`. |
+| `pvar.once.<name>` | Set this variable once, then leave it to the user. |
 
 ## What's implemented
 
@@ -68,7 +97,14 @@ component loads (`extract_fooava.py`).
 - Native versions of the panels fooAvA uses: track display (CD case, rating stars), seek bar,
   volume, grouped playlist, spectrum analyser, album browser + cover flow, playlist switcher,
   quick search and a synced-lyrics panel.
-- Right-click **Edit code…** on a panel, with **Apply** to reload its script live.
+- Right-click **Edit code…** on a panel, with **Apply** to reload its script live — or edit
+  the skin's scripts or `foo_ui_panels.ini` in any editor: saved changes are picked up within a
+  second.
+- Skin diagnostics in **View › Console**: functions the skin uses that aren't supported (yet),
+  missing skin images, and panels no installed element can host.
+- The player window reopens where you left it, at the same size.
+- Button tooltips and the skin's own window title (`$settitle`, e.g. "artist - title" while
+  playing).
 - **macOS support**: the same engine and panels run on macOS (Cocoa + CoreGraphics/CoreText),
   shipped in the same `.fb2k-component` as the Windows build. Current limitations: no
   Preferences page yet (the skin folder is fixed, see Installation), 1x rendering on Retina
@@ -108,7 +144,9 @@ wrong, a function isn't supported, or a panel is missing, just
 - your OS (Windows / macOS), foobar2000 version and component version;
 - a screenshot of what you see (and, if you can, of how it should look);
 - the script of the affected panel (right-click › **Edit code…**) or the titleformat function
-  that fails.
+  that fails;
+- the `Panels UI:` lines from **View › Console** — they list what the skin uses that isn't
+  supported.
 
 **Pull requests.** Fixes and new features are welcome. A few conventions keep things smooth:
 

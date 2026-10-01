@@ -5,6 +5,7 @@
 #include <commdlg.h>
 #include "gdi_canvas.h"
 #include "panel_host.h"
+#include "tooltip.h"
 #include "../../ui/view.h"
 #include "../../core/skin_paths.h"
 #include <atomic>
@@ -78,6 +79,7 @@ public:
     }
     ~WinViewHost() override {
         m_onClosed = nullptr;
+        m_tooltip.destroy();
         if (m_wnd) DestroyWindow(m_wnd);
     }
 
@@ -146,6 +148,7 @@ public:
         POINT pt; GetCursorPos(&pt);
         if (m_wnd && WindowFromPoint(pt) == m_wnd) SetCursor(m_cursor);
     }
+    void set_tooltip(const std::string& utf8) override { m_tooltip.set(m_wnd, widen(utf8)); }
     void* native() const override { return m_wnd; }
 
 private:
@@ -237,6 +240,7 @@ private:
     View* m_view;
     ViewOptions m_opts;
     HCURSOR m_cursor = nullptr;
+    win::Tooltip m_tooltip;
     bool m_tracking = false, m_popup = false, m_highResTimer = false;
     std::function<void()> m_onClosed;
     std::thread m_render;

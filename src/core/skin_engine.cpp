@@ -88,6 +88,19 @@ static std::string clean_action(std::string a) {
     return a;
 }
 
+// A button's tooltip argument at index i: TOOLTIP:"text" in one argument ($button/$button2), or
+// TOOLTIP followed by the text as the next argument ($imagebutton/$textbutton). Quotes stripped.
+static std::string tooltip_arg(titleformat_hook_function_params* p, size_t argc, size_t i) {
+    if (i >= argc) return {};
+    std::string t = clean_action(param_str(p, i));
+    if (t.size() >= 2 && t.front() == '"' && t.back() == '"') t = t.substr(1, t.size() - 2);
+    if (t.compare(0, 8, "TOOLTIP:") == 0) t = t.substr(8);
+    else if (t == "TOOLTIP") t = i + 1 < argc ? clean_action(param_str(p, i + 1)) : std::string();
+    else return {};
+    if (t.size() >= 2 && t.front() == '"' && t.back() == '"') t = t.substr(1, t.size() - 2);
+    return t;
+}
+
 // Parse image option string, e.g. "alpha-200nokeepaspectROTATEFLIP-6".
 static void parse_img_opts(const std::string& o, int& alpha, int& flip) {
     auto a = o.find("alpha-");        if (a != std::string::npos) alpha = atoi(o.c_str() + a + 6);
@@ -148,6 +161,7 @@ struct Expr {
         for (;;) { skip();
             if (*s == '*') { ++s; v *= number(); }
             else if (*s == '/') { ++s; long d = number(); v = d ? v / d : 0; }
+            else if (*s == '%') { ++s; long d = number(); v = d ? v % d : 0; }
             else break; } return v; }
     long expr() { long v = term();
         for (;;) { skip();
@@ -180,17 +194,62 @@ static void parse_glow_tail(const std::string& t, int& expand, int& alpha) {
     if (a != std::string::npos) alpha = atoi(t.c_str() + a + 10);
 }
 
-// The skin names three faces none of which ship with foobar2000 (or the Wine prefix): map them to
-// the closest widely-installed stand-in so the layout metrics stay sane instead of GDI's arbitrary
-// default. Drop the real .ttf files into the component folder to get the authentic look.
-static const char* face_alias(const char* want) {
-    struct { const char* want, *have; } table[] = {
-        { "Swis721 Cn BT D-Type", "Nimbus Sans Narrow" }, // "Cn" = condensed; NNS is a narrow Helvetica clone
-        { "Calibri",               "Carlito"     }, // metric-compatible Calibri clone
-        { "HandelGotD",            "Nimbus Sans Narrow" }, // handwriting face, no close equivalent here
+// A face the skin asks for that isn't installed: the stand-in the skin config names for it
+// (`font.alias.<face> = <installed face>`, matched case-insensitively), so layout metrics stay sane
+// instead of the platform's arbitrary default. "" if none.
+static std::string face_alias(const SkinConfig& cfg, const char* want) {
+    for (auto& [face, have] : cfg.with_prefix("font.alias."))
+        if (pfc::stricmp_ascii(want, face.c_str()) == 0) return have;
+    return {};
+}
+
+// $functions SkinHook::process_function handles — keep in sync with it (the skin diagnostics
+// treat anything that is neither here nor a core titleformat function as unsupported).
+static const char* const kHookFunctions[] = {
+    "panel", "eval", "get", "puts", "getpvar", "setpvar", "calculate_blend_target", "offset_colour",
+    "windowstyle", "font", "set_font", "drawrect", "drawroundrect", "gradientrect", "drawstring",
+    "draw_text", "alignabs", "textcolor", "set_font_color", "imageabs", "draw_image", "fileexists",
+    "cwb_fileexists", "greater", "imageabs2", "button", "button2", "calcwidth", "textbutton",
+    "imagebutton", "settitle", "gp_set_brush", "gp_fill_rectangle",
+};
+// Accepted (so they render nothing instead of an error) but not implemented yet: $settray (no
+// tray icon yet), $gp_set_pen (no $gp_* outline call uses it), $scplsetlayout (Single Column
+// Playlist's own layouts).
+static const char* const kStubFunctions[] = { "scplsetlayout", "gp_set_pen", "settray" };
+
+static bool listed(const char* const* list, size_t n, const std::string& name) {
+    for (size_t i = 0; i < n; ++i) if (name == list[i]) return true;
+    return false;
+}
+
+// Whether foobar2000's own titleformat engine knows $name: an unknown function renders a fixed
+// error marker, learned from a name that can't exist. A known one called with the wrong number
+// of arguments renders that same marker, so try 0..4 of them. Formatted against a (dummy) track:
+// $info/$meta & co. come with track context, which a bare run() lacks. (The hook knows nothing;
+// a null one crashes the core.)
+static bool core_knows_function(const std::string& name) {
+    struct NoHook : titleformat_hook {
+        bool process_field(titleformat_text_out*, const char*, t_size, bool& found) override { found = false; return false; }
+        bool process_function(titleformat_text_out*, const char*, t_size, titleformat_hook_function_params*, bool& found) override { found = false; return false; }
     };
-    for (const auto& e : table) if (pfc::stricmp_ascii(want, e.want) == 0) return e.have;
-    return nullptr;
+    static std::map<std::string, bool> known;
+    static std::string marker;
+    static metadb_handle_ptr track;
+    if (track.is_empty()) metadb::get()->handle_create(track, make_playable_location("pui-probe://", 0));
+    auto render = [](const std::string& code) {
+        titleformat_object::ptr obj; pfc::string8 out; NoHook hook;
+        if (titleformat_compiler::get()->compile(obj, code.c_str())) track->format_title(&hook, out, obj, nullptr);
+        return std::string(out.get_ptr());
+    };
+    if (marker.empty()) marker = render("$pui_no_such_function_qz()");
+    auto it = known.find(name);
+    if (it != known.end()) return it->second;
+    std::string args;
+    for (int n = 0; n <= 4; ++n) {
+        if (render("$" + name + "(" + args + ")") != marker) return known[name] = true;
+        args += args.empty() ? "a" : ",a";
+    }
+    return known[name] = false;
 }
 
 // --- titleformat hook: layout + immediate drawing --------------------------
@@ -308,14 +367,14 @@ public:
             // widgets (panels/Display.txt, MINI.txt) reference bare %rating%, which we can't
             // edit — intercept the field here instead, same fallback shape as playlist_view.cpp's
             // $if2(%navidrome_rating%,[%rating%]).
-            metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
-            if (np.is_valid()) {
-                file_info_impl info;
-                if (np->get_info(info) && info.meta_get_count_by_name("NAVIDROME_RATING") > 0) {
-                    const char* v = info.meta_get("NAVIDROME_RATING", 0);
-                    out->write(titleformat_inputtypes::unknown, v, strlen(v));
-                    return true;
-                }
+            // The track this run is for (a panel script's), else whatever is playing.
+            metadb_handle_ptr t = m_track;
+            if (t.is_empty()) playback_control::get()->get_now_playing(t);
+            metadb_info_container::ptr info;
+            if (t.is_valid() && t->get_info_ref(info) && info->info().meta_get_count_by_name("NAVIDROME_RATING") > 0) {
+                const char* v = info->info().meta_get("NAVIDROME_RATING", 0);
+                out->write(titleformat_inputtypes::unknown, v, strlen(v));
+                return true;
             }
             found = false; return false; // not a navidrome track (or unrated) — native %rating%
         }
@@ -523,13 +582,13 @@ public:
         }
         if (eq(name, len, "imageabs") && argc >= 5) {
             // $imageabs(x,y,w,h,path,align)
-            draw_cover_art(m_cv, resolve(param_str(p,4)), m_track, param_int(p,0) + m_ox, param_int(p,1) + m_oy,
+            draw_cover_art(m_cv, image_path(param_str(p,4)), m_track, param_int(p,0) + m_ox, param_int(p,1) + m_oy,
                        param_int(p,2), param_int(p,3));
             return true;
         }
         if (eq(name, len, "draw_image") && argc >= 5) {
             // $draw_image(x,y,w,h,path,...)
-            draw_cover_art(m_cv, resolve(param_str(p,4)), m_track, param_int(p,0) + m_ox, param_int(p,1) + m_oy,
+            draw_cover_art(m_cv, image_path(param_str(p,4)), m_track, param_int(p,0) + m_ox, param_int(p,1) + m_oy,
                        param_int(p,2), param_int(p,3));
             return true;
         }
@@ -586,7 +645,7 @@ public:
                 int W = param_int(p,0), H = param_int(p,1), SX = param_int(p,2), SY = param_int(p,3),
                     SW = param_int(p,4), SH = param_int(p,5);
                 int iw = 0, ih = 0;
-                std::string ip = resolve(param_str(p,8));
+                std::string ip = image_path(param_str(p,8));
                 if ((SX > 0 || SY > 0 || SW > 0 || SH > 0) && flip == 0 && image_natural_size(ip, iw, ih)) {
                     int scW, scH;
                     if (W > 0 && H > 0) { scW = W; scH = H; }
@@ -603,7 +662,7 @@ public:
                     return true;
                 }
             }
-            draw_cover_art(m_cv, resolve(param_str(p,8)), m_track, param_int(p,6) + m_ox, param_int(p,7) + m_oy,
+            draw_cover_art(m_cv, image_path(param_str(p,8)), m_track, param_int(p,6) + m_ox, param_int(p,7) + m_oy,
                        param_int(p,0), param_int(p,1), alpha, flip);
             return true;
         }
@@ -647,7 +706,7 @@ public:
             if (!d1.empty()) {
                 if (d1[0] == '$') { run_subscript(d1, x, y); drew = true; } // draw command
                 else if (d1.find(".png") != std::string::npos || d1.find(".jpg") != std::string::npos)
-                    drew = draw_image(m_cv, resolve(d1), x, y, rawW > 0 ? rawW : 0, rawH > 0 ? rawH : 0);
+                    drew = draw_image(m_cv, image_path(d1), x, y, rawW > 0 ? rawW : 0, rawH > 0 ? rawH : 0);
             }
             // A text button whose normal state is "$font(...)Label": the argument pre-eval ran
             // the $font (setting the face/size/colour) and left the bare label behind, or the
@@ -686,6 +745,7 @@ public:
             if (!act.empty()) {
                 Button btn;
                 btn.x = x; btn.y = y; btn.w = hw; btn.h = hh; btn.action = act;
+                btn.tooltip = tooltip_arg(p, argc, 9);
                 // Selected-state candidates only: the themed image can be re-blitted after the
                 // run, but a nested draw command (button2 running at an offset) cannot, and
                 // drawing at the wrong offset would smear it somewhere else entirely.
@@ -721,7 +781,7 @@ public:
             gfx::Rect r = mkrect(x, y, w > 0 ? w : 240, h > 0 ? h : 18);
             m_cv.draw_text(text, r, gfx::kAlignCenter | gfx::kSingleLine | gfx::kVCenter | gfx::kNoClip, m_textcol);
             if (argc >= 7) { std::string a = clean_action(param_str(p,6));
-                if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, (w>0?w:240), (h>0?h:18), a }); }
+                if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, (w>0?w:240), (h>0?h:18), a, tooltip_arg(p, argc, 7) }); }
             return true;
         }
         // $imagebutton(left,top,image_normal,image_hover,action,"TOOLTIP",tip) — rating stars etc.
@@ -729,15 +789,40 @@ public:
             int x = param_int(p,0), y = param_int(p,1);
             const int hw = 11, hh = 15; // ~star-sized hit box
             bool hovered = m_hoverX >= x && m_hoverX < x + hw && m_hoverY >= y && m_hoverY < y + hh;
-            draw_image(m_cv, resolve(param_str(p, hovered ? 3 : 2)), x, y, 0, 0); // natural size
+            draw_image(m_cv, image_path(param_str(p, hovered ? 3 : 2)), x, y, 0, 0); // natural size
             std::string a = clean_action(param_str(p,4));
-            if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, hw, hh, a });
+            if (!a.empty()) (m_e->m_capture ? *m_e->m_capture : m_e->m_buttons).push_back({ x, y, hw, hh, a, tooltip_arg(p, argc, 5) });
             return true;
         }
 
-        // accepted-but-not-yet-rendered functions
-        static const char* stubs[] = { "scplsetlayout","gp_set_brush","gp_set_pen","gp_fill_rectangle","settitle","settray" };
-        for (auto s : stubs) if (eq(name, len, s)) return true;
+        // $settitle(text) — the window/taskbar title; fooAvA: "fooAvA" while stopped/paused, else
+        // "%artist% - %title%". Re-run every paint; the platform skips unchanged text.
+        if (eq(name, len, "settitle") && argc >= 1) {
+            if (m_e->m_main) m_e->m_main->set_title(param_str(p, 0));
+            return true;
+        }
+        // GDI+ brush fills: $gp_set_brush(A-R-G-B) (or R-G-B, opaque), then
+        // $gp_fill_rectangle(x,y,w,h) — e.g. a translucent black veil, $gp_set_brush(85-0-0-0).
+        if (eq(name, len, "gp_set_brush") && argc >= 1) {
+            std::string c = param_str(p, 0);
+            int v[4] = { 0, 0, 0, 0 }, n = 0;
+            for (const char* q = c.c_str(); *q && n < 4;) {
+                if (*q < '0' || *q > '9') { ++q; continue; }
+                v[n++] = atoi(q);
+                while (*q >= '0' && *q <= '9') ++q;
+            }
+            if (n >= 4) { m_gpAlpha = v[0]; m_gpBrush = gfx::Color(v[1], v[2], v[3]); }
+            else if (n == 3) { m_gpAlpha = 255; m_gpBrush = gfx::Color(v[0], v[1], v[2]); }
+            return true;
+        }
+        if (eq(name, len, "gp_fill_rectangle") && argc >= 4) {
+            gfx::Rect rc = mkrect(param_int(p,0), param_int(p,1), param_int(p,2), param_int(p,3));
+            if (m_gpAlpha >= 255) m_cv.fill_rect(rc, m_gpBrush);
+            else if (m_gpAlpha > 0) m_cv.fill_rect_alpha(rc, m_gpBrush, m_gpAlpha);
+            return true;
+        }
+
+        for (auto s : kStubFunctions) if (eq(name, len, s)) return true;
 
         found = false; return false;
     }
@@ -754,9 +839,18 @@ private:
         const int e = m_glowExpand > 6 ? 6 : m_glowExpand;
         // Work area: the text rect grown by the glow radius, clamped to the target surface.
         const int bw = m_cv.width(), bh = m_cv.height();
-        int x0 = std::max(0, r.x - e), y0 = std::max(0, r.y - e);
-        int x1 = std::min(bw, r.right() + e), y1 = std::min(bh, r.bottom() + e);
-        if (fmt & gfx::kNoClip) { x0 = 0; y0 = 0; x1 = bw; y1 = bh; } // text may spill past its box
+        gfx::Rect box = r;
+        if (fmt & gfx::kNoClip) {
+            // Text may spill past its box: grow it by the measured overflow on both sides (the
+            // alignment decides which side it actually lands on). Not the whole canvas — the
+            // dilation below is O(area * radius²) and this runs for every glowing label per paint.
+            const int tw = m_cv.text_width(s);
+            const int th = m_cv.text_height(s, std::max(r.w, tw), fmt);
+            const int sx = std::max(0, tw - r.w), sy = std::max(0, th - r.h);
+            box = gfx::Rect{ r.x - sx, r.y - sy, r.w + 2 * sx, r.h + 2 * sy };
+        }
+        int x0 = std::max(0, box.x - e), y0 = std::max(0, box.y - e);
+        int x1 = std::min(bw, box.right() + e), y1 = std::min(bh, box.bottom() + e);
         const int W = x1 - x0, H = y1 - y0;
         if (W <= 0 || H <= 0) return;
 
@@ -838,16 +932,28 @@ private:
         return m_e->m_base + "/" + p;
     }
 
+    // resolve() for an image the skin draws. The first time a path inside the skin folder turns
+    // up missing it is reported (cover art and anything else outside the folder may come and go).
+    std::string image_path(const std::string& raw) {
+        std::string path = resolve(raw);
+        const std::string& base = m_e->m_base;
+        if (!base.empty() && path.size() > base.size() + 1 && path.compare(0, base.size(), base) == 0 &&
+            path.back() != '/' && path.find_first_of("*?") == std::string::npos &&
+            m_e->m_imagesChecked.insert(path).second && !file_exists(path))
+            m_e->report_once("Panels UI: skin image not found: " + path);
+        return path;
+    }
+
     void select_font(const char* face, int size, const std::string& style) {
-        // The skin asks for "$get(fontAVA)" but $get/$puts are the SDK's native titleformat
-        // scratch vars, scoped per compiled script/eval -- disjoint from our own $setpvar/$getpvar
-        // pool that the skin actually used to set fontAVA at script start. `face` arrives empty;
-        // recover the real face from m_pvars before falling back to a generic UI font.
+        // A skin can name its face through a variable ($font($get(fontAVA),...)) whose value it
+        // set with $setpvar: `face` then arrives empty. The config's `font.face_pvar` names that
+        // pvar, so the real face is recovered before falling back to a generic one.
         const char* f0 = face;
         while (f0 && (*f0 == ' ' || *f0 == '\t')) ++f0;
         std::string fromPvar;
-        if (!f0 || !*f0) {
-            auto it = m_e->m_pvars.find("fontAVA");
+        const std::string facePvar = m_e->m_cfg.str("font.face_pvar");
+        if ((!f0 || !*f0) && !facePvar.empty()) {
+            auto it = m_e->m_pvars.find(facePvar);
             if (it != m_e->m_pvars.end() && !it->second.empty()) { fromPvar = it->second; f0 = fromPvar.c_str(); }
         }
         // Neither the script nor its own pvar named a face — try the Preferences-page global
@@ -856,7 +962,8 @@ private:
             auto it = m_e->m_pvars.find("_prefs_font_face");
             if (it != m_e->m_pvars.end() && !it->second.empty()) { fromPvar = it->second; f0 = fromPvar.c_str(); }
         }
-        if (!f0 || !*f0) f0 = "Tahoma";
+        std::string defFace;
+        if (!f0 || !*f0) { defFace = m_e->m_cfg.str("font.default", "Tahoma"); f0 = defFace.c_str(); }
         if (size <= 0) {
             auto it = m_e->m_pvars.find("_prefs_font_size");
             if (it != m_e->m_pvars.end() && !it->second.empty()) size = atoi(it->second.c_str());
@@ -895,7 +1002,8 @@ private:
         // isn't what was asked for, retry with the closest face we do have. Drop the real TTFs
         // into the fb2k dir to get the skin's own look.
         if (!m_cv.set_font(spec)) {
-            if (const char* alias = face_alias(f0)) { spec.face = alias; m_cv.set_font(spec); }
+            std::string alias = face_alias(m_e->m_cfg, f0);
+            if (!alias.empty()) { spec.face = alias; m_cv.set_font(spec); }
         }
         m_haveFont = true;
     }
@@ -921,6 +1029,7 @@ private:
     std::vector<FontState> m_fontLog; size_t m_fontLogMark = 0;
     int m_depth = 0; // nesting depth for snippet evaluation (see run_into/eval_arg)
     gfx::Color m_glowCol; int m_glowExpand = 0, m_glowAlpha = 0;
+    gfx::Color m_gpBrush; int m_gpAlpha = 255; // $gp_set_brush state for $gp_fill_rectangle
 
     // positional literal-text state. Text is read from the DrawString buffer (m_buf) rather than
     // accumulated per-write: titleformat appends a $if/$ifequal condition's value to the buffer then
@@ -938,10 +1047,30 @@ public:
 };
 
 // --- SkinEngine ------------------------------------------------------------
+SkinEngine::PlayEvents::PlayEvents(SkinEngine* e)
+    : play_callback_impl_base(flag_on_playback_new_track | flag_on_playback_stop | flag_on_playback_seek |
+                              flag_on_playback_pause | flag_on_playback_edited |
+                              flag_on_playback_dynamic_info_track | flag_on_volume_change),
+      m_e(e) {}
+
 SkinEngine::SkinEngine() = default;
 SkinEngine::~SkinEngine() { destroy_panels(); }
 
+void SkinEngine::set_main_window(ui::MainWindow* w) {
+    m_main = w;
+    if (w && !m_playEvents) {
+        m_playEvents = std::make_unique<PlayEvents>(this);
+        set_art_ready_callback([this] { repaint_all(); });
+    }
+}
+
+bool SkinEngine::playback_ticking() {
+    auto pc = playback_control::get();
+    return pc->is_playing() && !pc->is_paused();
+}
+
 void SkinEngine::destroy_panels() {
+    if (m_playEvents) { m_playEvents.reset(); set_art_ready_callback(nullptr); }
     m_popupHost.reset(); m_popup.reset();
     m_panels.clear();
     std::lock_guard<std::mutex> lk(m_framesMx);
@@ -949,11 +1078,154 @@ void SkinEngine::destroy_panels() {
 }
 
 bool SkinEngine::load(const char* script) {
-    if (!titleformat_compiler::get()->compile(m_script, script)) {
+    service_ptr_t<titleformat_object> obj;
+    if (!titleformat_compiler::get()->compile(obj, script)) {
         console::print("Panels UI: skin script failed to compile");
         return false;
     }
+    m_script = obj;
     return true;
+}
+
+bool SkinEngine::load_skin(const std::string& dir) {
+    m_base = dir;
+    m_cfg.load(dir);
+    if (!m_cfg.empty()) console::printf("Panels UI: skin config %s loaded", SkinConfig::kFileName);
+    if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
+    seed_pvars();
+    std::string why;
+    m_mainPath = resolve_main_script(dir, m_cfg, &why);
+    if (!why.empty()) console::printf("Panels UI: %s", why.c_str());
+    bool ok = load_main_script();
+    m_fileTimes = scan_skin_files();
+    m_nextScan = tick_ms() + 1000;
+    return ok;
+}
+
+bool SkinEngine::load_main_script() {
+    std::string skin = m_mainPath.empty() ? std::string() : read_file(m_mainPath);
+    if (m_mainPath.empty() || skin.empty())
+        console::printf("Panels UI: no main script in %s, using the built-in test skin", m_base.c_str());
+    else {
+        console::printf("Panels UI: main script %s (%u bytes)", m_mainPath.c_str(), (unsigned)skin.size());
+        diagnose_script(script_label(m_mainPath), skin);
+    }
+    bool ok = load(skin.empty() ? builtin_test_skin() : skin.c_str());
+    if (!ok) console::print("Panels UI: main script failed to compile");
+    return ok;
+}
+
+std::string SkinEngine::script_label(const std::string& path) const {
+    if (path.compare(0, m_base.size() + 1, m_base + "/") == 0) return path.substr(m_base.size() + 1);
+    return path;
+}
+
+SkinEngine::FileTimes SkinEngine::scan_skin_files() const {
+    FileTimes out;
+    if (m_base.empty()) return out;
+    std::error_code ec;
+    for (const std::string& f : { m_mainPath, m_base + "/" + SkinConfig::kFileName }) {
+        if (f.empty()) continue;
+        auto t = std::filesystem::last_write_time(fs_path(f), ec);
+        if (!ec) out[f] = t;
+    }
+    const std::string pdir = panels_dir();
+    std::filesystem::directory_iterator it(fs_path(pdir), ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+        std::error_code e2;
+        if (!it->is_regular_file(e2) || it->path().extension() != ".txt") continue;
+        auto ft = it->last_write_time(e2);
+        if (!e2) out[pdir + "/" + fs_utf8(it->path().filename())] = ft;
+    }
+    return out;
+}
+
+void SkinEngine::check_skin_changes() {
+    if (m_base.empty() || tick_ms() < m_nextScan) return;
+    m_nextScan = tick_ms() + 1000;
+    FileTimes now = scan_skin_files();
+    if (now == m_fileTimes) return;
+    std::set<std::string> changed;
+    for (auto& [path, t] : now) {
+        auto it = m_fileTimes.find(path);
+        if (it == m_fileTimes.end() || it->second != t) changed.insert(path);
+    }
+    for (auto& [path, t] : m_fileTimes) if (!now.count(path)) changed.insert(path); // deleted
+    m_fileTimes = std::move(now);
+    if (changed.empty()) return;
+
+    m_reported.clear(); m_imagesChecked.clear(); // a reload re-reports what's still wrong
+    bool any = false;
+    if (changed.count(m_base + "/" + SkinConfig::kFileName)) {
+        // The config can name another main script, art folder, panel folder...: start over.
+        console::printf("Panels UI: reloaded %s", SkinConfig::kFileName);
+        m_cfg.load(m_base);
+        seed_pvars();
+        std::string why;
+        m_mainPath = resolve_main_script(m_base, m_cfg, &why);
+        if (!why.empty()) console::printf("Panels UI: %s", why.c_str());
+        load_main_script();
+        m_fileTimes = scan_skin_files();
+        changed.clear();
+        for (auto& [path, t] : m_fileTimes) changed.insert(path); // re-read every panel script
+        any = true;
+    } else if (changed.count(m_mainPath)) {
+        if (load_main_script()) {
+            console::printf("Panels UI: reloaded %s", script_label(m_mainPath).c_str());
+            any = true;
+        }
+    }
+    auto panel_file = [&](const std::string& name) { return panels_dir() + "/" + name + ".txt"; };
+    for (auto& [name, slot] : m_panels) {
+        if (slot.kind != Kind::TrackDisplay || !changed.count(panel_file(name))) continue;
+        std::string sc = read_panel_script(name);
+        static_cast<TrackDisplay*>(slot.view.get())->set_script(sc.empty() ? nullptr : sc.c_str());
+        console::printf("Panels UI: reloaded %s", script_label(panel_file(name)).c_str());
+        any = true;
+    }
+    if (m_popup && !m_popupFile.empty() && changed.count(panel_file(m_popupFile))) {
+        std::string sc = read_panel_script(m_popupFile);
+        if (!sc.empty()) {
+            m_popup->set_script(sc.c_str());
+            if (m_popupHost) m_popupHost->invalidate();
+            console::printf("Panels UI: reloaded %s", script_label(panel_file(m_popupFile)).c_str());
+            any = true;
+        }
+    }
+    if (!any) return;
+    // Snippets cached by text and $puts values belong to the old scripts.
+    m_evalcache.clear(); m_subcache.clear(); m_tfvars.clear();
+    repaint_all();
+}
+
+void SkinEngine::report_once(const std::string& msg) {
+    if (m_reported.insert(msg).second) console::print(msg.c_str());
+}
+
+void SkinEngine::diagnose_script(const std::string& where, const std::string& text) {
+    std::set<std::string> unknown, stubbed;
+    bool quoted = false; // '...' is literal text in titleformat
+    for (size_t i = 0; i < text.size(); ++i) {
+        const char c = text[i];
+        if (c == '\'') { quoted = !quoted; continue; }
+        if (quoted || c != '$') continue;
+        size_t j = i + 1;
+        while (j < text.size() && (isalnum((unsigned char)text[j]) || text[j] == '_')) ++j;
+        if (j == i + 1 || j >= text.size() || text[j] != '(') continue;
+        std::string name = text.substr(i + 1, j - i - 1);
+        if (listed(kStubFunctions, std::size(kStubFunctions), name)) stubbed.insert("$" + name);
+        else if (!listed(kHookFunctions, std::size(kHookFunctions), name) && !core_knows_function(name))
+            unknown.insert("$" + name);
+    }
+    auto join = [](const std::set<std::string>& names) {
+        std::string out;
+        for (auto& n : names) { if (!out.empty()) out += ", "; out += n; }
+        return out;
+    };
+    if (!unknown.empty())
+        report_once("Panels UI: " + where + ": unsupported function(s), rendered as errors: " + join(unknown));
+    if (!stubbed.empty())
+        report_once("Panels UI: " + where + ": not implemented yet, ignored: " + join(stubbed));
 }
 
 // titleformat output sink that routes written text to the hook for positional drawing,
@@ -1027,13 +1299,19 @@ void save_all_pvars(const PvarMap& pvars) {
 
 void SkinEngine::load_pvars() {
     m_pvars = load_all_pvars();
-    // The cover-flow button and view used to need the (long dead) foo_chronflow plugin, so fooAvA
-    // ships with them off. The panel is native now: enable them once, then leave the user's
-    // choice alone.
-    // ("3": re-run once to undo complete_onboarding() having set first.cf=1 — see there.)
-    if (m_pvars["_cf_native"] != "3") {
-        m_pvars["cfbutton"] = "1"; m_pvars["first.cf"] = "0"; m_pvars["_cf_native"] = "3";
+}
+
+// `pvar.once.<name> = <value>`: set once, then left to the user — e.g. a skin turning on a view
+// whose original plugin is dead but which a native panel now provides. The reserved
+// `_once.<name>` pvar remembers it was done.
+void SkinEngine::seed_pvars() {
+    bool changed = false;
+    for (auto& [name, value] : m_cfg.with_prefix("pvar.once.")) {
+        std::string& mark = m_pvars["_once." + name];
+        if (mark == "1") continue;
+        m_pvars[name] = value; mark = "1"; changed = true;
     }
+    if (changed) save_pvars();
 }
 
 void SkinEngine::save_pvars() {
@@ -1059,6 +1337,7 @@ void SkinEngine::render(gfx::Canvas& cv, int width, int height) {
       // panel tab that is currently showing (left column showPanel:*, right column showPane:*).
       hook.apply_selected_buttons(m_buttons); }
 
+    for (auto& p : m_placements) p = remap_panel(p);
     hide_unrequested_panels();
     for (const auto& p : m_placements) {
         dispatch_placement(p, 0, 0);
@@ -1106,7 +1385,11 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
         const char* dui = map_type(p.type);
         if (!dui) return nullptr;
         s.embedded = ui::create_embedded_ui_element(*m_main, dui);
-        if (!s.embedded) return nullptr;
+        // Nothing installed can host it: keep an empty slot (show/place are no-ops) so the
+        // lookup isn't retried on every paint, and say so once.
+        if (!s.embedded)
+            report_once("Panels UI: panel '" + name + "' (" + p.type +
+                        "): no installed UI element can host it, left empty");
         break;
     }
     }
@@ -1147,20 +1430,18 @@ void SkinEngine::dispatch_placement(const Placement& p, int offsetX, int offsetY
         // Always our native themed bars. An installed DUI "Spectrum"-named element (e.g.
         // foo_vis_spectrum_analyzer) was previously preferred when present, but hosting it
         // without real DUI host services behind it renders a blank window.
-        // Two stacked strips in the skin: the tall (35px) upper one is the analyser whose bars
-        // rise; the short (20px) lower one is the inverted reflection. Assign the role here so
-        // the strip knows which half to draw (see Spectrum::paint).
-        static_cast<Spectrum*>(s->view.get())->set_mirror(p.h < 30);
-        // The skin places the two strips at the very bottom of the cover; lift the whole block a
-        // bit so there's breathing room between the analyser/mirror and whatever sits below it
-        // (bottom bar / now-playing text), closer to its original position. The analyser strip
-        // keeps its top edge and grows downward; the reflection slides down and grows so the pair
-        // stays adjacent, then the whole block is raised. Raised to the top: a panel created
-        // later — e.g. Display.txt's mini.playlist/miniinfo cover overlay — would otherwise sit
-        // in front of an already-existing spectrum and hide it entirely.
-        constexpr int kRaise = 26;
-        if (p.h < 30) { y += 8; h += 8; } else { h += 8; }
-        y -= kRaise;
+        // A skin can stack two strips: the analyser and, below it, an inverted reflection — any
+        // strip shorter than `spectrum.mirror_below` px (0 = none) takes that role (see
+        // Spectrum::paint). `spectrum.grow` makes each strip taller (a reflection grows downward,
+        // staying adjacent) and `spectrum.raise` lifts them, for skins whose original analyser
+        // drew differently from the placement. Raised to the top: a panel created later (e.g. a
+        // cover overlay) would otherwise sit in front of an existing spectrum and hide it.
+        const bool mirror = p.h < m_cfg.num("spectrum.mirror_below", 0);
+        static_cast<Spectrum*>(s->view.get())->set_mirror(mirror);
+        const int grow = m_cfg.num("spectrum.grow", 0);
+        if (mirror) y += grow;
+        h += grow;
+        y -= m_cfg.num("spectrum.raise", 0);
     }
     s->show(true);
     s->place(gfx::Rect{ x, y, w, h }, top);
@@ -1179,34 +1460,42 @@ void SkinEngine::hide_child_panel(const std::string& name) {
 
 std::string SkinEngine::read_panel_script_raw(const std::string& name) {
     if (m_base.empty()) return {};
-    return read_file(m_base + "/panels/" + name + ".txt");
+    return read_file(panels_dir() + "/" + name + ".txt");
 }
 
 std::string SkinEngine::read_panel_script(const std::string& name) {
     if (m_base.empty()) return {};
-    std::string path = m_base + "/panels/" + name + ".txt";
+    std::string path = panels_dir() + "/" + name + ".txt";
     std::string s = read_file(path);
     if (s.empty() && !file_exists(path)) {
-        // Silent failure here used to just leave the panel showing its placeholder script with
-        // no clue why — e.g. pointing the Preferences page's skin folder at skins/fooava's raw
-        // extraction source (no panels/ subfolder there, only the deployed component folder has
-        // one) blanks every native panel with the master canvas script loading fine regardless.
-        console::printf("Panels UI: panel script not found: %s", path.c_str());
+        // Said once: a skin folder without its panel scripts otherwise just shows placeholder
+        // panels with no clue why, while the main script loads fine.
+        report_once("Panels UI: panel script not found: " + path);
         return {};
     }
-    // Simple cover-art resolution (replaces fooAvA's fragile init): point MyCoverPath at
-    // the track folder's cover; the image loader resolves the wildcard (Folder.jpg/png/...).
-    static const char* kCoverInit =
-        "$setpvar(MyCoverPath,$replace(%path%,%filename_ext%,*folder*.*))";
-    return std::string(kCoverInit) + s;
+    diagnose_script(script_label(path), s);
+    // `cover.pvar`: set that pvar to the track folder's cover (`cover.pattern`, wildcards
+    // resolved by the image loader) before the script runs — for skins whose own cover lookup
+    // relied on a plugin that's gone.
+    const std::string coverPvar = m_cfg.str("cover.pvar");
+    if (coverPvar.empty()) return s;
+    return "$setpvar(" + coverPvar + ",$replace(%path%,%filename_ext%," +
+           m_cfg.str("cover.pattern", "*folder*.*") + "))" + s;
 }
 
 bool SkinEngine::save_panel_script(const std::string& name, const std::string& text) {
     if (m_base.empty()) return false;
-    return write_file(m_base + "/panels/" + name + ".txt", text);
+    const std::string path = panels_dir() + "/" + name + ".txt";
+    if (!write_file(path, text)) return false;
+    // The editor applies it itself: don't have the hot reload pick it up a second time.
+    std::error_code ec;
+    auto t = std::filesystem::last_write_time(fs_path(path), ec);
+    if (!ec) m_fileTimes[path] = t;
+    m_reported.clear();
+    return true;
 }
 
-// Run a fooAvA button action ("Playback/Random", "Previous", "New Playlist", …) by
+// Run a skin button action ("Playback/Random", "Previous", "New Playlist", …) by
 // matching the leaf name against registered main-menu commands.
 static bool run_action(const std::string& action) {
     std::string leaf = action;
@@ -1236,7 +1525,10 @@ static std::string unquote(std::string s) {
     return s;
 }
 
-bool SkinEngine::run_button_action(const std::string& a) {
+bool SkinEngine::run_button_action(const std::string& action) {
+    // `action.remap.<action> = <action>`: a skin action replaced by another — e.g. a step of a
+    // cycle that led to a view the native panels don't provide.
+    const std::string a = m_cfg.str("action.remap." + action, action);
     // Transport buttons — handle via playback_control directly. (Going through the main menu by
     // leaf name is ambiguous: "Random" matches both Playback/Random AND the Random playback ORDER,
     // so the play-random button would wrongly change the order.)
@@ -1280,7 +1572,9 @@ bool SkinEngine::run_button_action(const std::string& a) {
     }
     // POPUP:<file.ava> — open a PanelsUI script (settings/about) in a floating window.
     if (a.compare(0, 6, "POPUP:") == 0) {
-        std::string sc = read_panel_script(unquote(a.substr(6)));
+        const std::string file = unquote(a.substr(6));
+        std::string sc = read_panel_script(file);
+        if (!sc.empty()) m_popupFile = file;
         if (!sc.empty() && m_main) {
             if (!m_popup) m_popup = std::make_unique<PopupView>(this);
             m_popup->set_script(sc.c_str());
@@ -1288,9 +1582,17 @@ bool SkinEngine::run_button_action(const std::string& a) {
                 m_popupHost->invalidate(); // already open: refresh (the platform raises it)
                 m_popupHost->focus();
             } else {
-                // 360 wide: the settings layout puts the theme swatches (x 45..225) left of the
-                // font column at %_width%-117 — narrower overlaps them.
-                m_popupHost = ui::create_popup_window(*m_main, m_popup.get(), 360, 500, "fooAvA Settings",
+                // Size: `popup.size.<file>`, else `popup.size` ("W H"), else 400x500 — a popup
+                // script lays itself out for one size, which only the skin knows.
+                std::vector<int> sz = m_cfg.nums("popup.size." + file);
+                if (sz.size() != 2) sz = m_cfg.nums("popup.size");
+                if (sz.size() != 2 || sz[0] <= 0 || sz[1] <= 0) sz = { 400, 500 };
+                // Window title from the script's own name ("FOOAvA_settings.ava" -> "FOOAvA settings").
+                std::string title = file;
+                if (title.size() > 4 && pfc::stricmp_ascii(title.c_str() + title.size() - 4, ".ava") == 0)
+                    title.resize(title.size() - 4);
+                for (auto& c : title) if (c == '_') c = ' ';
+                m_popupHost = ui::create_popup_window(*m_main, m_popup.get(), sz[0], sz[1], title,
                                                       [this] { m_popupHost.reset(); });
             }
             // Stops the skin's own 1Hz settings-button onboarding blink (see below).
@@ -1394,14 +1696,14 @@ bool SkinEngine::update_hover(int x, int y) {
         if (button_hit(m_buttons[i], x, y)) after = (int)i;
     }
     m_hoverX = x; m_hoverY = y;
+    if (m_main) m_main->set_tooltip(tooltip_at(m_buttons, x, y));
     return before != after;
 }
 
 void SkinEngine::repaint_all() {
     if (m_main) m_main->invalidate();
     for (auto& [name, s] : m_panels)
-        if (s.host && (s.kind == Kind::TrackDisplay || s.kind == Kind::Seekbar || s.kind == Kind::Volume))
-            s.host->invalidate();
+        if (s.host && s.host->visible()) s.host->invalidate();
 }
 
 int SkinEngine::pvar_int(const std::string& key, int def) {
@@ -1441,29 +1743,81 @@ void SkinEngine::set_pvar(const std::string& key, const std::string& value) {
     save_pvars();
 }
 
+// The folder the config's `images` names (relative to the skin), else the skin folder itself.
+static std::string images_dir(const std::string& base, const SkinConfig& cfg) {
+    std::string d = cfg.str("images");
+    for (auto& c : d) if (c == '\\') c = '/';
+    while (!d.empty() && (d.back() == '/')) d.pop_back();
+    return d.empty() ? base : base + "/" + d;
+}
+
 std::string SkinEngine::background_path() const {
-    auto bd = m_pvars.find("backgroundd");
-    if (bd == m_pvars.end() || bd->second != "1") return {};
-    auto bg = m_pvars.find("background");
+    // `background.image_pvar`: pvar holding the wallpaper file (relative to `images`);
+    // `background.enabled_pvar` (optional): pvar that must be 1 for it to show.
+    const std::string onKey = m_cfg.str("background.enabled_pvar"), imgKey = m_cfg.str("background.image_pvar");
+    if (imgKey.empty()) return {};
+    if (!onKey.empty()) {
+        auto on = m_pvars.find(onKey);
+        if (on == m_pvars.end() || on->second != "1") return {};
+    }
+    auto bg = m_pvars.find(imgKey);
     if (bg == m_pvars.end() || bg->second.empty()) return {};
     std::string wp = bg->second;
     for (auto& c : wp) if (c == '\\') c = '/';
-    return m_base + "/images/fooAVA/" + wp;
+    return images_dir(m_base, m_cfg) + "/" + wp;
 }
 
 int SkinEngine::background_alpha() const {
-    auto it = m_pvars.find("alpha.bgr");
-    return (it != m_pvars.end() && !it->second.empty()) ? atoi(it->second.c_str()) : 195;
+    // `background.alpha_pvar` (0..255), else `background.alpha` (default opaque).
+    const std::string key = m_cfg.str("background.alpha_pvar");
+    auto it = key.empty() ? m_pvars.end() : m_pvars.find(key);
+    return (it != m_pvars.end() && !it->second.empty()) ? atoi(it->second.c_str())
+                                                        : m_cfg.num("background.alpha", 255);
+}
+
+int SkinEngine::theme_index() const {
+    const std::string key = m_cfg.str("theme.index_pvar");
+    auto it = key.empty() ? m_pvars.end() : m_pvars.find(key);
+    if (it != m_pvars.end() && !it->second.empty()) return atoi(it->second.c_str());
+    return m_cfg.num("theme.index_default", 1);
+}
+
+std::string SkinEngine::asset(const std::string& key, int n) const {
+    std::string a = m_cfg.str("asset." + key);
+    if (a.empty() || m_base.empty()) return {};
+    auto put = [&](const std::string& tag, int v) {
+        for (size_t p; (p = a.find(tag)) != std::string::npos;) a.replace(p, tag.size(), std::to_string(v));
+    };
+    put("{theme}", theme_index());
+    put("{n}", n);
+    for (auto& c : a) if (c == '\\') c = '/';
+    return images_dir(m_base, m_cfg) + "/" + a;
+}
+
+bool SkinEngine::is_lyrics_panel(const std::string& name) const {
+    auto it = m_panels.find(name);
+    return it != m_panels.end() && it->second.kind == Kind::Lyrics;
+}
+
+Placement SkinEngine::remap_panel(const Placement& p) const {
+    const std::string to = m_cfg.str("panel.remap." + p.name);
+    if (to.empty()) return p;
+    Placement q = p;
+    size_t bar = to.find('|');
+    q.name = to.substr(0, bar);
+    if (bar != std::string::npos) q.type = to.substr(bar + 1);
+    return q;
 }
 
 bool SkinEngine::draw_canvas_background(gfx::Canvas& cv, const ui::ViewHost& host) const {
     std::string path = background_path();
     if (path.empty() || !m_main) return false;
     gfx::Rect prc = m_main->client_rect(), b = host.bounds();
-    // Same rect the canvas itself draws into (dst 0,24, size %_width% x %_height%-24 —
-    // see fooava.txt's own $imageabs2 background call), just shifted by this panel's own
-    // offset within the window so the visible slice lines up pixel-for-pixel.
-    return draw_image(cv, path, -b.x, 24 - b.y, prc.w, prc.h - 24, background_alpha());
+    // Same rect the canvas script draws its wallpaper into — the client area below
+    // `background.top` px — shifted by this panel's own offset within the window so the visible
+    // slice lines up pixel-for-pixel.
+    const int top = m_cfg.num("background.top", 0);
+    return draw_image(cv, path, -b.x, top - b.y, prc.w, prc.h - top, background_alpha());
 }
 
 void SkinEngine::snapshot_canvas(gfx::Canvas& cv, int w, int h) {
@@ -1515,14 +1869,10 @@ void SkinEngine::refresh_bars() {
         if (s.host && (s.kind == Kind::Seekbar || s.kind == Kind::Volume)) s.host->invalidate();
 }
 
-int SkinEngine::colour_index() const {
-    auto it = m_pvars.find("colour.b");
-    if (it != m_pvars.end()) { int v = atoi(it->second.c_str()); if (v >= 1 && v <= 4) return v; }
-    return 2; // blue default
-}
 
 bool SkinEngine::theme_color(gfx::Color& out) const {
-    auto it = m_pvars.find("colour");
+    const std::string key = m_cfg.str("theme.accent_pvar");
+    auto it = key.empty() ? m_pvars.end() : m_pvars.find(key);
     if (it == m_pvars.end() || it->second.empty()) {
         // Skin doesn't expose its own accent pvar — fall back to the Preferences-page global
         // accent override (reserved pvar "_prefs_accent_color", same "r-g-b" format).
@@ -1559,7 +1909,7 @@ void SkinHook::apply_selected_buttons(std::vector<Button>& list) {
             if (b->pvarValue == cur) { b->selected = true; break; }
     }
 
-    gfx::Color accent(0, 140, 220); // matches fooAvA's default blue accent
+    gfx::Color accent;
     if (!m_e->theme_color(accent)) return; // no theme colour to outline with
     for (auto& b : list) {
         if (!b.selected) continue;
@@ -1578,18 +1928,41 @@ void SkinHook::apply_selected_buttons(std::vector<Button>& list) {
     }
 }
 
-// The skin's own "first run" onboarding. fooAvA seeds `first.boot=0` and, while it stays 0, its
-// master script blinks the settings button at 1Hz (a $select on %_time_elapsed_seconds% picking
-// between the themed and the grey wrench art). Legacy Panels UI cleared the flag when the user
-// opened the settings popup; nothing in the extracted script does, so it blinks forever. Opening
-// any popup counts as "configured": every `first.*` flag goes to 1. Set them all rather than just
-// first.boot so a skin with more first-run flags works the same way; skins without any are
-// unaffected. Except first.cf: there 1 means SHOW the cover-flow intro page ("install
-// foo_chronflow"), which would replace our native carousel — load_pvars() keeps it at 0.
+// The skin's own "first run" onboarding. Legacy Panels UI cleared a skin's first-run flags when
+// the user opened its settings popup; nothing in a skin's scripts does (fooAvA blinks its settings
+// button at 1Hz while first.boot is 0, forever). Opening any popup counts as "configured": the
+// pvars `onboarding.pvars` lists go to 1 — space-separated names, `prefix*` patterns, and
+// `!name` exclusions (fooAvA: `first.* !first.cf`, as first.cf=1 means "show the page asking
+// to install foo_chronflow", which would replace the native cover flow).
 void SkinEngine::complete_onboarding() {
+    auto lower = [](std::string t) { for (auto& c : t) if (c >= 'A' && c <= 'Z') c = (char)(c + 32); return t; };
+    std::vector<std::string> want, skip;
+    {
+        std::string list = lower(m_cfg.str("onboarding.pvars"));
+        for (char& c : list) if (c == '\t') c = ' ';
+        size_t i = 0;
+        while (i < list.size()) {
+            size_t j = list.find(' ', i);
+            if (j == std::string::npos) j = list.size();
+            std::string tok = list.substr(i, j - i);
+            if (!tok.empty() && tok[0] == '!') skip.push_back(tok.substr(1));
+            else if (!tok.empty()) want.push_back(tok);
+            i = j + 1;
+        }
+    }
+    if (want.empty()) return;
+    auto match = [&](const std::string& pat, const std::string& key) { // pvar names ignore case
+        const std::string k = lower(key);
+        if (!pat.empty() && pat.back() == '*') return k.compare(0, pat.size() - 1, pat, 0, pat.size() - 1) == 0;
+        return k == pat;
+    };
+    auto any = [&](const std::vector<std::string>& pats, const std::string& k) {
+        for (auto& p : pats) if (match(p, k)) return true;
+        return false;
+    };
     bool changed = false;
     for (auto& [k, v] : m_pvars) {
-        if (k.compare(0, 6, "first.") == 0 && k != "first.cf" && v != "1") { v = "1"; changed = true; }
+        if (any(want, k) && !any(skip, k) && v != "1") { v = "1"; changed = true; }
     }
     if (!changed) return;
     save_pvars();
@@ -1610,12 +1983,16 @@ void SkinEngine::draw_script(gfx::Canvas& cv, int w, int h,
     m_tfvars["height"] = std::to_string(h);
     SkinHook hook(this, cv, w, h, track, hoverX, hoverY);
     DrawString out(&hook); hook.set_buf(&out.buf());
-    // Use playback formatting so dynamic fields (%playback_time%, %isplaying%…) resolve.
-    if (track.is_valid())
-        playback_control::get()->playback_format_title(
+    // Playback formatting so dynamic fields (%playback_time%, %isplaying%…) resolve — but that
+    // only renders the playing item: for any other track (or once playback stopped under us)
+    // format that track itself, and with no track at all just run the script.
+    metadb_handle_ptr np;
+    bool ran = false;
+    if (track.is_valid() && playback_control::get()->get_now_playing(np) && np == track)
+        ran = playback_control::get()->playback_format_title(
             &hook, out, script, nullptr, playback_control::display_level_all);
-    else
-        script->run(&hook, out, nullptr);
+    if (!ran && track.is_valid()) { track->format_title(&hook, out, script, nullptr); ran = true; }
+    if (!ran) script->run(&hook, out, nullptr);
     hook.finish();
     m_capture = nullptr;
     m_capturePlacements = nullptr;

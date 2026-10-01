@@ -16,7 +16,11 @@ TrackDisplay::TrackDisplay(SkinEngine* engine, std::string name)
 }
 
 void TrackDisplay::on_attached() {
-    host()->set_timer(1, 1000); // refresh elapsed time / track changes
+    host()->set_timer(1, 1000); // elapsed time; track changes repaint via SkinEngine::repaint_all
+}
+
+void TrackDisplay::on_timer(int) {
+    if (SkinEngine::playback_ticking()) invalidate();
 }
 
 void TrackDisplay::set_script(const char* spec) {
@@ -40,22 +44,12 @@ void TrackDisplay::paint(gfx::Canvas& cv) {
     host_children();
 }
 
-// Display.txt's CD-case-edge button cycles mini.panels 1 -> 2 -> 3 -> 1, and its $select puts a
-// cover-sized overlay panel on top of the cover for states 2 and 3. The legacy skin used a mini
-// playlist there for state 2; ours shows the Lyric Show panel instead. State 3 is never reached
-// (on_click folds it back to 1), so the edge click toggles cover <-> lyrics.
-static Placement remap_child(const Placement& p) {
-    Placement q = p;
-    if (p.name == "mini.playlist") { q.name = "mini.lyrics"; q.type = "Lyric Show"; }
-    return q;
-}
-
 void TrackDisplay::host_children() {
     if (!m_engine) return;
     const gfx::Rect org = host()->bounds();
     std::set<std::string> shown;
     for (const auto& raw : m_childPlacements) {
-        Placement p = remap_child(raw);
+        Placement p = m_engine->remap_panel(raw); // the skin config can swap the panel
         if (p.name == m_name) continue; // never host ourselves
         m_engine->host_child_panel(p, org.x, org.y);
         shown.insert(p.name);
@@ -98,12 +92,13 @@ void TrackDisplay::open_code_editor() {
 }
 
 void TrackDisplay::on_rclick(int x, int y) {
-    // While the lyrics overlay is up, right-click anywhere on the CD-case frame opens the Lyric
-    // Show settings (the same menu as right-clicking the lyrics themselves).
-    if (m_engine && m_shownChildren.count("mini.lyrics")) {
-        LyricsPanel::show_settings_menu(m_engine, host(), x, y);
-        return;
-    }
+    // While a lyrics panel is hosted over us, right-click on our own frame around it opens the
+    // Lyric Show settings (the same menu as right-clicking the lyrics themselves).
+    for (const auto& child : m_shownChildren)
+        if (m_engine && m_engine->is_lyrics_panel(child)) {
+            LyricsPanel::show_settings_menu(m_engine, host(), x, y);
+            return;
+        }
     ui::Menu m;
     ui::MenuItem edit; edit.label = "Edit code..."; edit.id = 1; m.push_back(edit);
     if (ui::popup_menu(host(), x, y, m) == 1) open_code_editor();
@@ -119,10 +114,12 @@ void TrackDisplay::on_mouse_up(const ui::MouseEvent& e) {
 
 void TrackDisplay::on_mouse_move(int x, int y, unsigned, bool) {
     if (update_hover(x, y)) invalidate();
+    host()->set_tooltip(tooltip_at(m_buttons, x, y));
 }
 
 void TrackDisplay::on_mouse_leave() {
     if (update_hover(-1, -1)) invalidate();
+    host()->set_tooltip({});
 }
 
 void TrackDisplay::on_visibility(bool shown) {
@@ -142,10 +139,7 @@ void TrackDisplay::on_click(int x, int y) {
     if (!m_engine) return;
     for (const auto& b : m_buttons) {
         if (button_hit(b, x, y)) {
-            // The CD-case edge cycles mini.panels 1 -> 2 -> 3; we only use cover (1) and lyrics
-            // (2) — cover flow has its own button — so the step to 3 goes back to 1 instead.
-            std::string act = b.action == "PVAR:SET:mini.panels:3" ? "PVAR:SET:mini.panels:1" : b.action;
-            m_engine->run_button_action(act); // repaints all panels on a pvar change
+            m_engine->run_button_action(b.action); // repaints all panels on a pvar change
             invalidate();
             return;
         }

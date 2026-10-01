@@ -171,12 +171,25 @@ void AlbumList::request_cover(const std::string& coverId, int size) {
     });
 }
 
+AlbumList::CaseArt AlbumList::case_art() const {
+    CaseArt a;
+    if (!m_engine) return a;
+    std::string img = m_engine->asset("cd_case");
+    int iw = 0, ih = 0;
+    if (img.empty() || !image_natural_size(img, iw, ih) || iw <= 0 || ih <= 0) return a;
+    a.img = img; a.iw = iw; a.ih = ih; a.ww = iw; a.wh = ih;
+    std::vector<int> w = m_engine->config().nums("asset.cd_case_window");
+    if (w.size() == 4 && w[2] > 0 && w[3] > 0) { a.wx = w[0]; a.wy = w[1]; a.ww = w[2]; a.wh = w[3]; }
+    return a;
+}
+
 void AlbumList::layout_metrics(int clientW, int& cols, int& cellW, int& cellH, int& gutter, int& margin) const {
-    // fooAvA's COLLECTION grid: tight dark tiles, four across in the standard-width panel.
+    // Tight tiles, about 100px wide (four across in a ~430px panel).
     gutter = 5; margin = 6;
     cols = std::max(1, std::min(8, (clientW - margin * 2 + gutter) / (100 + gutter)));
     cellW = (clientW - margin * 2 - (cols - 1) * gutter) / cols;
-    cellH = (cellW - 10) * 490 / 559 + 10 + 32; // CD case (559x490) + label lines
+    const CaseArt ca = case_art();
+    cellH = (cellW - 10) * ca.ih / ca.iw + 10 + 32; // case (or square cover) + label lines
 }
 
 int AlbumList::item_at(int x, int y) const {
@@ -211,8 +224,8 @@ void AlbumList::paint(gfx::Canvas& cv) {
 
     int cols, cellW, cellH, gutter, margin;
     layout_metrics(W, cols, cellW, cellH, gutter, margin);
-    const std::string nocover = m_engine ? m_engine->base_dir() + "/images/fooAVA/nocoverb.png" : std::string();
-    const std::string casepng = m_engine ? m_engine->base_dir() + "/images/fooAVA/cdcaseck3.png" : std::string();
+    const std::string nocover = m_engine ? m_engine->asset("nocover") : std::string();
+    const CaseArt ca = case_art();
 
     if (m_groups.empty()) {
         cv.set_font(fArtist);
@@ -239,12 +252,12 @@ void AlbumList::paint(gfx::Canvas& cv) {
             int a = (int)i == m_selected ? 70 : 32;
             fill_alpha(cv, x, y, cellW, cellH, hlc, a);
         }
-        // Each album sits in a jewel case (cdcaseck3.png, spine on the left): the cover goes in the
-        // case's window, the case art on top.
-        const int inset = 5, caseW = cellW - inset * 2, caseH = caseW * 490 / 559;
+        // With case art (CaseArt) each album sits in it: the cover in the case's window, the case
+        // drawn on top. Without, the cover fills the tile.
+        const int inset = 5, caseW = cellW - inset * 2, caseH = caseW * ca.ih / ca.iw;
         const int ax = x + inset, ay = y + inset;
-        const int cx = ax + caseW * 57 / 559, cy = ay + caseH * 8 / 490;
-        const int cw = caseW * 494 / 559, ch = caseH * 474 / 490;
+        const int cx = ax + caseW * ca.wx / ca.iw, cy = ay + caseH * ca.wy / ca.ih;
+        const int cw = caseW * ca.ww / ca.iw, ch = caseH * ca.wh / ca.ih;
         bool drew = false;
         if (g.remote) {
             const std::string ck = g.remote_cover + "@160";
@@ -253,16 +266,17 @@ void AlbumList::paint(gfx::Canvas& cv) {
                 drew = draw_image_data(cv, ck, it->second->data(), it->second->size(), cx, cy, cw, ch);
             } else {
                 request_cover(g.remote_cover, 160);
-                if (m_cover_failed.count(ck)) drew = draw_image(cv, nocover, cx, cy, cw, ch);
-                else fill_alpha(cv, cx, cy, cw, ch, gfx::Color(40, 42, 52), 200);
+                if (m_cover_failed.count(ck) && !nocover.empty()) drew = draw_image(cv, nocover, cx, cy, cw, ch);
+                if (!drew) fill_alpha(cv, cx, cy, cw, ch, gfx::Color(40, 42, 52), 200);
                 drew = true;
             }
         } else {
             pfc::string8 cov = fmt(g.cover_track, g_al.cover);
             drew = draw_cover_art(cv, cov.get_ptr(), g.cover_track, cx, cy, cw, ch);
         }
-        if (!drew) draw_image(cv, nocover, cx, cy, cw, ch);
-        draw_image(cv, casepng, ax, ay, caseW, caseH);
+        if (!drew && !nocover.empty()) drew = draw_image(cv, nocover, cx, cy, cw, ch);
+        if (!drew) fill_alpha(cv, cx, cy, cw, ch, gfx::Color(40, 42, 52), 200);
+        if (!ca.img.empty()) draw_image(cv, ca.img, ax, ay, caseW, caseH);
         const int art = caseH; // label rows start below the case
 
         cv.set_font(fTitle);

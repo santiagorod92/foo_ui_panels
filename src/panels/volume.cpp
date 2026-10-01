@@ -5,8 +5,6 @@
 
 namespace pui {
 
-void Volume::on_attached() { host()->set_timer(1, 500); }
-
 void Volume::set_from_x(int x) {
     const int W = host()->bounds().w;
     if (W <= 0) return;
@@ -39,19 +37,19 @@ void Volume::paint(gfx::Canvas& cv) {
     float frac = (vol + 100.0f) / 100.0f; if (frac < 0) frac = 0; if (frac > 1) frac = 1;
     int fw = (int)(W * frac);
 
-    std::string base = m_engine ? m_engine->base_dir() : std::string();
-    int cb = m_engine ? m_engine->colour_index() : 2;
     gfx::Color accent(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(12, 12, 14)); // solid dark groove
-    // Thin themed level bar (bar/v{cb}.png ~3px) + round knob (bar/vol{cb}.png 10x12), centred.
+    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color(12, 12, 14)); // dark groove
+    // Level bar: the skin's `asset.bar_fill` (else a theme-colour gradient), plus its
+    // `asset.volume_knob` centred on the level, at its natural size, if it has one.
     const int bh = 4, by = (H - bh) / 2;
     bool drew = false;
-    if (fw > 0 && !base.empty())
-        drew = draw_image(cv, base + "/images/fooAVA/bar/v" + std::to_string(cb) + ".png", 0, by, fw, bh);
+    const std::string fill = m_engine ? m_engine->asset("bar_fill") : std::string();
+    if (fw > 0 && !fill.empty()) drew = draw_image(cv, fill, 0, by, fw, bh);
     if (fw > 0 && !drew) fill_gradient_v(cv, 0, by, fw, bh, accent);
-    if (!base.empty())
-        draw_image(cv, base + "/images/fooAVA/bar/vol" + std::to_string(cb) + ".png",
-                   fw - 5, (H - 12) / 2, 0, 0); // knob (natural 10x12)
+    const std::string knob = m_engine ? m_engine->asset("volume_knob") : std::string();
+    int kw = 0, kh = 0;
+    if (!knob.empty() && image_natural_size(knob, kw, kh))
+        draw_image(cv, knob, fw - kw / 2, (H - kh) / 2, 0, 0);
 }
 
 } // namespace pui

@@ -183,6 +183,11 @@ public:
         NSPoint p = [m_ns convertPoint:[m_ns.window mouseLocationOutsideOfEventStream] fromView:nil];
         if (NSPointInRect(p, m_ns.bounds)) [m_ns.cursor set];
     }
+    void set_tooltip(const std::string& utf8) override {
+        NSString* t = utf8.empty() ? nil : ns(utf8);
+        if (t == m_ns.toolTip || [t isEqualToString:m_ns.toolTip]) return;
+        m_ns.toolTip = t;
+    }
     void* native() const override { return (__bridge void*)m_ns; }
 
     // --- called by FooUIPanelsView ---

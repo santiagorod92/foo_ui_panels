@@ -85,6 +85,9 @@ public:
     virtual void capture_mouse(bool capture) = 0;
     virtual void focus() = 0;
     virtual void set_cursor(Cursor c) = 0; // the pointer shape over this view from now on
+    // Tooltip shown while the mouse rests over this view (UTF-8; empty = none). Views update it
+    // as the mouse moves between their buttons; setting the same text again is a no-op.
+    virtual void set_tooltip(const std::string& utf8) = 0;
     // The platform window (HWND / NSView*) — only for platform code (menus, dialogs).
     virtual void* native() const = 0;
 };
@@ -138,6 +141,8 @@ public:
     virtual void resize_client(int w, int h, const std::string& halign, const std::string& valign) = 0;
     virtual void set_menubar_visible(bool visible) = 0;
     virtual void show_main_menu() = 0;             // the full File/Edit/.../Help menu, at the cursor
+    virtual void set_title(const std::string& utf8) = 0;   // window/taskbar title ($settitle)
+    virtual void set_tooltip(const std::string& utf8) = 0; // as ViewHost::set_tooltip, over the canvas
 };
 
 // A foreign (non-View) panel embedded in the root window — e.g. a hosted Default UI element.

@@ -13,7 +13,9 @@
 #include "../gfx/canvas.h"
 #include "../ui/view.h"
 #include "button.h"
+#include "skin_config.h"
 #include <vector>
+#include <filesystem>
 #include <map>
 #include <mutex>
 #include <set>
@@ -40,7 +42,7 @@ using PvarMap = std::map<std::string, std::string, PvarNameLess>;
 PvarMap load_all_pvars();
 void save_all_pvars(const PvarMap& pvars);
 
-// Built-in fallback skin script (no fooava.txt in the skin folder).
+// Built-in fallback skin script (no main script found in the skin folder).
 const char* builtin_test_skin();
 
 // Parse "r-g-b" / "r-g-b-a" (any non-digit prefix skipped; alpha ignored).
@@ -53,10 +55,22 @@ public:
     SkinEngine();
     ~SkinEngine();
 
-    void set_main_window(ui::MainWindow* w) { m_main = w; }
+    // Also starts the engine's playback/album-art notifications (the engine itself can be a
+    // static-lifetime member, constructed before the core's services exist).
+    void set_main_window(ui::MainWindow* w);
     ui::MainWindow* main_window() const { return m_main; }
     void set_base_dir(const std::string& dir) { m_base = dir; } // for resolving image paths
-    bool load(const char* script);
+    bool load(const char* script); // compiles the master script; a failure keeps the previous one
+
+    // Loads the skin in `dir`: its foo_ui_panels.ini (SkinConfig) and main script (see
+    // resolve_main_script; the built-in test skin if there is none). Problems the scripts contain
+    // are reported to the console (see below).
+    bool load_skin(const std::string& dir);
+    // Hot reload. Call periodically (the platforms do, from their canvas timer; it throttles
+    // itself to once a second): if the main script, foo_ui_panels.ini or a panel script in use
+    // changed on disk, it is reloaded and everything repaints.
+    void check_skin_changes();
+    const SkinConfig& config() const { return m_cfg; }
 
     // Run `script` against the draw engine on `cv` (used by native panels like TrackDisplay).
     // If `track` is valid, built-in fields (%title% etc.) resolve from it.
@@ -108,25 +122,39 @@ public:
     // Write the RATING tag (0..5; 0 clears) on a specific track — playlist star clicks.
     void set_rating(const metadb_handle_ptr& track, int stars);
 
-    // Invalidate the canvas + the script-driven panels so a pvar (theme/mode) change shows.
+    // Invalidate the canvas + every hosted panel so a pvar (theme/mode) change, a playback event
+    // or newly arrived album art shows.
     void repaint_all();
 
-    // Current theme accent colour (pvar "colour", "r-g-b"). Returns false if unset.
+    // True while something is actually playing (not stopped, not paused): the only time the
+    // periodic progress/time repaint has anything to advance. Discrete changes (new track,
+    // seek, pause, volume) repaint through the engine's own play_callback instead.
+    static bool playback_ticking();
+
+    // Current theme accent colour: the "r-g-b" pvar the config names `theme.accent_pvar`, else the
+    // Preferences accent override. Returns false if neither is set.
     bool theme_color(gfx::Color& out) const;
 
-    // Opening a settings popup ends the skin's first-run onboarding: sets every `first.*` pvar
-    // to 1, which is what stops fooAvA blinking its settings button at 1Hz (the master script
-    // only seeds first.boot=0, and legacy Panels UI is what used to clear it).
+    // Opening a settings popup ends the skin's first-run onboarding: sets the pvars the config
+    // lists in `onboarding.pvars` to 1 (legacy Panels UI cleared those flags itself; fooAvA blinks
+    // its settings button at 1Hz until first.boot is set).
     void complete_onboarding();
 
-    // Skin base dir + current theme image index (pvar "colour.b": 1 black/2 blue/3 red/4 green).
     const std::string& base_dir() const { return m_base; }
-    int colour_index() const;
+    // Theme number: the pvar the config names `theme.index_pvar` (fooAvA: colour.b, 1..4), else
+    // `theme.index_default` (1). Substituted for {theme} in asset paths.
+    int theme_index() const;
+    // Art a native panel draws, from the config's `asset.<key>` (relative to `images`), with
+    // {theme} -> theme_index() and {n} -> n. "" when the skin declares none: draw without it.
+    std::string asset(const std::string& key, int n = 0) const;
+    // A $panel() the config renames/retypes (`panel.remap.<name> = <new name>|<new type>`).
+    Placement remap_panel(const Placement& p) const;
+    bool is_lyrics_panel(const std::string& name) const; // a hosted native Lyric Show panel
     std::string get_pvar(const std::string& k) const { auto it = m_pvars.find(k); return it == m_pvars.end() ? std::string() : it->second; }
 
-    // Shared canvas wallpaper (pvars "backgroundd"/"background"/"alpha.bgr") — lets native
-    // panels draw the SAME background the main canvas draws, cropped to their own position
-    // within the window. background_path() is "" when the background is disabled or unset.
+    // Shared canvas wallpaper — lets native panels draw the SAME background the main canvas
+    // draws, cropped to their own position within the window. Which pvars hold it is the
+    // config's `background.*`; background_path() is "" when the skin has none, or it's off.
     std::string background_path() const;
     int background_alpha() const;
     // Draws it into `cv` for a panel hosted at `host`'s position. False = caller should fall
@@ -160,11 +188,33 @@ public:
     std::string read_panel_script_raw(const std::string& name); // as on disk, no init prefix
     bool save_panel_script(const std::string& name, const std::string& text);
 
-    // Drops every hosted panel (component shutdown, before the main window goes away).
+    // Drops every hosted panel and stops the notifications (component shutdown, before the main
+    // window goes away).
     void destroy_panels();
 
 private:
     friend class SkinHook;
+    // Skin diagnostics, in the foobar2000 console: functions neither the core nor this engine
+    // know, ones accepted but not implemented yet, missing skin images, panels no installed
+    // element can host. Each message once per (re)load, so a repaint loop can't flood it.
+    void diagnose_script(const std::string& where, const std::string& text);
+    void report_once(const std::string& msg);
+    std::set<std::string> m_reported;
+    std::set<std::string> m_imagesChecked; // skin image paths already checked for existence
+
+    // Hot reload: last seen modification time per skin file (main script, config, panel scripts).
+    using FileTimes = std::map<std::string, std::filesystem::file_time_type>;
+    FileTimes scan_skin_files() const;
+    bool load_main_script(); // (re)reads m_mainPath; reports + keeps the old script on failure
+    std::string panels_dir() const { return m_base + "/" + m_cfg.str("panels", "panels"); }
+    std::string script_label(const std::string& path) const; // path relative to the skin folder
+    void seed_pvars(); // the config's `pvar.once.*`
+    SkinConfig m_cfg;
+    std::string m_mainPath; // "" = built-in test skin
+    FileTimes m_fileTimes;
+    unsigned long long m_nextScan = 0;
+    std::string m_popupFile; // panels/<this>.txt is the open popup's script
+
     void load_pvars();
     // Hides any top-level panel not named in this frame's m_placements — panels persist across
     // frames (keyed by name), so a layout switch that stops requesting one (e.g. MiniMode,
@@ -208,6 +258,20 @@ private:
     // Settings/about popup ($button 'POPUP:<file.ava>').
     std::unique_ptr<PopupView> m_popup;
     std::unique_ptr<ui::ViewHost> m_popupHost;
+
+    // Repaints on playback events instead of waiting for the next timer tick.
+    struct PlayEvents : play_callback_impl_base {
+        explicit PlayEvents(SkinEngine* e);
+        SkinEngine* m_e;
+        void on_playback_new_track(metadb_handle_ptr) override { m_e->repaint_all(); }
+        void on_playback_stop(play_control::t_stop_reason) override { m_e->repaint_all(); }
+        void on_playback_seek(double) override { m_e->repaint_all(); }
+        void on_playback_pause(bool) override { m_e->repaint_all(); }
+        void on_playback_edited(metadb_handle_ptr) override { m_e->repaint_all(); }
+        void on_playback_dynamic_info_track(const file_info&) override { m_e->repaint_all(); }
+        void on_volume_change(float) override { m_e->repaint_all(); }
+    };
+    std::unique_ptr<PlayEvents> m_playEvents;
 };
 
 } // namespace pui

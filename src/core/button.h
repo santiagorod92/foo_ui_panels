@@ -3,12 +3,14 @@
 // list of them without a circular include.
 #pragma once
 #include <string>
+#include <vector>
 
 namespace pui {
 
 struct Button {
     int x = 0, y = 0, w = 0, h = 0;
     std::string action; // e.g. "Playback/Random", "PVAR:SET:mini.panels:2", "WINDOWSIZE:..."
+    std::string tooltip; // TOOLTIP:"text" / TOOLTIP,text argument; empty = none
 
     // "Selected" state — one tab of a radio group stays lit while its panel is showing, so the
     // user can tell which one is active without hovering. A group is detected generically: a
@@ -35,6 +37,13 @@ struct Placement {
 // Point-in-button test, shared by click dispatch and hover-state tracking.
 inline bool button_hit(const Button& b, int x, int y) {
     return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+}
+
+// Tooltip of the button under (x,y): the last one drawn (topmost) that has one, else "".
+inline std::string tooltip_at(const std::vector<Button>& list, int x, int y) {
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (!it->tooltip.empty() && button_hit(*it, x, y)) return it->tooltip;
+    return {};
 }
 
 } // namespace pui

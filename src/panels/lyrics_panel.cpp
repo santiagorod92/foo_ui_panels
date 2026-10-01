@@ -264,11 +264,28 @@ bool json_string(const std::string& j, const char* key, std::string& out) {
                 case 't': out += '\t'; break;
                 case 'r': break;
                 case 'u': {
-                    unsigned cp = (unsigned)strtoul(j.substr(p + 1, 4).c_str(), nullptr, 16); p += 4;
-                    if (cp >= 0xD800 && cp < 0xDC00 && j.compare(p + 1, 2, "\\u") == 0) {
-                        unsigned lo = (unsigned)strtoul(j.substr(p + 3, 4).c_str(), nullptr, 16); p += 6;
-                        cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00);
-                    }
+                    // \uXXXX, a surrogate pair as two of them. Malformed input (truncated, a lone
+                    // or mismatched surrogate) becomes U+FFFD instead of reading past the body.
+                    auto hex4 = [&](size_t at, unsigned& v) {
+                        if (at + 4 > j.size()) return false;
+                        v = 0;
+                        for (size_t k = at; k < at + 4; ++k) {
+                            char c = j[k]; v <<= 4;
+                            if (c >= '0' && c <= '9') v |= c - '0';
+                            else if (c >= 'a' && c <= 'f') v |= c - 'a' + 10;
+                            else if (c >= 'A' && c <= 'F') v |= c - 'A' + 10;
+                            else return false;
+                        }
+                        return true;
+                    };
+                    unsigned cp = 0, lo = 0;
+                    if (!hex4(p + 1, cp)) { out += "\xEF\xBF\xBD"; break; }
+                    p += 4;
+                    if (cp >= 0xD800 && cp < 0xDC00) {
+                        if (j.compare(p + 1, 2, "\\u") == 0 && hex4(p + 3, lo) && lo >= 0xDC00 && lo < 0xE000) {
+                            cp = 0x10000 + ((cp - 0xD800) << 10) + (lo - 0xDC00); p += 6;
+                        } else cp = 0xFFFD;
+                    } else if (cp >= 0xDC00 && cp < 0xE000) cp = 0xFFFD;
                     utf8_append(out, cp); break; }
                 default: out += j[p];
                 }
@@ -348,7 +365,9 @@ void LyricsPanel::start_fetch() {
         std::string body, text;
         bool ok = false;
         try {
-            abort_callback_impl ab;
+            // Signalled when foobar2000 quits (which waits for splitTask work): a slow lrclib.net
+            // must not hold up closing the player.
+            abort_callback& ab = fb2k::mainAborter();
             const std::string base = "https://lrclib.net/api/";
             std::string q = "artist_name=" + urlenc(ids.artist) + "&track_name=" + urlenc(ids.title);
             std::string exact = q;

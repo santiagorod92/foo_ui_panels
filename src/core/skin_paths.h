@@ -11,8 +11,8 @@ std::string active_skin();
 void set_skins_root(const std::string& utf8);
 void set_active_skin(const std::string& name);
 
-// The skin folder (fooava.txt + panels/ + images/): <root>/<active> if both are set and the
-// folder exists, else the component's own folder (historical default — next to the binary).
+// The skin folder (main script, foo_ui_panels.ini, panel scripts, art): <root>/<active> if both
+// are set and the folder exists, else the component's own folder (next to the binary).
 std::string resolve_skin_dir();
 // Same, for not-yet-saved root/active values (the Preferences page's pending edits).
 std::string resolve_skin_dir_for(const std::string& root, const std::string& active);

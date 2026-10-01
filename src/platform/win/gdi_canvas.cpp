@@ -155,8 +155,10 @@ void gdi_fonts_shutdown() {
 
 // --- GdiCanvas -----------------------------------------------------------------
 GdiCanvas::GdiCanvas(HDC dc, int w, int h) : m_dc(dc), m_w(w), m_h(h) {
-    m_dpi = GetDeviceCaps(dc, LOGPIXELSY);
-    if (m_dpi <= 0) m_dpi = 96;
+    // The skin's design size, same as the macOS canvas: foobar2000 is DPI-aware, so at 150%
+    // scaling LOGPIXELSY is 144 — point-sized fonts grew 1.5x while every coordinate the skin
+    // lays them out in stayed in 96-dpi pixels, and text overflowed its boxes.
+    m_dpi = 96;
     SetBkMode(m_dc, TRANSPARENT);
 }
 

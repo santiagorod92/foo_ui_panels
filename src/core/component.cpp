@@ -13,7 +13,7 @@ DECLARE_COMPONENT_VERSION(
     "https://github.com/santiagorod92/foo_ui_panels\n");
 
 namespace pui {
-// Built-in skin used when the skin folder has no fooava.txt: background fill + title text + a
+// Built-in skin used when the skin folder has no main script: background fill + title text + a
 // hosted track display and playlist. Proves the draw engine and panel hosting together.
 const char* builtin_test_skin() {
     return

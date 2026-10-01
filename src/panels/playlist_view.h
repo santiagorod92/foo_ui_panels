@@ -27,6 +27,7 @@ private:
     void on_click(int x, int y, bool dbl, bool shift, bool ctrl);
     void on_rclick(int x, int y); // right-click -> foobar context menu for the selection
     int  item_at(int y);   // active-playlist item index at view-y, or -1
+    bool has_stars() const; // the skin has rating-star art (asset.rating_stars): stars are clickable
 
     SkinEngine* m_engine = nullptr;
     int m_scroll = 0;       // vertical scroll offset (px)

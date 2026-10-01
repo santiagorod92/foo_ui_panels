@@ -11,9 +11,9 @@ class SkinEngine;
 class Seekbar : public ui::View {
 public:
     explicit Seekbar(SkinEngine* engine) : m_engine(engine) {}
-    void on_attached() override;
+    // No timer of its own: it only shows the canvas snapshot, and every canvas paint repaints
+    // it (SkinEngine::refresh_bars).
     void paint(gfx::Canvas& cv) override;
-    void on_timer(int) override { invalidate(); }
     void on_mouse_down(const ui::MouseEvent& e) override;
 
 private:

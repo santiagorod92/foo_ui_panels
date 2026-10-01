@@ -28,12 +28,7 @@ public:
     explicit PanelsRoot(bool owns_window = false) : m_owns_window(owns_window) {
         m_host = pui::ui::mac::create_root_view(this, pui::ui::ViewOptions{});
         m_skin.set_main_window(this);
-        std::string dir = pui::resolve_skin_dir();
-        m_skin.set_base_dir(dir);
-        std::string skin = pui::read_file(dir + "/fooava.txt");
-        console::printf("Panels UI: fooava.txt read %u bytes from %s", (unsigned)skin.size(), dir.c_str());
-        bool ok = m_skin.load(skin.empty() ? pui::builtin_test_skin() : skin.c_str());
-        console::printf("Panels UI: compile -> %s", ok ? "ok" : "FAILED");
+        m_skin.load_skin(pui::resolve_skin_dir()); // its main script, else the built-in test skin
     }
     ~PanelsRoot() override {
         m_skin.save_pvars();
@@ -44,7 +39,12 @@ public:
 
     // --- ui::View (the canvas) ---
     void on_attached() override { host()->set_timer(1, 500); } // progress bar / time readout
-    void on_timer(int) override { invalidate(); }
+    // Only the progress bar / time readout advance on their own; everything else repaints
+    // through SkinEngine's play_callback. Stopped/paused: nothing to do.
+    void on_timer(int) override {
+        m_skin.check_skin_changes(); // hot reload of edited skin files
+        if (pui::SkinEngine::playback_ticking()) invalidate();
+    }
     void paint(pui::gfx::Canvas& cv) override {
         const int w = cv.width(), h = cv.height();
         cv.fill_rect(pui::gfx::Rect{ 0, 0, w, h }, pui::gfx::Color());
@@ -138,6 +138,14 @@ public:
             [pop popUpMenuPositioningItem:nil atLocation:[NSEvent mouseLocation] inView:nil];
         });
     }
+    // As a layout element the window is foobar2000's own: leave its title alone.
+    void set_title(const std::string& utf8) override {
+        NSWindow* win = view().window;
+        if (!m_owns_window || !win) return;
+        NSString* t = [NSString stringWithUTF8String:utf8.c_str()] ?: @"";
+        if (![t isEqualToString:win.title]) win.title = t;
+    }
+    void set_tooltip(const std::string& utf8) override { if (m_host) m_host->set_tooltip(utf8); }
 
 private:
     pui::SkinEngine m_skin;
@@ -202,12 +210,14 @@ public:
                           defer:NO];
         win.title = @"foobar2000";
         win.releasedWhenClosed = NO; // we hold the only strong reference, in m_window
+        // Restore last session's frame; only a first run gets centred (centring after setting the
+        // autosave name would throw the restored position away again).
+        if (![win setFrameUsingName:@"foo_ui_panels.mainwindow"]) [win center];
         win.frameAutosaveName = @"foo_ui_panels.mainwindow";
         NSView* canvas = m_root->view();
         canvas.frame = [win.contentView bounds];
         canvas.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         [win.contentView addSubview:canvas];
-        [win center];
         [win makeKeyAndOrderFront:nil];
         m_window = win;
         g_active_ui = this;

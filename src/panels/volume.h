@@ -10,9 +10,9 @@ class SkinEngine;
 class Volume : public ui::View {
 public:
     explicit Volume(SkinEngine* engine) : m_engine(engine) {}
-    void on_attached() override;
+    // No timer of its own: it only shows the canvas snapshot, and every canvas paint repaints
+    // it (SkinEngine::refresh_bars).
     void paint(gfx::Canvas& cv) override;
-    void on_timer(int) override { invalidate(); }
     void on_mouse_down(const ui::MouseEvent& e) override;
     void on_mouse_move(int x, int y, unsigned mods, bool left_down) override;
     void on_mouse_up(const ui::MouseEvent& e) override;

@@ -2,14 +2,93 @@
 #include "fs_util.h"
 #include <algorithm>
 #include <cmath>
+#include <chrono>
 #include <filesystem>
+#include <functional>
 #include <map>
+#include <set>
+#include <unordered_map>
+#include <vector>
 
 namespace pui {
 
 namespace {
-std::map<std::string, gfx::ImagePtr> g_cache;
-std::map<std::string, int> g_retryCount; // draw_cover_art: bounded retries for the now-playing-art wait
+using Clock = std::chrono::steady_clock;
+
+// Decoded images by key (a file path as the skin wrote it — wildcards unresolved — or an
+// in-memory key). Main thread only. Bounded: least-recently-used images are dropped once the
+// decoded total passes kBudget (a large album grid would otherwise keep every cover it ever
+// showed). A miss is cached too, but only until `retry`: art added later (a new folder.jpg, a
+// tag edit) shows up without a restart, and a broken path isn't re-probed on every paint.
+struct Entry {
+    gfx::ImagePtr img;
+    size_t bytes = 0;
+    uint64_t used = 0;
+    Clock::time_point retry; // misses only
+};
+std::unordered_map<std::string, Entry> g_cache;
+size_t g_bytes = 0;
+uint64_t g_clock = 0;
+constexpr size_t kBudget = 256u << 20;            // decoded bytes kept
+constexpr auto kMissTtl = std::chrono::seconds(30); // file / in-memory misses
+constexpr auto kArtMissTtl = std::chrono::minutes(5); // album-art pipeline misses (may be remote)
+constexpr auto kNowPlayingRetry = std::chrono::seconds(1); // waiting on the now-playing loader
+constexpr int kNowPlayingRetries = 5;
+std::map<std::string, int> g_retryCount; // now-playing art misses so far, per art key
+
+size_t image_bytes(const gfx::ImagePtr& img) {
+    return img ? (size_t)img->width() * (size_t)img->height() * 4 : 0;
+}
+
+// Hit (or a miss not yet due for a retry) -> true, with `out` set. Expired misses are dropped.
+bool cache_get(const std::string& key, gfx::ImagePtr& out) {
+    auto it = g_cache.find(key);
+    if (it == g_cache.end()) return false;
+    Entry& e = it->second;
+    if (!e.img && Clock::now() >= e.retry) { g_cache.erase(it); return false; }
+    e.used = ++g_clock;
+    out = e.img;
+    return true;
+}
+
+void cache_drop(const std::string& key) {
+    auto it = g_cache.find(key);
+    if (it == g_cache.end()) return;
+    g_bytes -= it->second.bytes;
+    g_cache.erase(it);
+}
+
+// Over budget: drop the least recently used images down to 3/4 of it in one pass, so a grid
+// scrolling through new covers doesn't pay a full scan per insert.
+void cache_evict() {
+    if (g_bytes <= kBudget) return;
+    std::vector<std::pair<uint64_t, const std::string*>> order;
+    order.reserve(g_cache.size());
+    for (auto& [k, e] : g_cache) if (e.img) order.emplace_back(e.used, &k);
+    std::sort(order.begin(), order.end());
+    std::vector<std::string> victims;
+    size_t bytes = g_bytes;
+    for (size_t i = 0; i + 1 < order.size() && bytes > kBudget / 4 * 3; ++i) { // keep the newest
+        bytes -= g_cache[*order[i].second].bytes;
+        victims.push_back(*order[i].second);
+    }
+    for (auto& k : victims) cache_drop(k);
+}
+
+gfx::ImagePtr cache_put(const std::string& key, gfx::ImagePtr img, Clock::duration missTtl) {
+    cache_drop(key);
+    Entry e;
+    e.img = img;
+    e.bytes = image_bytes(img);
+    e.used = ++g_clock;
+    if (!img) e.retry = Clock::now() + missTtl;
+    g_bytes += e.bytes;
+    g_cache[key] = std::move(e);
+    cache_evict();
+    return img;
+}
+
+std::function<void()> g_onArtReady;
 
 // Art the centralized now-playing loader delivered, tied to the track it belongs to. Its
 // current() lags a track change (still returns the PREVIOUS track's art until the async load
@@ -18,7 +97,7 @@ std::string g_npPath;
 album_art_data_ptr g_npData;
 bool g_npRegistered = false;
 
-gfx::ImagePtr load_from_memory(const std::string& key, const void* data, size_t size);
+std::string art_key(const metadb_handle_ptr& track) { return "\x01" "art:" + std::string(track->get_path()); }
 
 struct NowPlayingArtNotify : now_playing_album_art_notify {
     void on_album_art(album_art_data::ptr data) override {
@@ -27,18 +106,59 @@ struct NowPlayingArtNotify : now_playing_album_art_notify {
         g_npPath = np->get_path();
         g_npData = data;
         // Replace whatever this track cached before (a stale or "no art yet" entry).
-        std::string key = "\x01" "art:" + g_npPath;
-        g_cache.erase(key);
+        std::string key = art_key(np);
         g_retryCount.erase(key);
-        load_from_memory(key, data->data(), data->size());
+        if (cache_put(key, gfx::decode_image_memory(data->data(), data->size()), kArtMissTtl) && g_onArtReady)
+            g_onArtReady();
     }
 };
 NowPlayingArtNotify g_npNotify;
 
+// Album-art queries run off the UI thread: an extractor can be slow (a large embedded tag) or
+// remote (foo_navidrome fetches over HTTP), and querying from paint froze the whole window.
+// Few at a time — a grid asks for every visible cover at once — and the rest are asked again
+// by the repaint each finished one triggers.
+std::set<std::string> g_artPending;
+int g_artInflight = 0;
+constexpr int kMaxArtInflight = 4;
+bool g_shutdown = false;
+
 void ensure_started() {
-    if (g_npRegistered) return;
+    if (g_npRegistered || g_shutdown) return;
     g_npRegistered = true;
     now_playing_album_art_notify_manager::get()->add(&g_npNotify);
+}
+
+void request_art(const std::string& key, const metadb_handle_ptr& track, bool nowPlaying) {
+    if (g_shutdown || g_artPending.count(key) || g_artInflight >= kMaxArtInflight) return;
+    g_artPending.insert(key);
+    ++g_artInflight;
+    fb2k::splitTask([key, track, nowPlaying]() {
+        album_art_data_ptr data;
+        try {
+            // Signalled when foobar2000 quits (which waits for splitTask work).
+            abort_callback& abort = fb2k::mainAborter();
+            pfc::list_t<GUID> ids; ids.add_item(album_art_ids::cover_front);
+            auto extractor = album_art_manager_v2::get()->open(pfc::list_single_ref_t(track), ids, abort);
+            data = extractor->query(album_art_ids::cover_front, abort);
+        } catch (...) {}
+        fb2k::inMainThread([key, nowPlaying, data]() {
+            if (g_shutdown) return;
+            --g_artInflight;
+            g_artPending.erase(key);
+            gfx::ImagePtr cur;
+            if (cache_get(key, cur) && cur) return; // the now-playing loader got there first
+            gfx::ImagePtr img = data.is_valid() ? gfx::decode_image_memory(data->data(), data->size()) : nullptr;
+            // A miss for the now-playing track might just mean the now_playing loader hasn't
+            // finished its async load yet: retry a few times, a second apart, before backing off
+            // like any other miss. (Its notification replaces the entry as soon as it lands.)
+            Clock::duration ttl = kArtMissTtl;
+            if (img) g_retryCount.erase(key);
+            else if (nowPlaying && ++g_retryCount[key] < kNowPlayingRetries) ttl = kNowPlayingRetry;
+            cache_put(key, img, ttl);
+            if (g_onArtReady) g_onArtReady(); // a waiting caller (or the retry) repaints
+        });
+    });
 }
 
 // Case-insensitive '*'/'?' match (ASCII folding, like the Windows file APIs).
@@ -72,25 +192,24 @@ std::string resolve_wildcard(const std::string& p) {
     return p;
 }
 
+// Keyed by the path as given, so a cached wildcard path ("<track dir>/*folder*.*", in every
+// panel script) costs a lookup per paint instead of a directory scan.
 gfx::ImagePtr load(const std::string& rawpath) {
     ensure_started();
+    gfx::ImagePtr img;
+    if (cache_get(rawpath, img)) return img;
     std::string path = resolve_wildcard(rawpath);
-    auto it = g_cache.find(path);
-    if (it != g_cache.end()) return it->second;
-    gfx::ImagePtr img = path.empty() ? nullptr : gfx::decode_image_file(path);
-    g_cache[path] = img; // the miss is cached too
-    return img;
+    img = path.empty() ? nullptr : gfx::decode_image_file(path);
+    return cache_put(rawpath, img, kMissTtl);
 }
 
 // Decode+cache an in-memory image (album art bytes fetched via album_art_manager_v2, which has
-// no on-disk path to key a normal load() call). `key` must be a stable, collision-free cache key
-// (the caller uses "\x01art:" + track path so it never collides with a real file path).
+// no on-disk path to key a normal load() call). `key` must be a stable, collision-free cache key.
 gfx::ImagePtr load_from_memory(const std::string& key, const void* data, size_t size) {
-    auto it = g_cache.find(key);
-    if (it != g_cache.end()) return it->second;
-    gfx::ImagePtr img = (data && size) ? gfx::decode_image_memory(data, size) : nullptr;
-    g_cache[key] = img; // cache the miss too, so a track with no art isn't re-queried every paint
-    return img;
+    gfx::ImagePtr img;
+    if (cache_get(key, img)) return img;
+    img = (data && size) ? gfx::decode_image_memory(data, size) : nullptr;
+    return cache_put(key, img, kMissTtl);
 }
 
 void blit(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int w, int h, int alpha, int rotateflip) {
@@ -101,16 +220,15 @@ void blit(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int w, int h, in
                   alpha, rotateflip == 6);
 }
 
-// Front cover for `track`: `path` on disk if it loads, else the album-art pipeline.
+// Front cover for `track`: `path` on disk if it loads, else the album-art pipeline. The
+// pipeline answers asynchronously: nullptr now, and the art-ready callback repaints once it's in.
 gfx::ImagePtr resolve_cover(const std::string& path, const metadb_handle_ptr& track) {
-    ensure_started();
     if (gfx::ImagePtr b = load(path)) return b;
     if (!track.is_valid()) return nullptr;
-    std::string key = "\x01" "art:" + std::string(track->get_path());
-    auto it = g_cache.find(key);
-    if (it != g_cache.end()) return it->second;
+    std::string key = art_key(track);
+    gfx::ImagePtr img;
+    if (cache_get(key, img)) return img;
 
-    album_art_data_ptr data;
     // The now-playing art loader is fed live by the active decoder (see SDK album_art.h:
     // "since various components require the album art of the now-playing track, a
     // centralized loader has been provided"), so it can supply art for streaming sources
@@ -119,33 +237,14 @@ gfx::ImagePtr resolve_cover(const std::string& path, const metadb_handle_ptr& tr
     // and only once the loader's notification (NowPlayingArtNotify) has tied its art to it.
     metadb_handle_ptr np;
     bool is_now_playing = playback_control::get()->get_now_playing(np) && track == np;
-    if (is_now_playing && g_npPath == track->get_path()) data = g_npData;
-    if (!data.is_valid()) {
-        try {
-            abort_callback_impl ab;
-            pfc::list_t<GUID> ids; ids.add_item(album_art_ids::cover_front);
-            auto extractor = album_art_manager_v2::get()->open(pfc::list_single_ref_t(track), ids, ab);
-            data = extractor->query(album_art_ids::cover_front, ab);
-        } catch (...) {}
-    }
-    gfx::ImagePtr bmp;
-    if (data.is_valid()) {
-        bmp = gfx::decode_image_memory(data->data(), data->size());
-        if (bmp) g_cache[key] = bmp;
-    }
-    // A miss for the now-playing track might just mean the now_playing loader hasn't finished
-    // its async load yet — retry a few repaints (~5s, TrackDisplay's 1s timer) before giving
-    // up, so we don't hammer a (possibly remote) extractor every repaint for the rest of
-    // playback. A non-playing track (e.g. a playlist thumbnail) has no live source to wait on,
-    // so its miss is cached as permanent immediately.
-    if (!bmp) {
-        if (!is_now_playing || ++g_retryCount[key] >= 5) g_cache[key] = nullptr;
-    } else {
-        g_retryCount.erase(key);
-    }
-    return bmp;
+    if (is_now_playing && g_npPath == track->get_path() && g_npData.is_valid())
+        return cache_put(key, gfx::decode_image_memory(g_npData->data(), g_npData->size()), kArtMissTtl);
+    request_art(key, track, is_now_playing);
+    return nullptr;
 }
 } // namespace
+
+void set_art_ready_callback(std::function<void()> cb) { g_onArtReady = std::move(cb); }
 
 gfx::ImagePtr load_image(const std::string& path) { return load(path); }
 
@@ -193,7 +292,6 @@ gfx::ImagePtr cover_image(const std::string& path, const metadb_handle_ptr& trac
 }
 
 gfx::ImagePtr data_image(const std::string& key, const void* data, size_t size) {
-    ensure_started();
     return load_from_memory("\x02" + key, data, size);
 }
 
@@ -253,9 +351,11 @@ bool file_exists(const std::string& path) {
 }
 
 void images_shutdown() {
+    g_shutdown = true; // queries still in flight drop their result
+    g_onArtReady = nullptr;
     if (g_npRegistered) { now_playing_album_art_notify_manager::get()->remove(&g_npNotify); g_npRegistered = false; }
     g_npData.release();
-    g_cache.clear();
+    g_cache.clear(); g_bytes = 0;
     gfx::platform_images_shutdown();
 }
 

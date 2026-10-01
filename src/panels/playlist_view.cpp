@@ -58,17 +58,14 @@ static const gfx::FontSpec kRowFont{ "Segoe UI", 12, false };
 
 void PlaylistView::paint(gfx::Canvas& cv) {
     const int W = cv.width(), H = cv.height();
-    std::string sbase0 = m_engine ? m_engine->base_dir() : std::string();
     // Background: the skin wallpaper (so it matches the main window) under a translucent dark
     // overlay so the track list stays readable. Falls back to a navy gradient. The row highlight
     // colour is tinted from the wallpaper so it matches instead of being a stark blue.
     bool drewbg = false;
     gfx::Color hl(36, 86, 180); if (m_engine) m_engine->theme_color(hl);
-    if (m_engine && !sbase0.empty() && m_engine->pvar_int("backgroundd", 0)) {
-        std::string wp = m_engine->pvar_str("background"); // e.g. "walls\1.jpg"
-        if (!wp.empty()) {
-            for (auto& ch : wp) if (ch == '\\') ch = '/';
-            std::string wppath = sbase0 + "/images/fooAVA/" + wp;
+    if (m_engine) {
+        const std::string wppath = m_engine->background_path(); // "" = the skin has none / it's off
+        if (!wppath.empty()) {
             // Transparent: show exactly what the skin canvas drew beneath us (its wallpaper at
             // the skin's own alpha), so the list sits on the same background as the rest.
             drewbg = m_engine->draw_canvas_snapshot(cv, *host());
@@ -88,7 +85,6 @@ void PlaylistView::paint(gfx::Canvas& cv) {
     if (!drewbg && m_engine) drewbg = m_engine->draw_canvas_snapshot(cv, *host()); // wallpaper off
     if (!drewbg) fill_gradient_v(cv, 0, 0, W, H, gfx::Color(30, 30, 34));
 
-    std::string sbase = m_engine ? m_engine->base_dir() : std::string();
     const unsigned kLine = gfx::kSingleLine;
 
     auto groups = build_groups();
@@ -101,10 +97,9 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         // ---- album header ----
         if (y + HEADER_H > 0 && y < H) {
             metadb_handle_ptr h0; pm->activeplaylist_get_item_handle(h0, g.items[0]);
-            // cover thumb
-            if (!sbase.empty()) {
+            // cover thumb: folder.* on disk, else the album-art pipeline (navidrome:// etc.)
+            {
                 pfc::string8 cov = fmt(h0, g_pl.cover);
-                // folder.* on disk, else the album-art pipeline (navidrome:// etc. have no folder)
                 draw_cover_art(cv, cov.get_ptr(), h0, 5, y + 4, 38, 38);
             }
             cv.set_font(kHdrFont);
@@ -150,16 +145,14 @@ void PlaylistView::paint(gfx::Canvas& cv) {
                 // duration (right)
                 pfc::string8 ln = fmt(h, g_pl.len);
                 cv.draw_text(ln.get_ptr(), gfx::Rect::ltrb(W - 46, y + 1, W - 8, y + ROW_H), gfx::kAlignRight | kLine, tc);
-                // rating stars (skin images), left of duration
-                if (!sbase.empty()) {
-                    int r = ((int)idx == m_hover_row)   // live preview while hovering the stars
-                                ? m_hover_stars
-                                : atoi(fmt(h, g_pl.rating).get_ptr());
-                    if (r < 0) r = 0; if (r > 5) r = 5;
-                    char p[16]; snprintf(p, sizeof p, "%ds1.png", r);
-                    draw_image(cv, sbase + "/images/fooAVA/rating_stars24/" + p,
-                               W - 46 - 60, y + (ROW_H - 11) / 2, 55, 11);
-                }
+                // rating stars, left of duration: the skin's `asset.rating_stars` ({n} = 0..5 stars)
+                int r = ((int)idx == m_hover_row)   // live preview while hovering the stars
+                            ? m_hover_stars
+                            : atoi(fmt(h, g_pl.rating).get_ptr());
+                if (r < 0) r = 0; if (r > 5) r = 5;
+                const std::string stars = m_engine ? m_engine->asset("rating_stars", r) : std::string();
+                if (!stars.empty())
+                    draw_image(cv, stars, W - 46 - 60, y + (ROW_H - 11) / 2, 55, 11);
             }
             y += ROW_H;
         }
@@ -188,7 +181,7 @@ void PlaylistView::on_click(int x, int y, bool dbl, bool shift, bool ctrl) {
     // Click on the rating stars → set this track's rating (1..5) like the skin.
     const int W = host()->bounds().w;
     const int starX = W - 106, starW = 55; // must match the paint() star rect
-    if (!dbl && !shift && !ctrl && x >= starX && x < starX + starW) {
+    if (!dbl && !shift && !ctrl && has_stars() && x >= starX && x < starX + starW) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, idx);
         int star = (x - starX) * 5 / starW + 1; if (star < 1) star = 1; if (star > 5) star = 5;
         if (m_engine) m_engine->set_rating(h, star);
@@ -237,11 +230,15 @@ void PlaylistView::on_wheel(int, int, float notches) {
     invalidate();
 }
 
+bool PlaylistView::has_stars() const {
+    return m_engine && !m_engine->asset("rating_stars", 0).empty();
+}
+
 void PlaylistView::on_mouse_move(int x, int y, unsigned, bool) {
     const int W = host()->bounds().w;
     const int starX = W - 106, starW = 55;
     int hr = -1, hs = 0, idx = item_at(y);
-    if (idx >= 0 && x >= starX && x < starX + starW) {
+    if (idx >= 0 && has_stars() && x >= starX && x < starX + starW) {
         hr = idx; hs = (x - starX) * 5 / starW + 1; if (hs < 1) hs = 1; if (hs > 5) hs = 5;
     }
     if (hr != m_hover_row || hs != m_hover_stars) {

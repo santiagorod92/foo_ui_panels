@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # Extract a loadable skin script from a PanelsUI config blob (e.g. fooAvA's s8.bin,
-# itself decompressed from the SFX). Produces fooava.txt for the component to load.
+# itself decompressed from the SFX). Produces fooava.txt (the main script) for the component.
 #
 # Pipeline (see CLAUDE.md "Loading a real PanelsUI script"):
 #   1. parse the KV pvar dictionary + locate the master layout script (longest text run)
@@ -23,8 +23,80 @@
 # The skin opens those with POPUP:<file>, which the component reads back as
 # panels/<file>.txt, so extract each one straight to that name.
 #
+# For the full config it also writes foo_ui_panels.ini next to the main script (unless one is
+# already there — it may have been edited): the per-skin settings the component reads, i.e.
+# everything fooAvA needs beyond its scripts (see README "Skin configuration").
+#
 # Usage: python3 extract_fooava.py <s8.bin|*.ava> <out fooava.txt | out panels/<file>.ava.txt>
 import os, re, struct, sys
+
+# foo_ui_panels.ini for fooAvA 1.05. {script} = the main script's file name.
+FOOAVA_SKIN_CONFIG = """\
+# foo_ui_panels skin configuration for fooAvA 1.05 (written by tools/extract_fooava.py).
+# Keys: README.md, "Skin configuration".
+script = {script}
+images = images/fooAVA
+
+# Theme: accent colour "r-g-b" and theme number (1 black, 2 blue, 3 red, 4 green).
+theme.accent_pvar = colour
+theme.index_pvar = colour.b
+theme.index_default = 2
+
+# Fonts: the face is set through $setpvar(fontAVA,...); stand-ins for faces rarely installed.
+font.face_pvar = fontAVA
+font.alias.Swis721 Cn BT D-Type = Nimbus Sans Narrow
+font.alias.Calibri = Carlito
+font.alias.HandelGotD = Nimbus Sans Narrow
+
+# Wallpaper (shared with the native panels): drawn below the 24px title bar.
+background.enabled_pvar = backgroundd
+background.image_pvar = background
+background.alpha_pvar = alpha.bgr
+background.alpha = 195
+background.top = 24
+
+# Art the native panels draw (relative to images; {{theme}} = theme number, {{n}} = stars).
+asset.bar_fill = bar/v{{theme}}.png
+asset.volume_knob = bar/vol{{theme}}.png
+asset.nocover = nocoverb.png
+asset.cd_case = cdcaseck3.png
+asset.cd_case_window = 57 8 494 474
+asset.rating_stars = rating_stars24/{{n}}s1.png
+
+# The analyser strips sit on the cover: the 20px one is the reflection; lift the pair a bit.
+spectrum.mirror_below = 30
+spectrum.grow = 8
+spectrum.raise = 26
+
+# Settings popup: its layout needs 360px (theme swatches left of the font column).
+popup.size = 360 500
+
+# Cover lookup the skin did through a dead plugin.
+cover.pvar = MyCoverPath
+cover.pattern = *folder*.*
+
+# The cover's mini playlist overlay becomes the Lyric Show panel; the CD-case edge then
+# toggles cover <-> lyrics (state 3 folds back to 1).
+panel.remap.mini.playlist = mini.lyrics|Lyric Show
+action.remap.PVAR:SET:mini.panels:3 = PVAR:SET:mini.panels:1
+
+# First-run flags cleared when a settings popup opens (first.cf=1 would show the page asking
+# to install foo_chronflow instead of the native cover flow).
+onboarding.pvars = first.* !first.cf
+
+# Cover flow needed foo_chronflow (dead); the native panel provides it: turn it on once.
+pvar.once.cfbutton = 1
+pvar.once.first.cf = 0
+"""
+
+def write_skin_config(out):
+    path = os.path.join(os.path.dirname(out) or '.', 'foo_ui_panels.ini')
+    if os.path.exists(path):
+        print(f"skin config: {path} already exists, left as is")
+        return
+    with open(path, 'w', encoding='utf-8') as f:
+        f.write(FOOAVA_SKIN_CONFIG.format(script=os.path.basename(out)))
+    print(f"skin config -> {path}")
 
 def fix_image_case(text, out_path):
     # Build a case-insensitive index of the images/ dir next to `out_path` once, then
@@ -303,6 +375,7 @@ def main(src, out):
         # A standalone popup config (*.ava): one script, no per-panel records.
         print('no per-panel region (standalone popup config)')
         return
+    write_skin_config(out)
     pdir = os.path.join(os.path.dirname(out) or '.', 'panels')
     os.makedirs(pdir, exist_ok=True)
     recs = []; o = region

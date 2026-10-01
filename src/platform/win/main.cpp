@@ -5,6 +5,7 @@
 #include "win_sdk.h"
 #include <windowsx.h>
 #include "gdi_canvas.h"
+#include "tooltip.h"
 #include "../../core/skin_engine.h"
 #include "../../core/skin_paths.h"
 #include "../../core/image_cache.h"
@@ -23,6 +24,39 @@ static const GUID g_panels_ui_guid =
 
 static const wchar_t WNDCLASS_NAME[] = L"foo_ui_panels_main";
 
+// Main window placement across sessions: "left top right bottom showCmd" (normal-state rect in
+// workspace coordinates, as Get/SetWindowPlacement use). Empty until the first shutdown.
+// {5E7A9C31-2B4D-4F6E-8A1C-3D5B7F9E0A24}
+static const GUID g_placement_guid =
+    { 0x5e7a9c31, 0x2b4d, 0x4f6e, { 0x8a, 0x1c, 0x3d, 0x5b, 0x7f, 0x9e, 0x0a, 0x24 } };
+static cfg_var_modern::cfg_string g_placement(g_placement_guid, "");
+
+static void save_placement(HWND wnd) {
+    WINDOWPLACEMENT wp = { sizeof(wp) };
+    if (!GetWindowPlacement(wnd, &wp)) return;
+    const RECT& r = wp.rcNormalPosition;
+    char buf[96];
+    snprintf(buf, sizeof buf, "%ld %ld %ld %ld %u", r.left, r.top, r.right, r.bottom,
+             wp.showCmd == SW_SHOWMAXIMIZED ? (unsigned)SW_SHOWMAXIMIZED : (unsigned)SW_SHOWNORMAL);
+    g_placement.set(buf);
+}
+
+// Applies the saved placement; returns the show command to use (SW_SHOW if nothing usable was
+// saved — e.g. first run, or the monitor it was on is gone).
+static int restore_placement(HWND wnd) {
+    long l, t, r, b; unsigned cmd;
+    if (sscanf(g_placement.get().c_str(), "%ld %ld %ld %ld %u", &l, &t, &r, &b, &cmd) != 5) return SW_SHOW;
+    RECT rc = { l, t, r, b };
+    if (rc.right - rc.left < 100 || rc.bottom - rc.top < 100) return SW_SHOW;
+    if (!MonitorFromRect(&rc, MONITOR_DEFAULTTONULL)) return SW_SHOW;
+    WINDOWPLACEMENT wp = { sizeof(wp) };
+    GetWindowPlacement(wnd, &wp);
+    wp.rcNormalPosition = rc;
+    wp.showCmd = SW_HIDE; // position only; the caller shows it
+    SetWindowPlacement(wnd, &wp);
+    return cmd == SW_SHOWMAXIMIZED ? SW_SHOWMAXIMIZED : SW_SHOW;
+}
+
 // Posted to the top-level window to show/hide the native menu bar (wParam: 1 show, 0 hide).
 #define PUI_WM_TOGGLE_MENU (WM_USER + 0x501)
 #define PUI_WM_SHOW_MAINMENU (WM_USER + 0x502) // wp = screen x, lp = screen y
@@ -35,8 +69,8 @@ public:
         m_hook = hook;
         HINSTANCE inst = core_api::get_my_instance();
 
-        // OLE drag&drop (RegisterDragDrop/DoDragDrop in playlist_view.cpp) needs this on the
-        // UI thread. Safe to call even if fb2k's core already did — OleInitialize ref-counts.
+        // OLE drag&drop (hosted DUI elements may use it) needs this on the UI thread. Safe to
+        // call even if fb2k's core already did — OleInitialize ref-counts.
         m_ole_ok = SUCCEEDED(OleInitialize(nullptr));
 
         WNDCLASSEXW wc = { sizeof(wc) };
@@ -55,8 +89,9 @@ public:
 
         if (!m_wnd) throw exception_win32(GetLastError());
         build_menu();
+        const int show = restore_placement(m_wnd);
         build_layout();
-        ShowWindow(m_wnd, SW_SHOW);
+        ShowWindow(m_wnd, show);
         return m_wnd;
     }
 
@@ -65,13 +100,7 @@ public:
     void build_layout() {
         m_skin.set_main_window(this);
         // Preferences-page skin folder override if set, else the component's own folder.
-        std::string dir = pui::resolve_skin_dir();
-        m_skin.set_base_dir(dir);
-        // Load the real fooAvA master script if present, else the built-in test skin.
-        std::string skin = pui::read_file(dir + "\\fooava.txt");
-        console::printf("Panels UI: fooava.txt read %u bytes from %s", (unsigned)skin.size(), dir.c_str());
-        bool ok = m_skin.load(skin.empty() ? pui::builtin_test_skin() : skin.c_str());
-        console::printf("Panels UI: compile -> %s", ok ? "ok" : "FAILED");
+        m_skin.load_skin(pui::resolve_skin_dir()); // its main script, else the built-in test skin
         InvalidateRect(m_wnd, nullptr, FALSE);
         SetTimer(m_wnd, kCanvasTimer, 500, nullptr); // progress bar / time readout advance with playback
     }
@@ -80,7 +109,9 @@ public:
 
     void shutdown() override {
         m_skin.save_pvars();
+        if (m_wnd) save_placement(m_wnd);
         m_skin.destroy_panels(); // child views go before the window they live in
+        m_tooltip.destroy();
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
         if (m_menubar) { DestroyMenu(m_menubar); m_menubar = nullptr; }
         m_groups.clear();
@@ -154,12 +185,22 @@ public:
         POINT pt; GetCursorPos(&pt);
         PostMessageW(m_wnd, PUI_WM_SHOW_MAINMENU, (WPARAM)pt.x, (LPARAM)pt.y);
     }
+    void set_title(const std::string& utf8) override {
+        if (!m_wnd || utf8 == m_title) return;
+        m_title = utf8;
+        SetWindowTextW(m_wnd, pfc::stringcvt::string_wide_from_utf8(utf8.c_str()).get_ptr());
+    }
+    void set_tooltip(const std::string& utf8) override {
+        m_tooltip.set(m_wnd, pfc::stringcvt::string_wide_from_utf8(utf8.c_str()).get_ptr());
+    }
 
 private:
     HWND        m_wnd     = nullptr;
     HookProc_t  m_hook    = nullptr;
     HMENU       m_menubar = nullptr;
     bool        m_ole_ok  = false;
+    std::string m_title;
+    pui::win::Tooltip m_tooltip;
 
     pui::SkinEngine m_skin;
 
@@ -279,7 +320,13 @@ private:
         case WM_ERASEBKGND:
             return 1; // we fully paint in WM_PAINT (no flicker)
         case WM_TIMER:
-            if (wp == kCanvasTimer) { InvalidateRect(wnd, nullptr, FALSE); return 0; }
+            // Only the progress bar / time readout advance on their own; everything else that
+            // changes repaints through SkinEngine's play_callback. Stopped/paused: nothing to do.
+            if (wp == kCanvasTimer) {
+                if (self) self->m_skin.check_skin_changes(); // hot reload of edited skin files
+                if (pui::SkinEngine::playback_ticking()) InvalidateRect(wnd, nullptr, FALSE);
+                return 0;
+            }
             break;
         case WM_PAINT: {
             PAINTSTRUCT ps; HDC dc = BeginPaint(wnd, &ps);

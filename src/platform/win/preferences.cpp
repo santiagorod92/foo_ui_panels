@@ -5,17 +5,19 @@
 // same low-level WndProc pattern as the rest of this component (see TrackDisplay/Popup).
 //
 // Four tabs:
-//   General   - skins root folder (one subfolder per skin) + active skin picker.
+//   General   - skins root folder (one subfolder per skin) + active skin + main script picker.
 //   Script    - raw editor for the active skin's main script.
 //   Variables - grid of the persistent pvars ($getpvar/$setpvar) the active script references.
 //   Overrides - global font/accent-colour fallback used when a skin doesn't set its own.
 //
-// Applying writes the script file + persists root/active-skin + the pvar store. It does NOT
-// hot-reload the running skin (the canvas + every hosted native panel would need re-creating) —
-// needs_restart tells foobar2000 to prompt for one instead.
+// Applying writes the script file + persists root/active-skin/main-script + the pvar store. A
+// script edit shows up live (the engine hot-reloads changed skin files); switching to another
+// skin or main script doesn't — needs_restart tells foobar2000 to prompt for a restart.
 #include "win_sdk.h"
 #include "../../core/skin_engine.h"
 #include "../../core/skin_paths.h"
+#include "../../core/skin_config.h"
+#include "../../core/fs_util.h"
 #include <shlobj.h>
 #include <commctrl.h>
 #include <commdlg.h>
@@ -44,10 +46,6 @@ std::string to_utf8(const std::wstring& w) {
     WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
     return s;
 }
-bool dir_exists(const std::wstring& path) {
-    DWORD a = GetFileAttributesW(path.c_str());
-    return a != INVALID_FILE_ATTRIBUTES && (a & FILE_ATTRIBUTE_DIRECTORY);
-}
 } // namespace
 
 namespace {
@@ -56,22 +54,6 @@ namespace {
 const GUID g_prefs_page_guid =
     { 0x9c1d9f3a, 0x2b7e, 0x4a6c, { 0x9f, 0x0d, 0x7e, 0x3c, 0x5a, 0x8b, 0x1d, 0x40 } };
 
-std::string read_file(const std::string& path) {
-    FILE* f = fopen(path.c_str(), "rb");
-    if (!f) return {};
-    fseek(f, 0, SEEK_END); long n = ftell(f); fseek(f, 0, SEEK_SET);
-    std::string s(n > 0 ? n : 0, '\0');
-    if (n > 0) { size_t r = fread(&s[0], 1, n, f); s.resize(r); }
-    fclose(f);
-    return s;
-}
-bool write_file(const std::string& path, const std::string& content) {
-    FILE* f = fopen(path.c_str(), "wb");
-    if (!f) return false;
-    fwrite(content.data(), 1, content.size(), f);
-    fclose(f);
-    return true;
-}
 std::wstring get_text(HWND ctl) {
     int n = GetWindowTextLengthW(ctl);
     std::wstring w(n, L'\0');
@@ -154,7 +136,7 @@ bool is_reserved_key(const std::string& k) { return k.rfind("_prefs_", 0) == 0; 
 // Control IDs.
 enum {
     // General
-    kIdRootEdit = 1001, kIdRootBrowse = 1002, kIdSkinCombo = 1003,
+    kIdRootEdit = 1001, kIdRootBrowse = 1002, kIdSkinCombo = 1003, kIdMainCombo = 1004,
     // Script
     kIdScriptEdit = 1010,
     // Variables
@@ -187,7 +169,10 @@ public:
 
     t_uint32 get_state() override {
         t_uint32 s = preferences_state::resettable;
-        if (has_changed()) s |= preferences_state::changed | preferences_state::needs_restart;
+        if (has_changed()) s |= preferences_state::changed;
+        if (to_utf8(get_text(m_rootEdit)) != m_appliedRoot || combo_selected_skin() != m_appliedActive ||
+            combo_selected_main() != m_appliedMain)
+            s |= preferences_state::needs_restart;
         return s;
     }
     fb2k::hwnd_t get_wnd() override { return m_wnd; }
@@ -195,13 +180,15 @@ public:
     void apply() override {
         std::string root = to_utf8(get_text(m_rootEdit));
         std::string active = combo_selected_skin();
+        std::string mainName = combo_selected_main();
         set_skins_root(root);
         set_active_skin(active);
+        set_main_script_override(mainName);
         std::string script = to_utf8(get_text(m_scriptEdit));
-        write_file(resolve_skin_dir() + "/fooava.txt", script);
+        if (!m_scriptPath.empty() && script != m_appliedScript) write_file(m_scriptPath, script);
         save_all_pvars(m_pvars);
 
-        m_appliedRoot = root; m_appliedActive = active; m_appliedScript = script;
+        m_appliedRoot = root; m_appliedActive = active; m_appliedMain = mainName; m_appliedScript = script;
         m_appliedPvars = serialize_pvars(m_pvars);
         m_callback->on_state_changed();
     }
@@ -209,6 +196,7 @@ public:
     void reset() override { // back to defaults: no root override, bundled skin, no overrides
         set_text(m_rootEdit, "");
         refresh_skin_combo();
+        refresh_main_combo(""); // automatic
         load_script_for_active();
         m_pvars = load_all_pvars();
         for (const char* k : { kFontFaceKey, kFontSizeKey, kAccentKey }) m_pvars.erase(k);
@@ -266,6 +254,8 @@ private:
 
         set_text(m_rootEdit, skins_root());
         refresh_skin_combo();
+        refresh_main_combo(main_script_override());
+        m_appliedMain = combo_selected_main();
         load_script_for_active();
         refresh_vars_list();
         refresh_overrides_ui();
@@ -291,8 +281,13 @@ private:
             WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
         m_skinCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdSkinCombo, inst, nullptr);
+        m_mainLabel = CreateWindowExW(0, L"STATIC", L"Main script:",
+            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
+        m_mainCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdMainCombo, inst, nullptr);
         m_skinWarning = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        for (HWND c : { m_rootLabel, m_rootEdit, m_rootBrowseBtn, m_skinLabel, m_skinCombo, m_skinWarning })
+        for (HWND c : { m_rootLabel, m_rootEdit, m_rootBrowseBtn, m_skinLabel, m_skinCombo, m_mainLabel,
+                        m_mainCombo, m_skinWarning })
             SendMessageW(c, WM_SETFONT, (WPARAM)m_font, TRUE);
     }
 
@@ -373,13 +368,36 @@ private:
         update_skin_warning();
     }
 
-    void update_skin_warning() {
+    // "(automatic)" + the folder's *.txt files; selects `name` if listed, else automatic.
+    void refresh_main_combo(const std::string& name) {
+        m_mainChoices = main_script_candidates(resolve_skin_dir_for_ui());
+        SendMessageW(m_mainCombo, CB_RESETCONTENT, 0, 0);
+        SendMessageW(m_mainCombo, CB_ADDSTRING, 0, (LPARAM)L"(automatic)");
+        int sel = 0;
+        for (size_t i = 0; i < m_mainChoices.size(); ++i) {
+            SendMessageW(m_mainCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(m_mainChoices[i]).c_str());
+            if (m_mainChoices[i] == name) sel = (int)i + 1;
+        }
+        SendMessageW(m_mainCombo, CB_SETCURSEL, sel, 0);
+    }
+    std::string combo_selected_main() const { // "" = automatic
+        int i = (int)SendMessageW(m_mainCombo, CB_GETCURSEL, 0, 0);
+        return i <= 0 || i > (int)m_mainChoices.size() ? std::string() : m_mainChoices[i - 1];
+    }
+
+    // The main script the page's pending choices resolve to ("" = none), and why if unclear.
+    std::string resolve_main_for_ui(std::string* why = nullptr) {
         std::string dir = resolve_skin_dir_for_ui();
-        bool haveScript = !read_file(dir + "/fooava.txt").empty();
-        bool havePanels = dir_exists(to_wide(dir) + L"/panels");
+        SkinConfig cfg; cfg.load(dir);
+        return resolve_main_script_with(dir, cfg, combo_selected_main(), why);
+    }
+
+    void update_skin_warning() {
+        std::string why;
+        std::string main = resolve_main_for_ui(&why);
         std::wstring msg;
-        if (!haveScript) msg = L"⚠ no script found in this folder.";
-        else if (!havePanels) msg = L"⚠ no panels/ subfolder here — cover/playlist/etc. panels will be blank.";
+        if (main.empty()) msg = L"⚠ " + to_wide(why.empty() ? "no main script found in this folder." : why);
+        else if (!why.empty()) msg = L"⚠ " + to_wide(why);
         SetWindowTextW(m_skinWarning, msg.c_str());
     }
 
@@ -389,8 +407,8 @@ private:
     }
 
     void load_script_for_active() {
-        std::string dir = resolve_skin_dir_for_ui();
-        std::string script = read_file(dir + "/fooava.txt");
+        m_scriptPath = resolve_main_for_ui();
+        std::string script = m_scriptPath.empty() ? std::string() : read_file(m_scriptPath);
         set_text(m_scriptEdit, script);
         m_appliedScript = script;
         update_skin_warning();
@@ -430,6 +448,7 @@ private:
     bool has_changed() const {
         return to_utf8(get_text(m_rootEdit)) != m_appliedRoot ||
                combo_selected_skin() != m_appliedActive ||
+               combo_selected_main() != m_appliedMain ||
                to_utf8(get_text(m_scriptEdit)) != m_appliedScript ||
                serialize_pvars(m_pvars) != m_appliedPvars;
     }
@@ -542,7 +561,9 @@ private:
         MoveWindow(m_rootEdit, pad, y, rc.right - pad * 3 - btnW, editH, TRUE);
         MoveWindow(m_rootBrowseBtn, rc.right - pad - btnW, y, btnW, editH, TRUE); y += editH + 10;
         MoveWindow(m_skinLabel, pad, y, 100, labelH, TRUE);
-        MoveWindow(m_skinCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 4;
+        MoveWindow(m_skinCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 6;
+        MoveWindow(m_mainLabel, pad, y, 100, labelH, TRUE);
+        MoveWindow(m_mainCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 4;
         MoveWindow(m_skinWarning, pad, y, rc.right - pad * 2, labelH, TRUE);
     }
     void layout_script() {
@@ -635,6 +656,11 @@ private:
                 WORD id = LOWORD(wp), code = HIWORD(wp);
                 if (id == kIdRootBrowse && code == BN_CLICKED) self->browse_root();
                 if (id == kIdSkinCombo && code == CBN_SELCHANGE) {
+                    self->refresh_main_combo(self->combo_selected_main());
+                    self->update_skin_warning(); self->load_script_for_active();
+                    self->rescan_vars(); self->notify_changed();
+                }
+                if (id == kIdMainCombo && code == CBN_SELCHANGE) {
                     self->update_skin_warning(); self->load_script_for_active();
                     self->rescan_vars(); self->notify_changed();
                 }
@@ -663,8 +689,10 @@ private:
     HWND m_pageGeneral = nullptr, m_pageScript = nullptr, m_pageVariables = nullptr, m_pageOverrides = nullptr;
     // General
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,
-         m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr;
-    std::vector<std::string> m_skinChoices;
+         m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr,
+         m_mainLabel = nullptr, m_mainCombo = nullptr;
+    std::vector<std::string> m_skinChoices, m_mainChoices;
+    std::string m_scriptPath; // the file the Script tab edits ("" = none resolved)
     // Script
     HWND m_scriptLabel = nullptr, m_scriptEdit = nullptr;
     // Variables
@@ -678,7 +706,7 @@ private:
 
     HFONT m_font = nullptr, m_monoFont = nullptr;
     PvarMap m_pvars; // shared by Variables + Overrides tabs
-    std::string m_appliedRoot, m_appliedActive, m_appliedScript, m_appliedPvars; // has_changed() baseline
+    std::string m_appliedRoot, m_appliedActive, m_appliedMain, m_appliedScript, m_appliedPvars; // has_changed() baseline
     const preferences_page_callback::ptr m_callback;
 };
 

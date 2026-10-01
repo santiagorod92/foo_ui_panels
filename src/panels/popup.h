@@ -19,6 +19,8 @@ public:
     void paint(gfx::Canvas& cv) override;
     void on_timer(int) override { invalidate(); }
     void on_mouse_down(const ui::MouseEvent& e) override;
+    void on_mouse_move(int x, int y, unsigned, bool) override { host()->set_tooltip(tooltip_at(m_buttons, x, y)); }
+    void on_mouse_leave() override { host()->set_tooltip({}); }
 
 private:
     SkinEngine* m_engine = nullptr;
