@@ -16,10 +16,10 @@ on:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout foo_ui_panels
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: foo_ui_panels
 
@@ -35,7 +35,7 @@ jobs:
         run: make check-portable CXX_HOST=clang++-19
 
       - name: Upload foo_ui_panels.dll
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: foo_ui_panels-dll
           path: foo_ui_panels/build/foo_ui_panels.dll
@@ -46,7 +46,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout foo_ui_panels
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           path: foo_ui_panels
 
@@ -61,7 +61,7 @@ jobs:
         run: ./scripts/mac-build.sh
 
       - name: Upload foo_ui_panels.component
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: foo_ui_panels-mac
           path: foo_ui_panels/build-mac/foo_ui_panels.component

@@ -45,7 +45,7 @@ runs:
 
     - name: Cache xwin Windows SDK/CRT splat
       id: xwin-cache
-      uses: actions/cache@v4
+      uses: actions/cache@v6
       with:
         path: ~/.xwin
         key: xwin-${{ runner.os }}-v1

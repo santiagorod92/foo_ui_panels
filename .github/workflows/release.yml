@@ -21,7 +21,7 @@ concurrency:
 
 jobs:
   release:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     # Skip semantic-release's own release commit ([skip ci]) and commit types
     # .releaserc.json treats as "no release" — no point in a full build to no-op.
     # Only looks at the push's top commit (head_commit).
@@ -44,7 +44,7 @@ jobs:
 
     steps:
       - name: Checkout foo_ui_panels
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 0          # semantic-release needs full history + tags
           persist-credentials: true
@@ -54,7 +54,7 @@ jobs:
         uses: ./foo_ui_panels/.github/actions/setup-build
 
       - name: Setup Node.js
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@v7
         with:
           node-version: '24'
 
@@ -87,7 +87,7 @@ jobs:
     runs-on: macos-latest
     steps:
       - name: Checkout the release tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.released_version }}
           path: foo_ui_panels
@@ -107,7 +107,7 @@ jobs:
         working-directory: foo_ui_panels/build-mac
         run: ditto -c -k --keepParent foo_ui_panels.component foo_ui_panels-mac.zip
 
-      - uses: actions/upload-artifact@v6
+      - uses: actions/upload-artifact@v7
         with:
           name: foo_ui_panels-mac
           path: foo_ui_panels/build-mac/foo_ui_panels-mac.zip
@@ -116,17 +116,17 @@ jobs:
 
   release-package:
     needs: [release, release-mac]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     env:
       GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       VERSION: ${{ needs.release.outputs.released_version }}
     steps:
       - name: Checkout the release tag
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           ref: v${{ needs.release.outputs.released_version }}
 
-      - uses: actions/download-artifact@v6
+      - uses: actions/download-artifact@v8
         with:
           name: foo_ui_panels-mac
 

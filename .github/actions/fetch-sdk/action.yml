@@ -12,7 +12,7 @@ runs:
     #   pfc/                                                         <- SDK bundle
     #   foo_ui_panels/                                               <- this repo
     - name: Checkout foobar2000 SDK (reupen/foobar2000-sdk-unmodified)
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
       with:
         repository: reupen/foobar2000-sdk-unmodified
         path: _sdk-staging
