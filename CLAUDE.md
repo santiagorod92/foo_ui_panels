@@ -45,6 +45,9 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - Remote: `origin` → github.com/santiagorod92/foo_ui_panels (private). Branch `main`.
 - **Commits: author Santiago Rodriguez <santiagom9992@gmail.com> ONLY — no Co-Authored-By trailer.**
 - **Don't push per-step.** Iterate locally; push only at end of an iteration round or on request.
+- **Every new feature/fix that changes user-visible behaviour updates `README.md` in the same
+  change** (*What's implemented*, *Roadmap*, *Installation*, *Works with foo_navidrome*… as
+  relevant) — the README is the public doc and must stay in sync with the code.
 - **This file is for stable rules/decisions only** — don't append per-iteration debugging
   narrative, root-cause essays, or session logs here. That goes in commit messages; durable
   non-obvious gotchas can get one terse bullet under the relevant section below, not a paragraph.

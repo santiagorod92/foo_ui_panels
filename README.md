@@ -37,7 +37,7 @@ original code is used, the skin format was reverse-engineered from fooAvA's conf
 ## Installation
 
 One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and macOS
-(universal, macOS 11+). **macOS support is experimental** — see [Roadmap](#roadmap).
+(universal, macOS 11+).
 
 1. Download `foo_ui_panels_<version>.fb2k-component` from the [Releases](../../releases) page.
 2. Double-click it (or drag it onto foobar2000) and restart foobar2000.
@@ -69,6 +69,11 @@ component loads (`extract_fooava.py`).
   volume, grouped playlist, spectrum analyser, album browser + cover flow, playlist switcher,
   quick search and a synced-lyrics panel.
 - Right-click **Edit code…** on a panel, with **Apply** to reload its script live.
+- **macOS support**: the same engine and panels run on macOS (Cocoa + CoreGraphics/CoreText),
+  shipped in the same `.fb2k-component` as the Windows build. Current limitations: no
+  Preferences page yet (the skin folder is fixed, see Installation), 1x rendering on Retina
+  displays, and panels that host foobar2000's own UI elements only work if a Mac element of the
+  same name exists.
 
 ## Works with foo_navidrome
 
@@ -87,13 +92,38 @@ own):
 
 ## Roadmap
 
-- **macOS support** — builds and ships, but hasn't been runtime-tested on a Mac yet. Known gaps:
-  no Preferences page (skin folder is fixed, see Installation), 1x rendering on Retina
-  displays, and panels that host foobar2000's own UI elements only if a Mac element of the same
-  name exists.
+- macOS polish: a Preferences page (skin folder picker) and Retina (2x) rendering.
 - A step-by-step guide for setting up fooAvA from its original download.
 
-Feedback, bug reports and ideas are very welcome in [Issues](../../issues).
+## Contributing
+
+Everyone is welcome to contribute — bug reports, fixes and new features alike.
+
+**Other old Panels UI skins.** This project was built around fooAvA, but the goal is to run any
+Panels UI skin from the foobar2000 0.9.x days. If you try another skin and something renders
+wrong, a function isn't supported, or a panel is missing, just
+[open an issue](../../issues) — it will be looked into. Helpful details:
+
+- the skin's name and where to get it (link to the original download);
+- your OS (Windows / macOS), foobar2000 version and component version;
+- a screenshot of what you see (and, if you can, of how it should look);
+- the script of the affected panel (right-click › **Edit code…**) or the titleformat function
+  that fails.
+
+**Pull requests.** Fixes and new features are welcome. A few conventions keep things smooth:
+
+- **Every change is cross-platform.** Logic lives in platform-free C++ (`src/core`,
+  `src/panels`); anything that needs the OS goes through `src/gfx/canvas.h` / `src/ui/view.h`
+  and is implemented for both `src/platform/win` and `src/platform/mac`. `make check-portable`
+  (also run in CI) verifies the core compiles without Windows headers.
+- Both builds should pass: `./build.sh` (Windows) and `./scripts/mac-build.sh` (macOS) — CI
+  checks both on every PR.
+- Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, …): they
+  drive the automated releases (see [Releases](#releases)).
+- Update this README when you add or change a feature (e.g. *What's implemented*, *Roadmap*),
+  so the docs stay in sync with the code.
+
+Not sure where to start, or want to discuss an idea first? Open an issue.
 
 ## Building from source
 
