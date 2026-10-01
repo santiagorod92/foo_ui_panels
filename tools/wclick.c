@@ -1,4 +1,4 @@
-// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT]
+// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP]
 // Dev tool: posts a mouse/key event to the deepest visible child of the Panels UI main window
 // (or another top-level window by title) at client point (x,y). Runs inside Wine next to
 // foobar2000, so UI tests never touch the host's real mouse — except `hover`, which moves the
@@ -21,6 +21,15 @@ int main(int argc, char** argv) {
     if (!top) { printf("no window\n"); return 1; }
     const char* what = argc > ai ? argv[ai] : "l";
     if (!strcmp(what, "close")) { PostMessageW(top, WM_CLOSE, 0, 0); return 0; }
+    if (!strncmp(what, "post:", 5)) { // post:MSG:WPARAM:LPARAM to the main window (numbers, 0x ok)
+        char* q = (char*)what + 5;
+        UINT m = (UINT)strtoul(q, &q, 0); if (*q == ':') ++q;
+        WPARAM w = (WPARAM)strtoull(q, &q, 0); if (*q == ':') ++q;
+        LPARAM l = (LPARAM)strtoll(q, &q, 0);
+        PostMessageW(top, m, w, l);
+        printf("visible %d iconic %d\n", IsWindowVisible(top) ? 1 : 0, IsIconic(top) ? 1 : 0);
+        return 0;
+    }
     POINT cp = { atoi(argv[1]), atoi(argv[2]) };
     HWND target = top;
     for (;;) {
@@ -49,6 +58,13 @@ int main(int argc, char** argv) {
         PostMessageW(target, WM_MOUSEWHEEL, MAKEWPARAM(0, atoi(what + 5) * WHEEL_DELTA), MAKELPARAM(s.x, s.y));
     } else if (!strncmp(what, "type:", 5)) {
         for (const char* c = what + 5; *c; ++c) PostMessageW(target, WM_CHAR, (WPARAM)(unsigned char)*c, 0);
+    } else if (!strncmp(what, "drag:", 5)) {
+        // Left-drag from (x,y) by DY px: press, moves with the button held, release.
+        int dy = atoi(what + 5), steps = 8;
+        PostMessageW(target, WM_LBUTTONDOWN, MK_LBUTTON, lp);
+        for (int i = 1; i <= steps; ++i)
+            PostMessageW(target, WM_MOUSEMOVE, MK_LBUTTON, MAKELPARAM(cp.x, cp.y + dy * i / steps));
+        PostMessageW(target, WM_LBUTTONUP, 0, MAKELPARAM(cp.x, cp.y + dy));
     } else if (!strncmp(what, "key:", 4)) {
         PostMessageW(target, WM_KEYDOWN, (WPARAM)strtol(what + 4, NULL, 0), 0);
     }
