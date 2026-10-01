@@ -1,3 +1,10 @@
+## [1.2.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.1.0...v1.2.0) (2026-10-01)
+
+
+### Features
+
+* skin-agnostic engine, hot reload, diagnostics, tooltips and performance work ([3b63f1e](https://github.com/santiagorod92/foo_ui_panels/commit/3b63f1ee972f57bf03415d84ec9723a871249a6d))
+
 ## [1.1.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.0.0...v1.1.0) (2026-09-30)
 
 
