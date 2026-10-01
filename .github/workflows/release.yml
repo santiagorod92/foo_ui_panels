@@ -9,6 +9,9 @@ name: Release
 on:
   push:
     branches: [main]
+  # Manual run: the gate below only looks at a push's top commit, so a release-worthy commit
+  # pushed under a docs:/test:/ci: one is only released by dispatching this workflow.
+  workflow_dispatch:
 
 permissions:
   contents: write
