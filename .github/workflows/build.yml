@@ -3,7 +3,8 @@ name: Build
 # Build check on every push / PR, both platforms, uploaded as artifacts:
 #  - Windows x64 DLL: cross-compiled on Linux exactly like local dev (./build.sh: clang-cl +
 #    lld-link + xwin), plus `make check-portable` (the platform-free code builds without
-#    <windows.h>).
+#    <windows.h>) and `make test` (host-side unit tests of the SDK-free engine parts, under
+#    ASan/UBSan).
 #  - macOS universal (arm64 + x86_64) .component bundle: native on a macOS runner
 #    (scripts/mac-build.sh).
 # Releases are cut separately by release.yml (semantic-release).
@@ -33,6 +34,12 @@ jobs:
       - name: Platform-free code builds without Windows headers
         working-directory: foo_ui_panels
         run: make check-portable CXX_HOST=clang++-19
+
+      - name: Unit tests
+        working-directory: foo_ui_panels
+        run: |
+          sudo apt-get install -y libclang-rt-19-dev # ASan/UBSan runtimes
+          make test CXX_HOST=clang++-19
 
       - name: Upload foo_ui_panels.dll
         uses: actions/upload-artifact@v7
