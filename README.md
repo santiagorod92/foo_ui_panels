@@ -218,6 +218,14 @@ tools), or cross-compiled on Linux with `clang` + `ld64.lld` against a `MacOSX.s
 from an Xcode `.xip` ([`scripts/extract-macos-sdk.py`](scripts/extract-macos-sdk.py), default
 location `~/.macos-sdk/MacOSX.sdk`).
 
+Maintainers can also runtime-test the macOS build without a Mac. `make mac-vm-test` deploys it
+into a local macOS VM ([dockur/macos](https://github.com/dockur/macos) on Linux/KVM, driven by
+an `mvm` helper script; set its path with `MVM=`) and relaunches foobar2000 there.
+`make mac-vm-skin` copies a skin from `skins/` into that VM, `make mac-vm-navidrome` installs
+[foo_navidrome](https://github.com/santiagorod92/foo_navidrome) there (latest release, or
+`NAVIDROME=<tag or .fb2k-component>`) and `make mac-vm-navidrome-config` copies its settings
+(server, login, custom headers) from the local Wine foobar2000.
+
 ## Releases
 
 Releases are automated with [semantic-release](https://github.com/semantic-release/semantic-release)

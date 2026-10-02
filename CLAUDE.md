@@ -13,10 +13,11 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `#include "../fb2k.h"`, never `win_sdk.h`. `make check-portable` (also in CI) enforces it.
 - A new platform need = a new method/function in `src/gfx/canvas.h` or `src/ui/view.h`,
   implemented in BOTH `src/platform/win/` and `src/platform/mac/`.
-- macOS integration: a `ui_element_mac` layout element ("Panels UI") hosting the whole canvas,
-  not `user_interface` (whether fb2k Mac accepts a replacement UI module is still unverified).
-- macOS runtime is untested so far: no Mac, and foo_navidrome's `scripts/mac-vm/` needs its
-  one-time manual macOS install (VNC) before it can run anything.
+- macOS integration: a `user_interface` module ("Panels UI (reborn)", Preferences › Display —
+  verified in the VM) owning its window, plus a `ui_element_mac` layout element ("Panels UI").
+- macOS runtime testing: the local VM in sibling repo `../macos-devbox` (`mvm`, dockur/macos,
+  Intel guest — bundle must keep its x86_64 slice). `make mac-vm-test` = mac-build → deploy →
+  relaunch → screenshot; `make mac-vm-skin`, `make mac-vm-navidrome[-config]` (foo_navidrome + its Wine settings), `make mac-vm-<mvm cmd>`. Never `docker prune`/`rm`.
 
 ## Key decisions
 - Target service (Windows): full UI replacement via `user_interface` (`foobar2000/SDK/ui.h`, v1–v4),
