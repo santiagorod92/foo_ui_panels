@@ -1,16 +1,23 @@
 name: Release
 
-# semantic-release on every push to main: conventional commits -> semver bump, v<version> tag,
-# GitHub release (its notes are the changelog) with foo_ui_panels_<version>.fb2k-component attached (built by scripts/release-build.sh
-# from .releaserc.json's prepareCmd). Then notify-n8n hands the release to the n8n
+# semantic-release once Build has passed on a push to main: conventional commits -> semver
+# bump, v<version> tag, GitHub release (its notes are the changelog) with
+# foo_ui_panels_<version>.fb2k-component attached (built by scripts/release-build.sh from
+# .releaserc.json's prepareCmd). Then notify-n8n hands the release to the n8n
 # workflow that publishes it on foobar2000.org (same flow as foo_navidrome).
 #
 # main is protected (changes only through pull requests), so nothing here pushes to it: no
 # release commit, no CHANGELOG.md/version.txt write-back — only the tag and the release. Every
 # job that builds stamps the version itself (scripts/release-build.sh / the mac job below).
 
+# Chained to Build (workflow_run) instead of running next to it on the same push: a release is
+# only cut from a commit whose Windows + macOS builds and unit tests passed. workflow_run always
+# runs this file from main with main's permissions, and only Build runs on main pushes trigger
+# it (never pull requests, so never code from a fork).
 on:
-  push:
+  workflow_run:
+    workflows: [Build]
+    types: [completed]
     branches: [main]
   # Manual run: the gate below only looks at a push's top commit, so a release-worthy commit
   # pushed under a docs:/test:/ci: one is only released by dispatching this workflow.
@@ -28,21 +35,24 @@ concurrency:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    # Skip semantic-release's own release commit ([skip ci]) and commit types
-    # .releaserc.json treats as "no release" — no point in a full build to no-op.
-    # Only looks at the push's top commit (head_commit).
+    # Manual dispatch always runs. Otherwise: only after a successful Build of a push to main,
+    # and not for commit types .releaserc.json treats as "no release" (no point in a full build
+    # to no-op) — judged by the push's top commit only.
     if: >-
-      !contains(github.event.head_commit.message, '[skip ci]') &&
-      !startsWith(github.event.head_commit.message, 'chore:') &&
-      !startsWith(github.event.head_commit.message, 'chore(') &&
-      !startsWith(github.event.head_commit.message, 'docs:') &&
-      !startsWith(github.event.head_commit.message, 'docs(') &&
-      !startsWith(github.event.head_commit.message, 'style:') &&
-      !startsWith(github.event.head_commit.message, 'style(') &&
-      !startsWith(github.event.head_commit.message, 'test:') &&
-      !startsWith(github.event.head_commit.message, 'test(') &&
-      !startsWith(github.event.head_commit.message, 'ci:') &&
-      !startsWith(github.event.head_commit.message, 'ci(')
+      github.event_name == 'workflow_dispatch' || (
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      !contains(github.event.workflow_run.head_commit.message, '[skip ci]') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore:') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'chore(') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'docs:') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'docs(') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'style:') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'style(') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'test:') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'test(') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'ci:') &&
+      !startsWith(github.event.workflow_run.head_commit.message, 'ci(') )
 
     # Written to $GITHUB_OUTPUT by scripts/release-build.sh; empty when no release was cut.
     outputs:
@@ -52,6 +62,10 @@ jobs:
       - name: Checkout foo_ui_panels
         uses: actions/checkout@v7
         with:
+          # The commit Build just passed on (dispatch: main's head). If main has moved on since,
+          # semantic-release sees the branch is ahead and skips; the newer commit's own Build
+          # run triggers its release.
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
           fetch-depth: 0          # semantic-release needs full history + tags
           persist-credentials: true # it pushes the release tag (tags aren't branch-protected)
           path: foo_ui_panels
