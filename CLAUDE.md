@@ -137,7 +137,8 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - `.github/workflows/build.yml` — build check on push/PR: Windows DLL + `check-portable` +
   `make test` (ubuntu) and the universal mac bundle (macos-latest), both as artifacts.
 - `.github/workflows/release.yml` — semantic-release (`.releaserc.json`, Conventional Commits,
-  same config as foo_navidrome) on push to main; `scripts/release-build.sh <ver>` builds and
+  same config as foo_navidrome), chained to Build via `workflow_run` (only after a green Build of
+  a push to main; checks out that run's `head_sha`) or dispatched by hand; `scripts/release-build.sh <ver>` builds and
   packages `foo_ui_panels_<ver>.fb2k-component` (DLL under `x64/`, `scripts/package.py`); then
   `release-mac` builds the bundle from the tag and `release-package` re-uploads the asset with
   `mac/` added (`--clobber`) before `notify-n8n`. Commit type = release impact:
