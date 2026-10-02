@@ -133,6 +133,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - Album browser / cover flow: type to search by artist or album (Backspace edits, Esc clears),
   right-click empty space to sort by artist, album, year or recently added (remembered), arrow
   keys / Page Up/Down / Home/End move through the grid.
+- The Album Art panel cross-fades to the new cover on a track change.
 - Button tooltips and the skin's own window title (`$settitle`, e.g. "artist - title" while
   playing).
 - The skin's tray icon (`$settray`): on Windows a notification-area icon — click to show/hide the
