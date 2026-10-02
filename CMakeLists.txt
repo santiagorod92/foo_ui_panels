@@ -15,7 +15,7 @@ foreach(_req pfc foobar2000/SDK foobar2000/foobar2000_component_client foobar200
   endif()
 endforeach()
 
-# Component version (semantic-release writes version.txt on release; dev builds read the last one).
+# Component version (the release jobs write version.txt before building; dev builds read the last one).
 file(STRINGS "${CMAKE_SOURCE_DIR}/version.txt" PUI_VERSION LIMIT_COUNT 1)
 if(NOT PUI_VERSION)
   set(PUI_VERSION "0.0.0-dev")

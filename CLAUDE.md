@@ -129,8 +129,9 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - SDK source: `reupen/foobar2000-sdk-unmodified` (not `razielanarki/foobar2000-sdk` — stale
   mirror). Currently SDK-2026-09-17. The 2026-09-16 sync bumped `pfc-lite.h` to require C++20 —
   `CMakeLists.txt`'s `CMAKE_CXX_STANDARD` must stay at 20.
-- Version: `version.txt` (written by semantic-release) → `PUI_VERSION` define → main.cpp's
-  `DECLARE_COMPONENT_VERSION`.
+- Version: `version.txt` → `PUI_VERSION` define → main.cpp's `DECLARE_COMPONENT_VERSION`.
+  Release jobs stamp it before building (nothing is committed back); in the repo it stays at the
+  last value committed by hand, so dev builds report that.
 
 ## CI / release
 - `.github/workflows/build.yml` — build check on push/PR: Windows DLL + `check-portable` +
@@ -141,6 +142,11 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `release-mac` builds the bundle from the tag and `release-package` re-uploads the asset with
   `mac/` added (`--clobber`) before `notify-n8n`. Commit type = release impact:
   `feat` minor, `fix`/`perf`/`refactor` patch, `chore`/`docs`/`ci`/`style`/`test` none.
+- `main` is branch-protected (PR + review required; admins exempt): the release workflow never
+  pushes to it — only the `v<ver>` tag and the GitHub release (notes = changelog; no
+  `@semantic-release/git`/`changelog` plugins). `release-mac` writes `version.txt` itself. A PR
+  squash-merged as `ci:`/`docs:`/`chore:` skips the release gate: dispatch the workflow by hand
+  if earlier release-worthy commits are still unreleased.
 - Shared CI setup: `.github/actions/fetch-sdk` (SDK sibling layout) and
   `.github/actions/setup-build` (that + clang-cl/xwin).
 - `notify-n8n` job → n8n workflow (infra-foundations `n8n/`) that uploads to foobar2000.org
