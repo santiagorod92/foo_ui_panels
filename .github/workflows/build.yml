@@ -7,7 +7,7 @@ name: Build
 #    ASan/UBSan).
 #  - macOS universal (arm64 + x86_64) .component bundle: native on a macOS runner
 #    (scripts/mac-build.sh).
-# Releases are cut separately by release.yml (semantic-release).
+# A successful run on a push to main triggers release.yml (semantic-release), via workflow_run.
 
 on:
   push:
