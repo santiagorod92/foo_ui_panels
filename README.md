@@ -250,9 +250,10 @@ an `mvm` helper script; set its path with `MVM=`) and relaunches foobar2000 ther
 
 Releases are automated with [semantic-release](https://github.com/semantic-release/semantic-release)
 from [Conventional Commits](https://www.conventionalcommits.org/): every push to `main` with a
-`feat:`/`fix:`/`perf:`/`refactor:` commit cuts a new semver release, updates
-[`CHANGELOG.md`](CHANGELOG.md) and attaches the `.fb2k-component` to the GitHub release, which
-is then published to foobar2000.org.
+`feat:`/`fix:`/`perf:`/`refactor:` commit cuts a new semver release: a `v<version>` tag and a
+GitHub release whose notes are the changelog, with the `.fb2k-component` attached, which is then
+published to foobar2000.org. (`CHANGELOG.md` holds the history up to 1.3.0; later releases are
+on the [Releases](../../releases) page.) Changes reach `main` through pull requests.
 
 ## License
 

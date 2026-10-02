@@ -1,10 +1,13 @@
 name: Release
 
-# semantic-release on every push to main: conventional commits -> semver bump,
-# CHANGELOG.md + version.txt committed back, v<version> tag, GitHub release with
-# foo_ui_panels_<version>.fb2k-component attached (built by scripts/release-build.sh
+# semantic-release on every push to main: conventional commits -> semver bump, v<version> tag,
+# GitHub release (its notes are the changelog) with foo_ui_panels_<version>.fb2k-component attached (built by scripts/release-build.sh
 # from .releaserc.json's prepareCmd). Then notify-n8n hands the release to the n8n
 # workflow that publishes it on foobar2000.org (same flow as foo_navidrome).
+#
+# main is protected (changes only through pull requests), so nothing here pushes to it: no
+# release commit, no CHANGELOG.md/version.txt write-back — only the tag and the release. Every
+# job that builds stamps the version itself (scripts/release-build.sh / the mac job below).
 
 on:
   push:
@@ -50,7 +53,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0          # semantic-release needs full history + tags
-          persist-credentials: true
+          persist-credentials: true # it pushes the release tag (tags aren't branch-protected)
           path: foo_ui_panels
 
       - name: Set up cross-build
@@ -67,8 +70,6 @@ jobs:
           npm install --no-save --no-package-lock \
             semantic-release@22 \
             conventional-changelog-conventionalcommits@7 \
-            @semantic-release/changelog@6 \
-            @semantic-release/git@10 \
             @semantic-release/exec@6 \
             @semantic-release/github@9
 
@@ -80,8 +81,9 @@ jobs:
         run: npx semantic-release
 
   # --------------------------------------------------------------------------
-  # macOS bundle for the release just cut: built natively (universal) from the release tag, so
-  # version.txt (hence the component version) is the released one, then merged into the
+  # macOS bundle for the release just cut: built natively (universal) from the release tag, with
+  # version.txt stamped to the released version first (the tag is the release-worthy commit
+  # itself — no release commit — so its version.txt is the previous one), then merged into the
   # release's .fb2k-component next to the Windows DLL (mac/ + x64/, foo_navidrome's layout).
   # --------------------------------------------------------------------------
   release-mac:
@@ -103,7 +105,11 @@ jobs:
 
       - name: Build (universal)
         working-directory: foo_ui_panels
-        run: ./scripts/mac-build.sh
+        env:
+          VERSION: ${{ needs.release.outputs.released_version }}
+        run: |
+          echo "$VERSION" > version.txt
+          ./scripts/mac-build.sh
 
       # A zip, not the bare bundle: upload-artifact drops file modes.
       - name: Zip bundle
