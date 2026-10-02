@@ -71,6 +71,16 @@ spectrum.raise = 26
 # Settings popup: its layout needs 360px (theme swatches left of the font column).
 popup.size = 360 500
 
+# Mini player (View > Panels UI > Mini mode): the size fooAvA's own MiniPlayer button uses, the
+# top-right corner kept in place, and the same variables its restore button reads.
+mini.size = 430 172
+mini.anchor = RIGHT TOP
+mini.saved_w_pvar = savedW
+mini.saved_h_pvar = savedH
+
+# View > Panels UI > Skin commands (assignable to keyboard shortcuts).
+command.Toggle title bar = PVAR:TOGGLE:hidetitlebar
+
 # Cover lookup the skin did through a dead plugin.
 cover.pvar = MyCoverPath
 cover.pattern = *folder*.*

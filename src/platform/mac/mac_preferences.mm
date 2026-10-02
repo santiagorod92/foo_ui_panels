@@ -9,6 +9,7 @@
 #include "../../core/skin_paths.h"
 #include "../../core/skin_config.h"
 #include "../../core/fs_util.h"
+#include "../../core/ui_settings.h"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -25,19 +26,10 @@ const char* const kAccentKey = "_prefs_accent_color"; // read by SkinEngine::the
 NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()] ?: @""; }
 std::string utf8(NSString* s) { return s.UTF8String ? s.UTF8String : ""; }
 
-std::vector<std::string> skin_folders(const std::string& root) {
-    std::vector<std::string> out;
-    if (root.empty()) return out;
-    std::error_code ec;
-    std::filesystem::directory_iterator it(pui::fs_path(root), ec), end;
-    for (; !ec && it != end; it.increment(ec)) {
-        std::error_code e2;
-        const std::string name = pui::fs_utf8(it->path().filename());
-        if (it->is_directory(e2) && !name.empty() && name[0] != '.') out.push_back(name);
-    }
-    std::sort(out.begin(), out.end());
-    return out;
-}
+std::vector<std::string> skin_folders(const std::string& root) { return pui::list_skins(root); }
+
+// Zoom popup: index 0 is automatic, then these percentages (same list as the Windows page).
+const int kZoomChoices[] = { 75, 90, 100, 110, 125, 150, 175, 200, 250, 300 };
 
 NSTextField* label(NSString* text) {
     NSTextField* l = [NSTextField labelWithString:text];
@@ -55,6 +47,8 @@ NSTextField* label(NSString* text) {
     NSPopUpButton* _skinPopup;
     NSPopUpButton* _mainPopup;
     NSColorWell* _accentWell;
+    NSPopUpButton* _zoomPopup;
+    NSButton* _onTopCheck;
 }
 
 - (void)loadView {
@@ -77,18 +71,30 @@ NSTextField* label(NSString* text) {
     NSButton* clearAccent = [NSButton buttonWithTitle:@"Use the skin's" target:self action:@selector(clearAccent:)];
     NSStackView* accentRow = [NSStackView stackViewWithViews:@[ _accentWell, clearAccent ]];
 
+    _zoomPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
+    _zoomPopup.target = self; _zoomPopup.action = @selector(zoomChanged:);
+    _onTopCheck = [NSButton checkboxWithTitle:@"Keep the player window on top of other windows"
+                                       target:self action:@selector(onTopChanged:)];
+
     NSTextField* note = [NSTextField wrappingLabelWithString:
         @"The skins root folder holds one subfolder per skin. Leave it empty to use the single skin in "
         @"~/Library/foobar2000-v2/foo_ui_panels. Main script: the skin's top-level .txt to run "
         @"(automatic when there is only one). The accent colour is used when the skin doesn't set its own."];
     note.textColor = NSColor.secondaryLabelColor;
     note.font = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+    // Wrap at the grid's width instead of stretching everything to one long line (which pushed
+    // the grid off the right edge of the page).
+    note.preferredMaxLayoutWidth = 520;
+    [note setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow
+                                    forOrientation:NSLayoutConstraintOrientationHorizontal];
 
     NSGridView* grid = [NSGridView gridViewWithViews:@[
         @[ label(@"Skins root folder:"), rootRow ],
         @[ label(@"Active skin:"), _skinPopup ],
         @[ label(@"Main script:"), _mainPopup ],
         @[ label(@"Accent colour:"), accentRow ],
+        @[ label(@"Zoom:"), _zoomPopup ],
+        @[ [NSGridCell emptyContentView], _onTopCheck ],
     ]];
     grid.rowSpacing = 10;
     grid.columnSpacing = 8;
@@ -130,6 +136,26 @@ NSTextField* label(NSString* text) {
     int r = 0, g = 140, b = 220; // the engine's default accent
     if (it != pv.end() && !it->second.empty()) sscanf(it->second.c_str(), "%d-%d-%d", &r, &g, &b);
     _accentWell.color = [NSColor colorWithSRGBRed:r / 255.0 green:g / 255.0 blue:b / 255.0 alpha:1];
+
+    [_zoomPopup removeAllItems];
+    [_zoomPopup addItemWithTitle:@"Automatic (100%)"];
+    for (int z : kZoomChoices) [_zoomPopup addItemWithTitle:[NSString stringWithFormat:@"%d%%", z]];
+    const int zs = pui::zoom_setting();
+    NSInteger sel = 0;
+    for (int i = 0; zs > 0 && i < (int)std::size(kZoomChoices); ++i) if (kZoomChoices[i] <= zs) sel = i + 1;
+    [_zoomPopup selectItemAtIndex:sel];
+    _onTopCheck.state = pui::always_on_top() ? NSControlStateValueOn : NSControlStateValueOff;
+}
+
+- (void)zoomChanged:(id)sender {
+    const NSInteger i = _zoomPopup.indexOfSelectedItem;
+    pui::set_zoom_setting(i <= 0 || i > (NSInteger)std::size(kZoomChoices) ? 0 : kZoomChoices[i - 1]);
+    pui::apply_view_settings();
+}
+
+- (void)onTopChanged:(id)sender {
+    pui::set_always_on_top(_onTopCheck.state == NSControlStateValueOn);
+    pui::apply_view_settings();
 }
 
 - (void)applySkinChange {

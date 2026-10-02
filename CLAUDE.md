@@ -77,9 +77,15 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   also the persisted main-script override (keeps `skin_config.cpp` SDK-free).
 - SDK-free, unit-tested (`tests/`, `make test`): `script_util` (script/ini parsing, `$eval`,
   menu-action matching), `lyrics_parse` (LRC, lrclib JSON), `playlist_ops.h`, `meter_math.h`,
-  `skin_config`.
+  `skin_config`, `ui_logic` (zoom steps/mapping, mini-mode plan, skin-command parsing, album search/sort).
   `make test` compiles them WITHOUT the SDK include path — never `#include "../fb2k.h"` there;
   new pure logic goes in one of these (or a new SDK-free file added to `TEST_SRC`) with a test.
+- `src/core/ui_settings.{h,cpp}` — zoom setting + always-on-top (the core's standard config
+  object, applied via `config_object_notify`); `main_menu.cpp` — View › Panels UI commands.
+- Zoom: engine/views always work in skin units. Windows hosts convert with `pui::win::zoom()`
+  (`platform/win/zoom.h`) and `GdiCanvas` scales via a GDI world transform (GDI+ drawn with an
+  identity DC transform + its own scale — Wine's GDI+ inherits the DC transform); macOS scales
+  the root view's bounds (`set_root_zoom`).
 - `src/core/component.cpp` — `DECLARE_COMPONENT_VERSION`, built-in fallback skin.
 - `src/core/button.h`, `fs_util.h` (UTF-8 paths/files), vendored `navidrome_*_api.h` (GUIDs
   are C++17 `inline` variables — `FOOGUIDDECL` is Windows-only `selectany`).

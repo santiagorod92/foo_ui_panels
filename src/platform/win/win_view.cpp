@@ -7,16 +7,46 @@
 #include "panel_host.h"
 #include "tooltip.h"
 #include "drop_files.h"
+#include "zoom.h"
 #include "../../ui/view.h"
 #include "../../core/skin_paths.h"
+#include "../../core/ui_logic.h"
+#include "../../core/ui_settings.h"
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <map>
 #include <thread>
+
+namespace pui::win {
+
+namespace { std::atomic<double> g_zoom{ 1.0 }; }
+
+double zoom() { return g_zoom.load(std::memory_order_relaxed); }
+
+UINT window_dpi(HWND w) {
+    using GetDpiForWindowFn = UINT(WINAPI*)(HWND);
+    static const auto fn = (GetDpiForWindowFn)(void*)GetProcAddress(GetModuleHandleW(L"user32.dll"), "GetDpiForWindow");
+    if (fn && w) { const UINT d = fn(w); if (d) return d; }
+    HDC dc = GetDC(nullptr);
+    const int d = dc ? GetDeviceCaps(dc, LOGPIXELSX) : 96;
+    if (dc) ReleaseDC(nullptr, dc);
+    return d > 0 ? (UINT)d : 96;
+}
+
+void refresh_zoom(HWND main) {
+    g_zoom.store(zoom_factor_for(zoom_setting(), (int)window_dpi(main)), std::memory_order_relaxed);
+}
+
+} // namespace pui::win
 
 namespace pui::ui {
 
 namespace {
+
+int dev(int v) { return to_device(v, win::zoom()); }
+int logi(int v) { return to_logical(v, win::zoom()); }
+int logi_round(int v) { return (int)std::lround(v / win::zoom()); }
 
 std::wstring widen(const std::string& s) {
     if (s.empty()) return {};
@@ -99,7 +129,7 @@ public:
         m_popup = true;
         m_onClosed = std::move(onClosed);
         DWORD style = WS_POPUP | WS_CAPTION | WS_SYSMENU | WS_VISIBLE;
-        RECT rc = { 0, 0, w, h };
+        RECT rc = { 0, 0, dev(w), dev(h) };
         AdjustWindowRect(&rc, style, FALSE);
         int ww = rc.right - rc.left, wh = rc.bottom - rc.top;
         RECT orc = {}; if (owner) GetWindowRect(owner, &orc); // centre on the owner window
@@ -125,7 +155,8 @@ public:
     void invalidate() override { if (m_wnd && m_opts.render_fps <= 0) InvalidateRect(m_wnd, nullptr, FALSE); }
     void set_bounds(const gfx::Rect& r, bool to_top) override {
         if (!m_wnd) return;
-        SetWindowPos(m_wnd, to_top ? HWND_TOP : nullptr, r.x, r.y, r.w, r.h,
+        const int x0 = dev(r.x), y0 = dev(r.y);
+        SetWindowPos(m_wnd, to_top ? HWND_TOP : nullptr, x0, y0, dev(r.right()) - x0, dev(r.bottom()) - y0,
                      SWP_NOACTIVATE | (to_top ? 0 : SWP_NOZORDER));
     }
     gfx::Rect bounds() const override {
@@ -133,7 +164,7 @@ public:
         RECT rc; GetClientRect(m_wnd, &rc);
         POINT org = { 0, 0 };
         if (!m_popup && m_root) MapWindowPoints(m_wnd, m_root, &org, 1);
-        return gfx::Rect{ org.x, org.y, rc.right, rc.bottom };
+        return gfx::Rect{ logi_round(org.x), logi_round(org.y), logi_round(rc.right), logi_round(rc.bottom) };
     }
     void show(bool v) override { if (m_wnd) ShowWindow(m_wnd, v ? SW_SHOW : SW_HIDE); }
     bool visible() const override { return m_wnd && IsWindowVisible(m_wnd); }
@@ -179,7 +210,7 @@ private:
             HDC mem = CreateCompatibleDC(dc);
             HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
             HGDIOBJ ob = SelectObject(mem, bmp);
-            { gfx::GdiCanvas cv(mem, rc.right, rc.bottom); m_view->paint(cv); }
+            { gfx::GdiCanvas cv(mem, rc.right, rc.bottom, win::zoom()); m_view->paint(cv); }
             BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
             SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
         }
@@ -208,7 +239,7 @@ private:
                         old = SelectObject(mem, bmp);
                         bw = rc.right; bh = rc.bottom;
                     }
-                    { gfx::GdiCanvas cv(mem, bw, bh); m_view->paint(cv); }
+                    { gfx::GdiCanvas cv(mem, bw, bh, win::zoom()); m_view->paint(cv); }
                     BitBlt(dc, 0, 0, bw, bh, mem, 0, 0, SRCCOPY);
                     ReleaseDC(m_wnd, dc);
                 }
@@ -231,7 +262,7 @@ private:
 
     MouseEvent mouse_event(LPARAM lp, MouseButton b, bool dbl) const {
         MouseEvent e;
-        e.x = GET_X_LPARAM(lp); e.y = GET_Y_LPARAM(lp);
+        e.x = logi(GET_X_LPARAM(lp)); e.y = logi(GET_Y_LPARAM(lp));
         e.button = b; e.mods = key_mods(); e.double_click = dbl;
         return e;
     }
@@ -258,7 +289,8 @@ public:
         m_edit = CreateWindowExW(0, L"EDIT", L"", WS_CHILD | WS_VISIBLE | ES_AUTOHSCROLL,
                                  0, 0, 0, 0, parent, nullptr, module(), nullptr);
         const gfx::FontSpec& f = st.font;
-        m_font = CreateFontW(f.points ? -MulDiv((int)f.size, 96, 72) : -(int)f.size, 0, 0, 0,
+        const int px = f.points ? MulDiv((int)f.size, 96, 72) : (int)f.size;
+        m_font = CreateFontW(-dev(px), 0, 0, 0,
                              f.bold ? FW_BOLD : FW_NORMAL, f.italic, f.underline, 0, DEFAULT_CHARSET, 0, 0,
                              CLEARTYPE_QUALITY, 0, widen(f.face).c_str());
         m_bg = CreateSolidBrush(gfx::to_colorref(st.background));
@@ -276,7 +308,10 @@ public:
         if (m_font) DeleteObject(m_font);
         if (m_bg) DeleteObject(m_bg);
     }
-    void set_bounds(const gfx::Rect& r) override { MoveWindow(m_edit, r.x, r.y, r.w, r.h, TRUE); }
+    void set_bounds(const gfx::Rect& r) override {
+        const int x0 = dev(r.x), y0 = dev(r.y);
+        MoveWindow(m_edit, x0, y0, dev(r.right()) - x0, dev(r.bottom()) - y0, TRUE);
+    }
     std::string text() const override {
         int n = GetWindowTextLengthW(m_edit);
         std::wstring w(n, L'\0');
@@ -326,7 +361,7 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
     switch (msg) {
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: if (live) { self->paint_now(); return 0; } break;
-    case WM_SIZE: if (live) v->on_resize(LOWORD(lp), HIWORD(lp)); return 0;
+    case WM_SIZE: if (live) v->on_resize(logi_round(LOWORD(lp)), logi_round(HIWORD(lp))); return 0;
     case WM_TIMER: if (live) v->on_timer((int)wp); return 0;
     case WM_SETCURSOR:
         if (LOWORD(lp) == HTCLIENT) { SetCursor(self->m_cursor); return TRUE; }
@@ -336,7 +371,7 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
             TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, wnd, 0 };
             TrackMouseEvent(&tme); self->m_tracking = true;
         }
-        if (live) v->on_mouse_move(GET_X_LPARAM(lp), GET_Y_LPARAM(lp), key_mods(), (wp & MK_LBUTTON) != 0);
+        if (live) v->on_mouse_move(logi(GET_X_LPARAM(lp)), logi(GET_Y_LPARAM(lp)), key_mods(), (wp & MK_LBUTTON) != 0);
         return 0;
     case WM_MOUSELEAVE:
         self->m_tracking = false;
@@ -354,7 +389,7 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
     case WM_MBUTTONUP:     if (live) v->on_mouse_up(self->mouse_event(lp, MouseButton::Middle, false)); return 0;
     case WM_MOUSEWHEEL: {
         POINT pt = { GET_X_LPARAM(lp), GET_Y_LPARAM(lp) }; ScreenToClient(wnd, &pt);
-        if (live) v->on_wheel(pt.x, pt.y, (float)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
+        if (live) v->on_wheel(logi(pt.x), logi(pt.y), (float)GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
         return 0;
     }
     case WM_KEYDOWN:
@@ -370,7 +405,7 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
         POINT pt = {};
         auto paths = win::dropped_files(drop, pt);
         DragFinish(drop);
-        if (live && !paths.empty()) v->on_drop_files(paths, pt.x, pt.y);
+        if (live && !paths.empty()) v->on_drop_files(paths, logi(pt.x), logi(pt.y));
         return 0;
     }
     case WM_COMMAND:
@@ -404,8 +439,10 @@ public:
     ~WinEmbeddedPanel() override { m_host.destroy(); }
     bool create(HWND parent, const char* name) { return m_host.create(parent, name) != nullptr; }
     void set_bounds(const gfx::Rect& r, bool to_top) override {
+        const int x0 = dev(r.x), y0 = dev(r.y);
         if (HWND w = m_host.wnd())
-            SetWindowPos(w, to_top ? HWND_TOP : nullptr, r.x, r.y, r.w, r.h, SWP_NOACTIVATE | (to_top ? 0 : SWP_NOZORDER));
+            SetWindowPos(w, to_top ? HWND_TOP : nullptr, x0, y0, dev(r.right()) - x0, dev(r.bottom()) - y0,
+                         SWP_NOACTIVATE | (to_top ? 0 : SWP_NOZORDER));
     }
     void show(bool v) override { if (HWND w = m_host.wnd()) ShowWindow(w, v ? SW_SHOW : SW_HIDE); }
 private:
@@ -521,7 +558,7 @@ std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, cons
 
 int popup_menu(ViewHost* anchor, int x, int y, const Menu& menu) {
     HWND owner = anchor ? (HWND)anchor->native() : (HWND)core_api::get_main_window();
-    POINT pt = { x, y };
+    POINT pt = { dev(x), dev(y) };
     if (anchor) ClientToScreen(owner, &pt); else GetCursorPos(&pt);
     return track_menu(owner, pt, menu, TPM_RIGHTBUTTON);
 }
@@ -534,7 +571,7 @@ int popup_menu_at_cursor(MainWindow& root, const Menu& menu) {
 
 void track_context_menu(ViewHost& anchor, int x, int y, const metadb_handle_list& tracks) {
     HWND wnd = (HWND)anchor.native();
-    POINT pt = { x, y }; ClientToScreen(wnd, &pt);
+    POINT pt = { dev(x), dev(y) }; ClientToScreen(wnd, &pt);
     contextmenu_manager::win32_run_menu_context(wnd, tracks, &pt, contextmenu_manager::flag_show_shortcuts);
 }
 

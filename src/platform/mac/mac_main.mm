@@ -13,6 +13,7 @@
 #include "../../core/skin_paths.h"
 #include "../../core/image_cache.h"
 #include "../../core/fs_util.h"
+#include "../../core/ui_settings.h"
 #include <algorithm>
 #include <vector>
 
@@ -43,6 +44,8 @@ public:
         pui::ui::ViewOptions opts;
         opts.accept_files = true; // dropped anywhere but the playlist: appended to it
         m_host = pui::ui::mac::create_root_view(this, opts);
+        m_zoom = pui::ui::mac::zoom_factor();
+        pui::ui::mac::set_root_zoom(*m_host, m_zoom);
         m_skin.set_main_window(this);
         m_skin.load_skin(pui::resolve_skin_dir()); // its main script, else the built-in test skin
         g_roots.push_back(this);
@@ -60,13 +63,7 @@ public:
     // Preferences switched the skin folder / main script: drop the old skin's panels and load the
     // newly resolved one in place (destroy_panels also drops the play callback; set_main_window
     // brings it back).
-    void reload_skin() {
-        m_skin.save_pvars();
-        m_skin.destroy_panels();
-        m_skin.set_main_window(this);
-        m_skin.load_skin(pui::resolve_skin_dir());
-        invalidate();
-    }
+    void reload_skin() { m_skin.reload_skin(); }
 
     // --- ui::View (the canvas) ---
     void on_attached() override { host()->set_timer(1, 500); } // progress bar / time readout
@@ -142,8 +139,8 @@ public:
         // Grow/shrink the window by the difference between the requested and current canvas size
         // (the element may share the window with other layout parts).
         NSRect f = win.frame;
-        NSSize cur = view().bounds.size;
-        CGFloat dw = w - cur.width, dh = h - cur.height;
+        NSSize cur = view().bounds.size; // skin units: the difference is scaled by the zoom
+        CGFloat dw = (w - cur.width) * m_zoom, dh = (h - cur.height) * m_zoom;
         NSRect nf = f;
         nf.size.width += dw; nf.size.height += dh;
         // Screen coordinates are y-up: keeping the TOP edge means moving the origin down.
@@ -200,9 +197,39 @@ public:
         m_status.button.toolTip = [NSString stringWithUTF8String:utf8.c_str()] ?: @"";
     }
 
+    // Floating level for the player window. As a layout element the window is foobar2000's own
+    // main window — which is the player too, so the user's choice applies to it as well.
+    void set_always_on_top(bool on) override {
+        if (NSWindow* win = view().window) win.level = on ? NSFloatingWindowLevel : NSNormalWindowLevel;
+    }
+    double zoom() const override { return m_zoom; }
+    // Keep the canvas the same size in skin units when it's our own window (a fixed-size skin
+    // grows/shrinks); inside foobar2000's layout the window isn't ours to resize, the canvas
+    // just shows less or more of the skin.
+    void apply_zoom() override {
+        const double z = pui::ui::mac::zoom_factor();
+        if (z == m_zoom) return;
+        const pui::gfx::Rect before = client_rect();
+        NSWindow* win = view().window;
+        const bool keep = m_owns_window && win && !(win.styleMask & NSWindowStyleMaskFullScreen) && !win.isZoomed;
+        if (keep) {
+            NSRect f = win.frame;
+            const CGFloat dw = before.w * (z - m_zoom), dh = before.h * (z - m_zoom);
+            f.size.width += dw; f.size.height += dh; f.origin.y -= dh; // keep the top-left corner
+            m_zoom = z;
+            [win setFrame:f display:NO animate:NO];
+        }
+        m_zoom = z;
+        pui::ui::mac::set_root_zoom(*m_host, z);
+        invalidate();
+    }
+    // The canvas just got a window (layout element / our module): it may have to float.
+    void on_window_attached() { set_always_on_top(pui::always_on_top()); }
+
 private:
     pui::SkinEngine m_skin;
     std::unique_ptr<pui::ui::ViewHost> m_host;
+    double m_zoom = 1.0;
     bool m_owns_window = false;
     bool m_titlebar_visible = true;
     NSStatusItem* m_status = nil;
@@ -235,6 +262,7 @@ void set_pvar_everywhere(const std::string& key, const std::string& value) {
     _root = std::make_unique<PanelsRoot>();
     self.view = _root->view();
 }
+- (void)viewDidAppear { [super viewDidAppear]; if (_root) _root->on_window_attached(); }
 - (void)dealloc { _root.reset(); }
 @end
 
@@ -287,6 +315,7 @@ public:
         canvas.frame = [win.contentView bounds];
         canvas.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
         [win.contentView addSubview:canvas];
+        m_root->on_window_attached();
         [win makeKeyAndOrderFront:nil];
         m_window = win;
         g_active_ui = this;

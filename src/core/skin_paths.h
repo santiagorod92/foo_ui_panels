@@ -2,6 +2,7 @@
 // the UI's initial load and the Preferences page both resolve it the same way.
 #pragma once
 #include <string>
+#include <vector>
 
 namespace pui {
 
@@ -10,6 +11,8 @@ std::string skins_root();
 std::string active_skin();
 void set_skins_root(const std::string& utf8);
 void set_active_skin(const std::string& name);
+// The skins under `root`: its subfolders (no hidden ones), sorted. Empty for root "".
+std::vector<std::string> list_skins(const std::string& root);
 
 // The skin folder (main script, foo_ui_panels.ini, panel scripts, art): <root>/<active> if both
 // are set and the folder exists, else the component's own folder (next to the binary).

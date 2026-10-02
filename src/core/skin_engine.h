@@ -105,6 +105,28 @@ public:
     // Persist setup variables (pvars) across sessions. save_pvars() on component shutdown.
     void save_pvars();
 
+    // Every engine attached to a window (main thread only) — for what acts on "the player"
+    // rather than one canvas: the View > Panels UI menu, the Preferences page.
+    static const std::vector<SkinEngine*>& live();
+    // Re-resolves the skin folder (Preferences or View > Panels UI > Skin changed it) and loads
+    // that skin in place: the old skin's panels go, the new one's are created on the next paint.
+    void reload_skin();
+    static void reload_all();
+
+    // Mini mode — the skin's compact layout, declared in its config: `mini.size` (client W H),
+    // `mini.anchor` (the corner that stays put, e.g. "RIGHT TOP") and where the full size is
+    // remembered (`mini.saved_w_pvar` / `mini.saved_h_pvar`, default reserved pvars) so the
+    // skin's own restore button and the menu command agree. Not declared: not available.
+    bool mini_mode_available() const;
+    bool in_mini_mode() const;
+    void toggle_mini_mode();
+
+    // The skin's own named commands — `command.<label> = <action>[; <action>...]` — listed under
+    // View > Panels UI > Skin commands, so they can get keyboard shortcuts. Sorted by label.
+    std::vector<std::pair<std::string, std::string>> skin_commands() const;
+    // Runs a `;`-separated action list (each one as a button would).
+    bool run_actions(const std::string& actions);
+
     // Hit-test the buttons recorded in the last render and run the clicked one's action.
     bool handle_click(int x, int y);
 

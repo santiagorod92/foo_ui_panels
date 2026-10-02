@@ -83,6 +83,9 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
 | `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
 | `popup.size`, `popup.size.<file>` | Size of a `POPUP:` window, `W H` (`400 500`). |
+| `mini.size`, `mini.anchor` | The skin's compact layout for **View › Panels UI › Mini mode**: client size `W H`, and the corner that stays put (`RIGHT TOP`, …; default top-left). Unset: no mini mode. |
+| `mini.saved_w_pvar`, `mini.saved_h_pvar` | Variables that remember the full size while in mini mode — name the skin's own if its restore button reads them (default: reserved ones). |
+| `command.<label>` | A skin command listed under **View › Panels UI › Skin commands** (so it can get a keyboard shortcut): one button action, or several separated by `;`. |
 | `cover.pvar`, `cover.pattern` | Set this variable to the track folder's cover (`*folder*.*`) before each panel script runs. |
 | `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
 | `action.remap.<action>` | Run another button action instead. |
@@ -114,6 +117,19 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - Skin diagnostics in **View › Console**: functions the skin uses that aren't supported (yet),
   missing skin images, and panels no installed element can host.
 - The player window reopens where you left it, at the same size.
+- **Zoom**: the whole skin scales with the display (automatic: Windows display scaling; old
+  skins were drawn for 96 dpi and look tiny on a high-DPI screen otherwise), or by hand from
+  **View › Panels UI › Zoom in / Zoom out / Reset zoom** or the Preferences page — 75% to 300%,
+  sharp text and art at any size. The window keeps the skin's size in skin pixels.
+- **View › Panels UI** menu — every entry can get a keyboard shortcut (Preferences › Keyboard
+  Shortcuts): **Mini mode** (the skin's compact player, for skins that declare one —
+  `mini.size`), zoom, **Reload skin**, **Skin ›** (switch between the skins in your skins
+  folder, applied right away) and **Skin commands ›** (the skin's own `command.<label>` actions).
+- foobar2000's **View › Always on Top** (Alt+A) keeps the Panels UI window on top; also on the
+  Preferences page.
+- Skins can use these from their own buttons too: `ONTOP:TOGGLE`, `ZOOM:IN`/`ZOOM:OUT`/
+  `ZOOM:RESET`, `MINIMODE:TOGGLE`, and `PVAR:TOGGLE:<variable>` (flips a 0/1 variable).
+- Switching skin or main script in Preferences applies immediately (no restart).
 - Button tooltips and the skin's own window title (`$settitle`, e.g. "artist - title" while
   playing).
 - The skin's tray icon (`$settray`): on Windows a notification-area icon — click to show/hide the

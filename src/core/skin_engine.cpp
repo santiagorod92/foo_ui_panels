@@ -6,6 +6,9 @@
 #include "script_util.h"
 #include "fs_util.h"
 #include "navidrome_rating_api.h"
+#include "skin_paths.h"
+#include "ui_logic.h"
+#include "ui_settings.h"
 #include "../panels/track_display.h"
 #include "../panels/seekbar.h"
 #include "../panels/volume.h"
@@ -941,11 +944,21 @@ SkinEngine::PlayEvents::PlayEvents(SkinEngine* e)
                               flag_on_playback_dynamic_info_track | flag_on_volume_change),
       m_e(e) {}
 
+static std::vector<SkinEngine*> g_live; // engines with a window (main thread)
+
+const std::vector<SkinEngine*>& SkinEngine::live() { return g_live; }
+
 SkinEngine::SkinEngine() = default;
-SkinEngine::~SkinEngine() { destroy_panels(); }
+SkinEngine::~SkinEngine() {
+    g_live.erase(std::remove(g_live.begin(), g_live.end(), this), g_live.end());
+    destroy_panels();
+}
 
 void SkinEngine::set_main_window(ui::MainWindow* w) {
     m_main = w;
+    auto it = std::find(g_live.begin(), g_live.end(), this);
+    if (w && it == g_live.end()) g_live.push_back(this);
+    else if (!w && it != g_live.end()) g_live.erase(it);
     if (w && !m_playEvents) {
         m_playEvents = std::make_unique<PlayEvents>(this);
         set_art_ready_callback([this] { repaint_all(); });
@@ -1253,6 +1266,64 @@ void SkinEngine::save_pvars() {
     save_all_pvars(m_pvars);
 }
 
+void SkinEngine::reload_skin() {
+    save_pvars();
+    ui::MainWindow* w = m_main;
+    destroy_panels(); // drops the play callback too; set_main_window brings it back
+    set_main_window(w);
+    m_reported.clear(); m_imagesChecked.clear();
+    m_evalcache.clear(); m_subcache.clear(); m_tfvars.clear();
+    m_buttons.clear(); m_placements.clear(); m_childShown.clear();
+    load_skin(resolve_skin_dir());
+    repaint_all();
+}
+
+void SkinEngine::reload_all() {
+    const std::vector<SkinEngine*> engines = g_live; // a reload never adds/removes, but be safe
+    for (SkinEngine* e : engines) e->reload_skin();
+}
+
+bool SkinEngine::mini_mode_available() const { return m_cfg.nums("mini.size").size() == 2; }
+
+bool SkinEngine::in_mini_mode() const {
+    const std::vector<int> s = m_cfg.nums("mini.size");
+    if (s.size() != 2 || !m_main) return false;
+    const gfx::Rect r = m_main->client_rect();
+    return r.w == s[0] && r.h == s[1];
+}
+
+void SkinEngine::toggle_mini_mode() {
+    const std::vector<int> s = m_cfg.nums("mini.size");
+    if (s.size() != 2 || !m_main) return;
+    const std::string wKey = m_cfg.str("mini.saved_w_pvar", "_mini.w");
+    const std::string hKey = m_cfg.str("mini.saved_h_pvar", "_mini.h");
+    const gfx::Rect r = m_main->client_rect();
+    const MiniPlan p = mini_mode_plan(r.w, r.h, s[0], s[1], pvar_int(wKey, 0), pvar_int(hKey, 0));
+    if (!p.act) return;
+    if (p.enter) {
+        m_pvars[wKey] = std::to_string(r.w);
+        m_pvars[hKey] = std::to_string(r.h);
+        save_pvars();
+    }
+    std::string halign, valign;
+    parse_anchor(m_cfg.str("mini.anchor"), halign, valign);
+    m_main->resize_client(p.w, p.h, halign, valign);
+    repaint_all();
+}
+
+std::vector<std::pair<std::string, std::string>> SkinEngine::skin_commands() const {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (auto& [label, actions] : m_cfg.with_prefix("command."))
+        if (!label.empty() && !split_actions(actions).empty()) out.emplace_back(label, actions);
+    return out;
+}
+
+bool SkinEngine::run_actions(const std::string& actions) {
+    bool any = false;
+    for (const std::string& a : split_actions(actions)) any = run_button_action(a) || any;
+    return any;
+}
+
 void SkinEngine::render(gfx::Canvas& cv, int width, int height) {
     if (m_script.is_empty() || !m_main) return;
     if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
@@ -1507,6 +1578,18 @@ bool SkinEngine::run_button_action(const std::string& action) {
         }
         return true;
     }
+    // PVAR:TOGGLE:key — flip a 0/1 setup variable (for skin commands bound to a shortcut,
+    // where PVAR:SET can't know the current state).
+    if (a.compare(0, 12, "PVAR:TOGGLE:") == 0) {
+        const std::string key = unquote(a.substr(12));
+        if (!key.empty()) {
+            const std::string cur = pvar_str(key);
+            m_pvars[key] = (cur.empty() || cur == "0") ? "1" : "0";
+            save_pvars();
+            repaint_all();
+        }
+        return true;
+    }
     // WINDOWSIZE:w:h[:halign:valign] — resize the top-level player window, optionally anchored
     // at a corner/edge (halign LEFT/RIGHT, valign TOP/BOTTOM) instead of the default top-left.
     if (a.compare(0, 11, "WINDOWSIZE:") == 0) {
@@ -1531,7 +1614,15 @@ bool SkinEngine::run_button_action(const std::string& action) {
     if (a.compare(0, 6, "POPUP:") == 0) {
         const std::string file = unquote(a.substr(6));
         std::string sc = read_panel_script(file);
-        if (!sc.empty()) m_popupFile = file;
+        if (sc.empty()) {
+            // A button that does nothing looks broken: say which file is missing (the console
+            // has it too, but nobody looks there after a click).
+            ui::message_box(nullptr, "Panels UI",
+                            "This skin button opens a window whose script is missing:\n" +
+                            panels_dir() + "/" + file + ".txt");
+            return true;
+        }
+        m_popupFile = file;
         if (!sc.empty() && m_main) {
             if (!m_popup) m_popup = std::make_unique<PopupView>(this);
             m_popup->set_script(sc.c_str());
@@ -1557,6 +1648,20 @@ bool SkinEngine::run_button_action(const std::string& action) {
         }
         return true;
     }
+    // Player-level toggles, so a skin can put them on its own buttons too (the same commands
+    // as View > Panels UI): ONTOP:TOGGLE|ON|OFF, ZOOM:IN|OUT|RESET, MINIMODE:TOGGLE.
+    if (a.compare(0, 6, "ONTOP:") == 0) {
+        const std::string v = a.substr(6);
+        set_always_on_top(v == "ON" ? true : v == "OFF" ? false : !always_on_top());
+        apply_view_settings();
+        return true;
+    }
+    if (a.compare(0, 5, "ZOOM:") == 0) {
+        const std::string v = a.substr(5);
+        step_zoom(v == "IN" ? +1 : v == "OUT" ? -1 : 0);
+        return true;
+    }
+    if (a == "MINIMODE:TOGGLE") { toggle_mini_mode(); return true; }
     // MENU — the logo button: classic File/Edit/View/Playback/Library/Help menu, popped up at the cursor.
     if (a == "MENU") {
         if (m_main) m_main->show_main_menu();

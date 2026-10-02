@@ -5,6 +5,8 @@
 #include "mac_view.h"
 #include "mac_canvas.h"
 #include "../../core/skin_paths.h"
+#include "../../core/ui_logic.h"
+#include "../../core/ui_settings.h"
 #include <map>
 #include <string>
 #include <sys/stat.h>
@@ -73,6 +75,8 @@ class MacViewHost;
 @interface FooUIPanelsView : NSView
 @property (nonatomic, assign) void* host; // MacViewHost*
 @property (nonatomic, strong) NSCursor* cursor;
+@property (nonatomic, assign) CGFloat zoom; // root/popup views: bounds = frame / zoom (0 = 1)
+- (void)applyZoom;
 @end
 
 @interface FooUIPanelsFieldDelegate : NSObject <NSTextFieldDelegate>
@@ -123,7 +127,9 @@ public:
 
     void open_as_popup(NSView* owner, int w, int h, const std::string& title, std::function<void()> onClosed) {
         m_popup = true;
-        m_window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, w, h)
+        const double z = pui::ui::mac::zoom_factor();
+        m_ns.zoom = z;
+        m_window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, w * z, h * z)
                                                styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
                                                  backing:NSBackingStoreBuffered defer:NO];
         m_window.releasedWhenClosed = NO;
@@ -157,7 +163,7 @@ public:
     }
     gfx::Rect bounds() const override {
         NSRect f = m_ns.frame;
-        if (m_popup) return gfx::Rect{ 0, 0, (int)f.size.width, (int)f.size.height };
+        if (m_popup) { NSSize b = m_ns.bounds.size; return gfx::Rect{ 0, 0, (int)b.width, (int)b.height }; }
         return gfx::Rect{ (int)f.origin.x, (int)f.origin.y, (int)f.size.width, (int)f.size.height };
     }
     void show(bool v) override { m_ns.hidden = !v; }
@@ -200,8 +206,11 @@ public:
         NSRect b = m_ns.bounds;
         const int w = (int)b.size.width, h = (int)b.size.height;
         if (w <= 0 || h <= 0 || !live()) return;
-        // Retina: render at the window's pixel density; the canvas still works in points.
-        const double scale = m_ns.window ? m_ns.window.backingScaleFactor : 1.0;
+        // Retina and the zoom: render at the pixel density this view really ends up at (the
+        // window's backing scale times every bounds scaling above it); the canvas still works
+        // in skin units.
+        double scale = [m_ns convertSizeToBacking:NSMakeSize(1, 1)].width;
+        if (!(scale > 0)) scale = m_ns.window ? m_ns.window.backingScaleFactor : 1.0;
         gfx::CGCanvas cv(w, h, scale);
         m_view->paint(cv);
         CGImageRef img = cv.copy_image();
@@ -249,9 +258,17 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)drawRect:(NSRect)dirty { if (auto* h = host_of(self)) h->paint(); }
 // Moved to a display with another pixel density: re-render at the new backingScaleFactor.
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self setNeedsDisplay:YES]; }
+- (void)applyZoom {
+    const CGFloat z = self.zoom > 0 ? self.zoom : 1;
+    NSSize f = self.frame.size;
+    [self setBoundsSize:NSMakeSize(f.width / z, f.height / z)];
+    [self setBoundsOrigin:NSZeroPoint];
+}
 - (void)setFrameSize:(NSSize)s {
     [super setFrameSize:s];
-    if (auto* h = host_of(self); h && h->live()) h->view()->on_resize((int)s.width, (int)s.height);
+    if (self.zoom > 0) [self applyZoom];
+    NSSize b = self.bounds.size;
+    if (auto* h = host_of(self); h && h->live()) h->view()->on_resize((int)b.width, (int)b.height);
     [self setNeedsDisplay:YES];
 }
 - (void)viewDidHide { if (auto* h = host_of(self); h && h->live()) h->view()->on_visibility(false); }
@@ -458,6 +475,18 @@ std::unique_ptr<ViewHost> create_root_view(View* view, const ViewOptions& opts) 
     h->attach_to(nil);
     return h;
 }
+
+void set_root_zoom(ViewHost& root, double zoom) {
+    FooUIPanelsView* v = (__bridge FooUIPanelsView*)root.native();
+    v.zoom = zoom;
+    [v applyZoom];
+    NSSize b = v.bounds.size;
+    if (auto* h = host_of(v); h && h->live()) h->view()->on_resize((int)b.width, (int)b.height);
+    [v setNeedsDisplay:YES];
+    for (NSView* sub in v.subviews) [sub setNeedsDisplay:YES]; // re-render at the new density
+}
+
+double zoom_factor() { return zoom_factor_for(zoom_setting(), 96); }
 } // namespace mac
 
 std::unique_ptr<ViewHost> create_child_view(MainWindow& root, View* view, const ViewOptions& opts) {

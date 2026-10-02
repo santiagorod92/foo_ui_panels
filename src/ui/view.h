@@ -153,6 +153,13 @@ public:
     // tooltip, whose click shows SkinEngine::show_tray_menu(). "" removes it. Called on every
     // repaint: the same text again must be a no-op.
     virtual void set_tray(const std::string& utf8) = 0;
+    // Keep the player window above other windows (View > Panels UI > Always on top).
+    virtual void set_always_on_top(bool on) = 0;
+    // The zoom setting changed (ui_settings.h): re-read it and re-lay out at the new scale.
+    // Every coordinate the engine and the views see stays in skin units — 1 unit = zoom x the
+    // platform's own unit (a device pixel on Windows, a point on macOS).
+    virtual void apply_zoom() = 0;
+    virtual double zoom() const = 0; // the scale in effect (1.0 = 100%)
 };
 
 // A foreign (non-View) panel embedded in the root window — e.g. a hosted Default UI element.

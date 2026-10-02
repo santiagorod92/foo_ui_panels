@@ -2,6 +2,7 @@
 #include <objidl.h>
 #include <gdiplus.h>
 #include <algorithm>
+#include <cmath>
 #include <map>
 #include <mutex>
 
@@ -65,11 +66,17 @@ private:
 
 // A copy of canvas pixels (top-down 32bpp DIB). Drawn with StretchDIBits, which reads the bits
 // directly — no DC selection — so a render thread may draw it while the UI thread makes another.
+// Taken from a zoomed canvas it keeps the device pixels (pw x ph) but reports its size in skin
+// units (w x h): callers crop it in skin units, draw_image scales the crop back by `scale`.
 class DibImage : public Image {
 public:
-    DibImage(int w, int h) : m_w(w), m_h(h), m_px((size_t)w * h) {}
+    DibImage(int w, int h, int pw, int ph, double scale)
+        : m_w(w), m_h(h), m_pw(pw), m_ph(ph), m_scale(scale), m_px((size_t)pw * ph) {}
     int width() const override { return m_w; }
     int height() const override { return m_h; }
+    int pixel_width() const { return m_pw; }
+    int pixel_height() const { return m_ph; }
+    double scale() const { return m_scale; }
     Color average_color() const override {
         unsigned long long r = 0, g = 0, b = 0;
         for (uint32_t p : m_px) { r += (p >> 16) & 0xFF; g += (p >> 8) & 0xFF; b += p & 0xFF; }
@@ -78,14 +85,15 @@ public:
     }
     BITMAPINFO info() const {
         BITMAPINFO bi = {}; bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
-        bi.bmiHeader.biWidth = m_w; bi.bmiHeader.biHeight = -m_h; bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biWidth = m_pw; bi.bmiHeader.biHeight = -m_ph; bi.bmiHeader.biPlanes = 1;
         bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
         return bi;
     }
     uint32_t* bits() { return m_px.data(); }
     const uint32_t* bits() const { return m_px.data(); }
 private:
-    int m_w, m_h;
+    int m_w, m_h, m_pw, m_ph;
+    double m_scale;
     std::vector<uint32_t> m_px;
 };
 
@@ -154,16 +162,30 @@ void gdi_fonts_shutdown() {
 }
 
 // --- GdiCanvas -----------------------------------------------------------------
-GdiCanvas::GdiCanvas(HDC dc, int w, int h) : m_dc(dc), m_w(w), m_h(h) {
+GdiCanvas::GdiCanvas(HDC dc, int w, int h, double scale) : m_dc(dc) {
     // The skin's design size, same as the macOS canvas: foobar2000 is DPI-aware, so at 150%
     // scaling LOGPIXELSY is 144 — point-sized fonts grew 1.5x while every coordinate the skin
-    // lays them out in stayed in 96-dpi pixels, and text overflowed its boxes.
+    // lays them out in stayed in 96-dpi pixels, and text overflowed its boxes. Display scaling
+    // is the zoom's job instead (the world transform below), which scales layout and text alike.
     m_dpi = 96;
+    m_scale = scale > 0.01 ? scale : 1.0;
+    m_lw = (int)std::ceil(w / m_scale);
+    m_lh = (int)std::ceil(h / m_scale);
     SetBkMode(m_dc, TRANSPARENT);
+    if (m_scale != 1.0) {
+        m_oldMode = SetGraphicsMode(m_dc, GM_ADVANCED);
+        GetWorldTransform(m_dc, &m_oldXform);
+        XFORM x = { (FLOAT)m_scale, 0, 0, (FLOAT)m_scale, 0, 0 };
+        SetWorldTransform(m_dc, &x);
+    }
 }
 
 GdiCanvas::~GdiCanvas() {
     if (m_oldFont) SelectObject(m_dc, m_oldFont);
+    if (m_scale != 1.0) {
+        SetWorldTransform(m_dc, &m_oldXform);
+        if (m_oldMode) SetGraphicsMode(m_dc, m_oldMode);
+    }
 }
 
 void GdiCanvas::fill_rect(const Rect& r, Color c) {
@@ -321,28 +343,46 @@ void GdiCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcI
     if (auto* g = dynamic_cast<const GdipImage*>(&img)) {
         bmp = g->bitmap();
     } else if (auto* d = dynamic_cast<const DibImage*>(&img)) {
+        // Snapshots are cropped in skin units but hold device pixels: scale the crop.
+        const double ds = d->scale();
+        src = RectF{ (float)(src.x * ds), (float)(src.y * ds), (float)(src.w * ds), (float)(src.h * ds) };
         // Canvas snapshots: plain copies go straight through GDI.
         if (alpha >= 255 && !flip_v) {
             // Point the DIB header at the source rows only (ySrc = 0 over the full header
             // height sidesteps StretchDIBits' bottom-up/top-down ySrc ambiguity).
-            int sy = std::clamp((int)src.y, 0, d->height()), sh = std::min((int)src.h, d->height() - sy);
+            int sy = std::clamp((int)std::lround(src.y), 0, d->pixel_height());
+            int sh = std::min((int)std::lround(src.h), d->pixel_height() - sy);
             if (sh <= 0) return;
             BITMAPINFO bi = d->info();
             bi.bmiHeader.biHeight = -sh;
             SetStretchBltMode(m_dc, COLORONCOLOR);
             StretchDIBits(m_dc, (int)dst.x, (int)dst.y, (int)dst.w, (int)dst.h,
-                          (int)src.x, 0, (int)src.w, sh,
-                          d->bits() + (size_t)sy * d->width(), &bi, DIB_RGB_COLORS, SRCCOPY);
+                          (int)std::lround(src.x), 0, (int)std::lround(src.w), sh,
+                          d->bits() + (size_t)sy * d->pixel_width(), &bi, DIB_RGB_COLORS, SRCCOPY);
             return;
         }
         ensure_gdiplus();
-        tmp = std::make_unique<Gdiplus::Bitmap>(d->width(), d->height(), d->width() * 4,
+        tmp = std::make_unique<Gdiplus::Bitmap>(d->pixel_width(), d->pixel_height(), d->pixel_width() * 4,
                                                 PixelFormat32bppRGB, (BYTE*)d->bits());
         bmp = tmp.get();
     }
     if (!bmp) return;
 
+    // Whether GDI+ picks up the DC's world transform differs between implementations (Wine's
+    // does): draw with an identity DC transform and give GDI+ the zoom itself.
+    if (m_scale != 1.0) ModifyWorldTransform(m_dc, nullptr, MWT_IDENTITY);
+    draw_image_gdip(*bmp, dst, src, alpha, flip_v, interp);
+    if (m_scale != 1.0) {
+        XFORM x = { (FLOAT)m_scale, 0, 0, (FLOAT)m_scale, 0, 0 };
+        SetWorldTransform(m_dc, &x);
+    }
+}
+
+void GdiCanvas::draw_image_gdip(Gdiplus::Bitmap& bmpRef, const RectF& dst, const RectF& src,
+                                int alpha, bool flip_v, Interp interp) {
+    Gdiplus::Bitmap* bmp = &bmpRef;
     Gdiplus::Graphics g(m_dc);
+    if (m_scale != 1.0) g.ScaleTransform((Gdiplus::REAL)m_scale, (Gdiplus::REAL)m_scale);
     Gdiplus::ImageAttributes ia; Gdiplus::ImageAttributes* pia = nullptr;
     if (interp == Interp::High) {
         g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
@@ -375,16 +415,25 @@ void GdiCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcI
 
 ImagePtr GdiCanvas::snapshot(const Rect& r) {
     if (r.empty()) return nullptr;
-    auto img = std::make_shared<DibImage>(r.w, r.h);
+    // Copy the DEVICE pixels under r (no resampling at any zoom): the source DC's transform
+    // would otherwise squeeze the copy down to skin units.
+    const int px = (int)std::lround(r.x * m_scale), py = (int)std::lround(r.y * m_scale);
+    const int pw = std::max(1, (int)std::lround(r.w * m_scale)), ph = std::max(1, (int)std::lround(r.h * m_scale));
+    auto img = std::make_shared<DibImage>(r.w, r.h, pw, ph, m_scale);
     BITMAPINFO bi = img->info();
     HDC md = CreateCompatibleDC(m_dc);
     void* bits = nullptr;
     HBITMAP mb = CreateDIBSection(md, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
     if (!mb) { DeleteDC(md); return nullptr; }
     HGDIOBJ omb = SelectObject(md, mb);
-    BitBlt(md, 0, 0, r.w, r.h, m_dc, r.x, r.y, SRCCOPY);
+    if (m_scale != 1.0) ModifyWorldTransform(m_dc, nullptr, MWT_IDENTITY);
+    BitBlt(md, 0, 0, pw, ph, m_dc, px, py, SRCCOPY);
+    if (m_scale != 1.0) {
+        XFORM x = { (FLOAT)m_scale, 0, 0, (FLOAT)m_scale, 0, 0 };
+        SetWorldTransform(m_dc, &x);
+    }
     GdiFlush();
-    memcpy(img->bits(), bits, (size_t)r.w * r.h * 4);
+    memcpy(img->bits(), bits, (size_t)pw * ph * 4);
     SelectObject(md, omb); DeleteObject(mb); DeleteDC(md);
     return img;
 }

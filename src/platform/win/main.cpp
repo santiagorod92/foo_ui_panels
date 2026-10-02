@@ -8,10 +8,14 @@
 #include "tooltip.h"
 #include "drop_files.h"
 #include "tray.h"
+#include "zoom.h"
 #include "../../core/skin_engine.h"
 #include "../../core/skin_paths.h"
 #include "../../core/image_cache.h"
 #include "../../core/fs_util.h"
+#include "../../core/ui_logic.h"
+#include "../../core/ui_settings.h"
+#include <cmath>
 #include <vector>
 #include <string>
 #include <cstdio>
@@ -96,6 +100,8 @@ public:
         DragAcceptFiles(m_wnd, TRUE); // files dropped anywhere but the playlist: append to it
         build_menu();
         const int show = restore_placement(m_wnd);
+        pui::win::refresh_zoom(m_wnd); // after the placement: the DPI of the monitor it's on
+        set_always_on_top(pui::always_on_top());
         build_layout();
         ShowWindow(m_wnd, show);
         return m_wnd;
@@ -146,7 +152,8 @@ public:
     void* native() const override { return m_wnd; }
     pui::gfx::Rect client_rect() const override {
         RECT rc = {}; if (m_wnd) GetClientRect(m_wnd, &rc);
-        return pui::gfx::Rect{ 0, 0, rc.right, rc.bottom };
+        const double z = pui::win::zoom();
+        return pui::gfx::Rect{ 0, 0, (int)std::lround(rc.right / z), (int)std::lround(rc.bottom / z) };
     }
     void invalidate() override { if (m_wnd) InvalidateRect(m_wnd, nullptr, TRUE); }
     void set_titlebar_visible(bool visible) override {
@@ -166,6 +173,7 @@ public:
     }
     void resize_client(int w, int h, const std::string& halign, const std::string& valign) override {
         if (!m_wnd || w <= 0 || h <= 0) return;
+        w = pui::to_device(w, pui::win::zoom()); h = pui::to_device(h, pui::win::zoom());
         // SetWindowPos takes the OUTER window rect — convert via AdjustWindowRectEx, or every
         // resize silently loses the title bar/menu/border overhead from the requested client
         // size. Uncorrected, repeated clicks on a script's own toggle button (e.g. fooAvA's
@@ -210,6 +218,22 @@ public:
         }
         m_tray.set(m_wnd, (HICON)ui_control::get()->get_main_icon(),
                    pfc::stringcvt::string_wide_from_utf8(utf8.c_str()).get_ptr());
+    }
+
+    void set_always_on_top(bool on) override {
+        if (m_wnd) SetWindowPos(m_wnd, on ? HWND_TOPMOST : HWND_NOTOPMOST, 0, 0, 0, 0,
+                                SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+    double zoom() const override { return pui::win::zoom(); }
+    // Keeps the canvas the same size in skin units, so a fixed-size skin just grows/shrinks
+    // instead of being re-laid out (or clipped) at the new scale. A maximised window stays put.
+    void apply_zoom() override {
+        if (!m_wnd) return;
+        const pui::gfx::Rect before = client_rect();
+        pui::win::refresh_zoom(m_wnd);
+        if (!IsZoomed(m_wnd) && !IsIconic(m_wnd) && before.w > 0 && before.h > 0)
+            resize_client(before.w, before.h, "", "");
+        InvalidateRect(m_wnd, nullptr, FALSE);
     }
 
 private:
@@ -303,6 +327,8 @@ private:
         return false;
     }
 
+    static int logical(int device) { return pui::to_logical(device, pui::win::zoom()); }
+
     static LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         panels_ui* self = reinterpret_cast<panels_ui*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
         if (msg == WM_NCCREATE) {
@@ -334,7 +360,7 @@ private:
             return 0;
         case WM_LBUTTONDOWN:
             if (self) {
-                if (self->m_skin.handle_click(GET_X_LPARAM(lp), GET_Y_LPARAM(lp))) return 0;
+                if (self->m_skin.handle_click(logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp)))) return 0;
                 self->begin_window_drag(); // bare canvas doubles as the window's drag handle
                 return 0;
             }
@@ -342,7 +368,7 @@ private:
         case WM_MOUSEMOVE: {
             TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, wnd, 0 };
             TrackMouseEvent(&tme); // arms WM_MOUSELEAVE so hover clears when the cursor exits
-            if (self && self->m_skin.update_hover(GET_X_LPARAM(lp), GET_Y_LPARAM(lp)))
+            if (self && self->m_skin.update_hover(logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp))))
                 InvalidateRect(wnd, nullptr, FALSE);
             break;
         }
@@ -368,9 +394,9 @@ private:
             HGDIOBJ ob = SelectObject(mem, bmp);
             FillRect(mem, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
             if (self) {
-                pui::gfx::GdiCanvas cv(mem, rc.right, rc.bottom);
-                self->m_skin.render(cv, rc.right, rc.bottom);
-                self->m_skin.snapshot_canvas(cv, rc.right, rc.bottom);
+                pui::gfx::GdiCanvas cv(mem, rc.right, rc.bottom, pui::win::zoom());
+                self->m_skin.render(cv, cv.width(), cv.height());
+                self->m_skin.snapshot_canvas(cv, cv.width(), cv.height());
             }
             BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
             if (self) self->m_skin.refresh_bars();
@@ -406,6 +432,16 @@ private:
         case PUI_WM_TOGGLE_MENU: // show/hide the menu bar (from settings popup)
             if (self) { SetMenu(wnd, wp ? self->m_menubar : nullptr); self->resize_layout(); }
             return 0;
+        case WM_DPICHANGED: {
+            // Moved to a monitor with another scale: automatic zoom follows it, at the size
+            // Windows suggests for the new DPI.
+            const RECT* r = reinterpret_cast<const RECT*>(lp);
+            SetWindowPos(wnd, nullptr, r->left, r->top, r->right - r->left, r->bottom - r->top,
+                         SWP_NOZORDER | SWP_NOACTIVATE);
+            pui::win::refresh_zoom(wnd);
+            if (self) self->m_skin.repaint_all();
+            return 0;
+        }
         case WM_CLOSE:
             standard_commands::main_exit();
             return 0;

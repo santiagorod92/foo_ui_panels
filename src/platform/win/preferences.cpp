@@ -10,14 +10,15 @@
 //   Variables - grid of the persistent pvars ($getpvar/$setpvar) the active script references.
 //   Overrides - global font/accent-colour fallback used when a skin doesn't set its own.
 //
-// Applying writes the script file + persists root/active-skin/main-script + the pvar store. A
-// script edit shows up live (the engine hot-reloads changed skin files); switching to another
-// skin or main script doesn't — needs_restart tells foobar2000 to prompt for a restart.
+// Applying writes the script file + persists root/active-skin/main-script + the pvar store, the
+// zoom and always-on-top. Everything applies live: a script edit through the engine's hot
+// reload, another skin or main script by reloading the skin in place (SkinEngine::reload_all).
 #include "win_sdk.h"
 #include "../../core/skin_engine.h"
 #include "../../core/skin_paths.h"
 #include "../../core/skin_config.h"
 #include "../../core/fs_util.h"
+#include "../../core/ui_settings.h"
 #include <shlobj.h>
 #include <commctrl.h>
 #include <commdlg.h>
@@ -62,22 +63,8 @@ std::wstring get_text(HWND ctl) {
 }
 void set_text(HWND ctl, const std::string& s) { SetWindowTextW(ctl, to_wide(s).c_str()); }
 
-// List immediate subfolders of `root` (skin names for the General-tab picker).
-std::vector<std::string> list_skin_folders(const std::wstring& root) {
-    std::vector<std::string> out;
-    if (root.empty()) return out;
-    WIN32_FIND_DATAW fd;
-    HANDLE h = FindFirstFileW((root + L"\\*").c_str(), &fd);
-    if (h == INVALID_HANDLE_VALUE) return out;
-    do {
-        if ((fd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY) &&
-            wcscmp(fd.cFileName, L".") != 0 && wcscmp(fd.cFileName, L"..") != 0)
-            out.push_back(to_utf8(fd.cFileName));
-    } while (FindNextFileW(h, &fd));
-    FindClose(h);
-    std::sort(out.begin(), out.end());
-    return out;
-}
+// Zoom choices: the combo's index 0 is automatic, then these percentages.
+const int kZoomChoices[] = { 75, 90, 100, 110, 125, 150, 175, 200, 250, 300 };
 
 // Best-effort scan for $getpvar(name)/$setpvar(name,...) references in a script — feeds the
 // Variables tab's grid (the modern equivalent of the original's "setup panel").
@@ -137,6 +124,7 @@ bool is_reserved_key(const std::string& k) { return k.rfind("_prefs_", 0) == 0; 
 enum {
     // General
     kIdRootEdit = 1001, kIdRootBrowse = 1002, kIdSkinCombo = 1003, kIdMainCombo = 1004,
+    kIdZoomCombo = 1005, kIdOnTop = 1006,
     // Script
     kIdScriptEdit = 1010,
     // Variables
@@ -170,9 +158,6 @@ public:
     t_uint32 get_state() override {
         t_uint32 s = preferences_state::resettable;
         if (has_changed()) s |= preferences_state::changed;
-        if (to_utf8(get_text(m_rootEdit)) != m_appliedRoot || combo_selected_skin() != m_appliedActive ||
-            combo_selected_main() != m_appliedMain)
-            s |= preferences_state::needs_restart;
         return s;
     }
     fb2k::hwnd_t get_wnd() override { return m_wnd; }
@@ -186,10 +171,26 @@ public:
         set_main_script_override(mainName);
         std::string script = to_utf8(get_text(m_scriptEdit));
         if (!m_scriptPath.empty() && script != m_appliedScript) write_file(m_scriptPath, script);
+        const bool skinChanged = root != m_appliedRoot || active != m_appliedActive || mainName != m_appliedMain;
+        const bool pvarsChanged = serialize_pvars(m_pvars) != m_appliedPvars;
+        // The live engines hold their own copy of the store and would write it back over ours:
+        // push the edits through them (set_pvar persists), or straight to the store if none is open.
+        if (pvarsChanged && !SkinEngine::live().empty()) {
+            PvarMap old = load_all_pvars();
+            for (SkinEngine* e : SkinEngine::live()) {
+                for (auto& kv : m_pvars) e->set_pvar(kv.first, kv.second);
+                for (auto& kv : old) if (!m_pvars.count(kv.first)) e->set_pvar(kv.first, "");
+            }
+        }
         save_all_pvars(m_pvars);
+        set_zoom_setting(combo_selected_zoom());
+        set_always_on_top(SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
 
         m_appliedRoot = root; m_appliedActive = active; m_appliedMain = mainName; m_appliedScript = script;
         m_appliedPvars = serialize_pvars(m_pvars);
+        m_appliedZoom = zoom_setting(); m_appliedOnTop = always_on_top();
+        if (skinChanged) SkinEngine::reload_all();
+        apply_view_settings(); // zoom, always on top; repaints (new pvars show too)
         m_callback->on_state_changed();
     }
 
@@ -202,6 +203,8 @@ public:
         for (const char* k : { kFontFaceKey, kFontSizeKey, kAccentKey }) m_pvars.erase(k);
         refresh_overrides_ui();
         refresh_vars_list();
+        select_zoom(0);
+        SendMessageW(m_onTopCheck, BM_SETCHECK, BST_UNCHECKED, 0);
         m_callback->on_state_changed();
     }
 
@@ -262,6 +265,9 @@ private:
 
         m_appliedRoot = skins_root();
         m_appliedActive = combo_selected_skin();
+        m_appliedZoom = zoom_setting(); m_appliedOnTop = always_on_top();
+        select_zoom(m_appliedZoom);
+        SendMessageW(m_onTopCheck, BM_SETCHECK, m_appliedOnTop ? BST_CHECKED : BST_UNCHECKED, 0);
     }
 
     HWND make_page(HWND parent, HINSTANCE inst) {
@@ -286,8 +292,19 @@ private:
         m_mainCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
             WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdMainCombo, inst, nullptr);
         m_skinWarning = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
+        m_zoomLabel = CreateWindowExW(0, L"STATIC", L"Zoom:",
+            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
+        m_zoomCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdZoomCombo, inst, nullptr);
+        SendMessageW(m_zoomCombo, CB_ADDSTRING, 0, (LPARAM)L"Automatic (display scaling)");
+        for (int z : kZoomChoices) {
+            wchar_t buf[16]; swprintf(buf, 16, L"%d%%", z);
+            SendMessageW(m_zoomCombo, CB_ADDSTRING, 0, (LPARAM)buf);
+        }
+        m_onTopCheck = CreateWindowExW(0, L"BUTTON", L"Keep the player window on top of other windows",
+            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0,0,0,0, p, (HMENU)kIdOnTop, inst, nullptr);
         for (HWND c : { m_rootLabel, m_rootEdit, m_rootBrowseBtn, m_skinLabel, m_skinCombo, m_mainLabel,
-                        m_mainCombo, m_skinWarning })
+                        m_mainCombo, m_skinWarning, m_zoomLabel, m_zoomCombo, m_onTopCheck })
             SendMessageW(c, WM_SETFONT, (WPARAM)m_font, TRUE);
     }
 
@@ -355,9 +372,19 @@ private:
         return m_skinChoices[i - 1];
     }
 
+    // Zoom combo <-> setting (0 = automatic; a value not in the list selects the nearest below).
+    void select_zoom(int pct) {
+        int sel = 0;
+        for (int i = 0; pct > 0 && i < (int)std::size(kZoomChoices); ++i) if (kZoomChoices[i] <= pct) sel = i + 1;
+        SendMessageW(m_zoomCombo, CB_SETCURSEL, sel, 0);
+    }
+    int combo_selected_zoom() const {
+        int i = (int)SendMessageW(m_zoomCombo, CB_GETCURSEL, 0, 0);
+        return i <= 0 || i > (int)std::size(kZoomChoices) ? 0 : kZoomChoices[i - 1];
+    }
+
     void refresh_skin_combo() {
-        std::wstring root = get_text(m_rootEdit);
-        m_skinChoices = list_skin_folders(root);
+        m_skinChoices = list_skins(to_utf8(get_text(m_rootEdit)));
         SendMessageW(m_skinCombo, CB_RESETCONTENT, 0, 0);
         SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)L"(bundled default)");
         for (auto& s : m_skinChoices) SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(s).c_str());
@@ -450,7 +477,9 @@ private:
                combo_selected_skin() != m_appliedActive ||
                combo_selected_main() != m_appliedMain ||
                to_utf8(get_text(m_scriptEdit)) != m_appliedScript ||
-               serialize_pvars(m_pvars) != m_appliedPvars;
+               serialize_pvars(m_pvars) != m_appliedPvars ||
+               combo_selected_zoom() != m_appliedZoom ||
+               (SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED) != m_appliedOnTop;
     }
     void notify_changed() { m_callback->on_state_changed(); }
 
@@ -564,7 +593,10 @@ private:
         MoveWindow(m_skinCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 6;
         MoveWindow(m_mainLabel, pad, y, 100, labelH, TRUE);
         MoveWindow(m_mainCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 4;
-        MoveWindow(m_skinWarning, pad, y, rc.right - pad * 2, labelH, TRUE);
+        MoveWindow(m_skinWarning, pad, y, rc.right - pad * 2, labelH, TRUE); y += labelH + 14;
+        MoveWindow(m_zoomLabel, pad, y, 100, labelH, TRUE);
+        MoveWindow(m_zoomCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 8;
+        MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE);
     }
     void layout_script() {
         RECT rc; GetClientRect(m_pageScript, &rc);
@@ -665,6 +697,8 @@ private:
                     self->rescan_vars(); self->notify_changed();
                 }
                 if (id == kIdScriptEdit && code == EN_CHANGE) self->notify_changed();
+                if (id == kIdZoomCombo && code == CBN_SELCHANGE) self->notify_changed();
+                if (id == kIdOnTop && code == BN_CLICKED) self->notify_changed();
                 if (id == kIdVarsRescan && code == BN_CLICKED) self->rescan_vars();
                 if (id == kIdFontPickBtn && code == BN_CLICKED) self->pick_font();
                 if ((id == kIdFontFaceEdit || id == kIdFontSizeEdit) && code == EN_CHANGE)
@@ -690,7 +724,9 @@ private:
     // General
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,
          m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr,
-         m_mainLabel = nullptr, m_mainCombo = nullptr;
+         m_mainLabel = nullptr, m_mainCombo = nullptr,
+         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr;
+    int m_appliedZoom = 0; bool m_appliedOnTop = false;
     std::vector<std::string> m_skinChoices, m_mainChoices;
     std::string m_scriptPath; // the file the Script tab edits ("" = none resolved)
     // Script

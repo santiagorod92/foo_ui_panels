@@ -2,6 +2,7 @@
 #include "skin_config.h"
 #include "fs_util.h"
 #include "../fb2k.h"
+#include <algorithm>
 
 namespace pui {
 
@@ -28,6 +29,20 @@ std::string skins_root() { pfc::string8 s = g_skins_root_cfg.get(); return std::
 std::string active_skin() { pfc::string8 s = g_active_skin_cfg.get(); return std::string(s.get_ptr(), s.length()); }
 void set_skins_root(const std::string& utf8) { g_skins_root_cfg.set(utf8.c_str()); }
 void set_active_skin(const std::string& name) { g_active_skin_cfg.set(name.c_str()); }
+
+std::vector<std::string> list_skins(const std::string& root) {
+    std::vector<std::string> out;
+    if (root.empty()) return out;
+    std::error_code ec;
+    std::filesystem::directory_iterator it(fs_path(root), ec), end;
+    for (; !ec && it != end; it.increment(ec)) {
+        std::error_code e2;
+        const std::string name = fs_utf8(it->path().filename());
+        if (it->is_directory(e2) && !name.empty() && name[0] != '.') out.push_back(name);
+    }
+    std::sort(out.begin(), out.end());
+    return out;
+}
 
 // The persisted halves of skin_config.h (kept here so skin_config.cpp stays SDK-free).
 std::string main_script_override() {
