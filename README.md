@@ -130,6 +130,9 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - Skins can use these from their own buttons too: `ONTOP:TOGGLE`, `ZOOM:IN`/`ZOOM:OUT`/
   `ZOOM:RESET`, `MINIMODE:TOGGLE`, and `PVAR:TOGGLE:<variable>` (flips a 0/1 variable).
 - Switching skin or main script in Preferences applies immediately (no restart).
+- Album browser / cover flow: type to search by artist or album (Backspace edits, Esc clears),
+  right-click empty space to sort by artist, album, year or recently added (remembered), arrow
+  keys / Page Up/Down / Home/End move through the grid.
 - Button tooltips and the skin's own window title (`$settitle`, e.g. "artist - title" while
   playing).
 - The skin's tray icon (`$settray`): on Windows a notification-area icon — click to show/hide the

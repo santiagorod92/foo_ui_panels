@@ -8,10 +8,13 @@
 //
 // Scans the whole Media Library, groups by album artist + album, and draws a scrollable grid of
 // cover-art tiles. Double-click (or Enter) replaces a dedicated "Album Browser" playlist with that
-// album and plays it. Right-click gives the standard foobar context menu for the album's tracks.
+// album and plays it. Right-click gives the standard foobar context menu for the album's tracks;
+// on empty space, the sort order (artist, album, year, recently added — remembered). Typing
+// filters the albums by artist/album (Backspace edits, Esc clears); arrows move the selection.
 #pragma once
 #include "../ui/view.h"
 #include "../core/navidrome_library_api.h"
+#include "../core/ui_logic.h"
 #include <atomic>
 #include <map>
 #include <memory>
@@ -41,6 +44,7 @@ public:
 private:
     struct Group {
         pfc::string8 key, artist, album;
+        std::string year, added; // sort keys: "1997", "2024-05-01 10:00:00" ("" = unknown)
         metadb_handle_ptr cover_track;
         std::vector<metadb_handle_ptr> items;
         // Albums published by foo_navidrome that have no metadb entries yet (see
@@ -50,6 +54,13 @@ private:
     };
 
     void rebuild();          // re-scan the library (on create + manual refresh)
+    // m_groups = m_all filtered by m_filter and in m_sort order; keeps the selection (and the
+    // cover-flow centre) on the same album when it's still shown.
+    void apply_view();
+    void set_filter(const std::string& f);
+    void set_sort(AlbumSort s);
+    void ensure_visible(int idx);           // grid: scroll so album idx is in view
+    void paint_filter_bar(gfx::Canvas& cv, int W);
     void layout_metrics(int clientW, int& cols, int& cellW, int& cellH, int& gutter, int& margin) const;
     // The skin's album case art (asset.cd_case) and the cover's window inside it
     // (asset.cd_case_window = x y w h, in the case image's pixels). No case: a bare square cover.
@@ -70,7 +81,11 @@ private:
     int  group_index_for_now_playing() const;
 
     SkinEngine* m_engine = nullptr;
-    std::vector<Group> m_groups;
+    std::vector<Group> m_all;    // every album (library + Navidrome), by key
+    std::vector<Group> m_groups; // what's shown: m_all filtered + sorted (indices below are into this)
+    std::string m_filter;        // typed search ("" = all)
+    AlbumSort m_sort = AlbumSort::Artist;
+    bool m_sortLoaded = false;
     bool m_built = false;
     int m_scroll = 0, m_content_h = 0;
     int m_selected = -1, m_hover = -1;

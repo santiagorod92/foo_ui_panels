@@ -12,7 +12,7 @@ static const unsigned kCaption = gfx::kAlignCenter | gfx::kSingleLine | gfx::kEn
 
 // Compiled titleformat scripts (lazy, shared) — same grouping key shape as playlist_view.cpp.
 struct ALScripts {
-    service_ptr_t<titleformat_object> key, artist, album, cover;
+    service_ptr_t<titleformat_object> key, artist, album, cover, year, added;
     bool ok = false;
     void ensure() {
         if (ok) return;
@@ -21,9 +21,14 @@ struct ALScripts {
         c->compile_safe(artist, "[%album artist%]");
         c->compile_safe(album,  "[%album%]");
         c->compile_safe(cover,  "$replace(%path%,%filename_ext%,*folder*.*)");
+        c->compile_safe(year,   "[$left(%date%,4)]");
+        c->compile_safe(added,  "[%added%]"); // foobar2000 v2's own playback statistics
         ok = true;
     }
 };
+
+// Sort/filter state is remembered across sessions in a reserved pvar.
+static const char* kSortPvar = "_albumlist.sort";
 static ALScripts g_al;
 
 static pfc::string8 fmt(const metadb_handle_ptr& h, const service_ptr_t<titleformat_object>& s) {
@@ -60,18 +65,100 @@ void AlbumList::rebuild() {
     std::sort(keyed.begin(), keyed.end(),
               [](auto& a, auto& b) { return strcmp(a.first, b.first) < 0; });
 
-    m_groups.clear();
+    m_all.clear();
     for (auto& kv : keyed) {
         metadb_handle_ptr h = all[kv.second];
-        if (m_groups.empty() || strcmp(m_groups.back().key, kv.first) != 0) {
+        if (m_all.empty() || strcmp(m_all.back().key, kv.first) != 0) {
             Group g; g.key = kv.first; g.artist = fmt(h, g_al.artist); g.album = fmt(h, g_al.album);
+            g.year = fmt(h, g_al.year).c_str(); g.added = fmt(h, g_al.added).c_str();
             g.cover_track = h;
-            m_groups.push_back(std::move(g));
+            m_all.push_back(std::move(g));
         }
-        m_groups.back().items.push_back(h);
+        Group& g = m_all.back();
+        g.items.push_back(h);
+        // An album counts as added when its newest track was.
+        if (g.items.size() > 1) {
+            pfc::string8 a = fmt(h, g_al.added);
+            if (strcmp(a.c_str(), g.added.c_str()) > 0) g.added = a.c_str();
+        }
     }
     m_selected = -1; m_hover = -1; m_scroll = 0;
+    apply_view();
     start_remote_load();
+}
+
+void AlbumList::apply_view() {
+    if (!m_sortLoaded && m_engine) { m_sortLoaded = true; m_sort = album_sort_from(m_engine->get_pvar(kSortPvar)); }
+    auto key_at = [&](int i) { return (i >= 0 && i < (int)m_groups.size()) ? std::string(m_groups[i].key.c_str()) : std::string(); };
+    const std::string selKey = key_at(m_selected), cfKey = key_at(m_cf_target);
+
+    m_groups.clear();
+    for (const Group& g : m_all) {
+        if (!m_filter.empty()) {
+            std::string hay = std::string(g.artist.c_str()) + " " + g.album.c_str();
+            if (!filter_matches(m_filter, hay)) continue;
+        }
+        m_groups.push_back(g);
+    }
+    auto lc = [](const pfc::string8& s) { return lower_str(s.c_str()); };
+    switch (m_sort) {
+    case AlbumSort::Album:
+        std::stable_sort(m_groups.begin(), m_groups.end(), [&](const Group& a, const Group& b) { return lc(a.album) < lc(b.album); });
+        break;
+    case AlbumSort::Year: // newest first; unknown years last
+        std::stable_sort(m_groups.begin(), m_groups.end(), [](const Group& a, const Group& b) {
+            if (a.year.empty() != b.year.empty()) return b.year.empty();
+            return a.year > b.year;
+        });
+        break;
+    case AlbumSort::Added: // most recently added first; unknown last
+        std::stable_sort(m_groups.begin(), m_groups.end(), [](const Group& a, const Group& b) {
+            if (a.added.empty() != b.added.empty()) return b.added.empty();
+            return a.added > b.added;
+        });
+        break;
+    default: break; // m_all is already in artist|album order
+    }
+
+    m_hover = -1; m_selected = -1;
+    int cf = -1;
+    for (size_t i = 0; i < m_groups.size(); ++i) {
+        const std::string k = m_groups[i].key.c_str();
+        if (!selKey.empty() && k == selKey) m_selected = (int)i;
+        if (!cfKey.empty() && k == cfKey) cf = (int)i;
+    }
+    if (m_coverflow) {
+        if (cf < 0) cf = m_cf_user || !m_filter.empty() ? 0 : group_index_for_now_playing();
+        m_cf_target = cf; m_cf_pos = (float)cf; m_cf_init = true;
+    }
+    invalidate();
+}
+
+void AlbumList::set_filter(const std::string& f) {
+    if (f == m_filter) return;
+    m_filter = f;
+    m_scroll = 0;
+    apply_view();
+    if (m_selected < 0 && !m_groups.empty() && !m_filter.empty()) m_selected = 0;
+    if (m_coverflow && !m_filter.empty()) m_cf_user = true; // the search picks the centre now
+}
+
+void AlbumList::set_sort(AlbumSort s) {
+    m_sort = s; m_sortLoaded = true;
+    if (m_engine) m_engine->set_pvar(kSortPvar, album_sort_name(s));
+    m_scroll = 0;
+    apply_view();
+    if (m_selected >= 0) ensure_visible(m_selected);
+}
+
+void AlbumList::ensure_visible(int idx) {
+    if (m_coverflow || idx < 0 || !host()) return;
+    const gfx::Rect b = host()->bounds();
+    int cols, cellW, cellH, gutter, margin;
+    layout_metrics(b.w, cols, cellW, cellH, gutter, margin);
+    const int top = margin + (idx / cols) * (cellH + gutter), bottom = top + cellH;
+    if (top < m_scroll) m_scroll = std::max(0, top - margin);
+    else if (bottom > m_scroll + b.h) m_scroll = bottom - b.h + margin;
 }
 
 // Albums foo_navidrome publishes (none of them are in the Media Library until played/queued).
@@ -92,9 +179,10 @@ void AlbumList::start_remote_load() {
             std::vector<Group> batch;
             std::function<void(std::vector<Group>&&)> post;
             void on_album(const char* albumId, const char* albumName, const char* artistName,
-                          const char*, const char* coverArtId, int, int) override {
+                          const char*, const char* coverArtId, int year, int) override {
                 Group g; g.remote = true; g.remote_id = albumId; g.remote_cover = coverArtId;
                 g.artist = artistName; g.album = albumName;
+                if (year > 0) g.year = std::to_string(year);
                 g.key = (lower_str(artistName) + "|" + lower_str(albumName)).c_str();
                 batch.push_back(std::move(g));
                 if (batch.size() >= 120) flush();
@@ -122,33 +210,19 @@ void AlbumList::start_remote_load() {
 }
 
 void AlbumList::merge_remote(std::vector<Group>&& add) {
-    std::string selKey = (m_selected >= 0 && m_selected < (int)m_groups.size())
-        ? std::string(m_groups[m_selected].key.c_str()) : std::string();
-    std::vector<std::string> before; // keys by index before the merge (cover-flow keeps its centre)
-    for (auto& g : m_groups) before.push_back(g.key.c_str());
     std::set<std::string> have;
-    for (auto& g : m_groups) have.insert(lower_str(g.key.c_str()));
+    for (auto& g : m_all) have.insert(lower_str(g.key.c_str()));
     for (auto& g : add) {
         if (have.count(lower_str(g.key.c_str()))) continue; // already in the local library
         have.insert(lower_str(g.key.c_str()));
-        m_groups.push_back(std::move(g));
+        m_all.push_back(std::move(g));
     }
-    std::stable_sort(m_groups.begin(), m_groups.end(), [](const Group& a, const Group& b) {
+    std::stable_sort(m_all.begin(), m_all.end(), [](const Group& a, const Group& b) {
         return lower_str(a.key.c_str()) < lower_str(b.key.c_str());
     });
-    std::string cfKey;
-    if (m_coverflow && m_cf_target >= 0 && m_cf_target < (int)before.size()) cfKey = before[m_cf_target];
-    m_selected = -1; m_hover = -1;
-    if (!selKey.empty())
-        for (size_t i = 0; i < m_groups.size(); ++i) if (selKey == m_groups[i].key.c_str()) { m_selected = (int)i; break; }
-    if (m_coverflow) {
-        int idx = -1;
-        if (m_cf_user && !cfKey.empty())
-            for (size_t i = 0; i < m_groups.size(); ++i) if (cfKey == m_groups[i].key.c_str()) { idx = (int)i; break; }
-        if (idx < 0) idx = group_index_for_now_playing();
-        m_cf_target = idx; m_cf_pos = (float)idx; m_cf_init = true;
-    }
-    invalidate();
+    // Cover flow: until the user moves it, keep centring the playing album as the list grows.
+    if (m_coverflow && !m_cf_user && m_filter.empty()) m_cf_target = -1;
+    apply_view(); // keeps the selection / the user's cover-flow centre by key
 }
 
 void AlbumList::request_cover(const std::string& coverId, int size) {
@@ -235,7 +309,8 @@ void AlbumList::paint(gfx::Canvas& cv) {
     if (m_groups.empty()) {
         cv.set_font(fArtist);
         pfc::string8 msg;
-        if (m_remote_loading) msg = "Loading Navidrome library...";
+        if (!m_filter.empty() && !m_all.empty()) msg << "No albums match \"" << m_filter.c_str() << "\"";
+        else if (m_remote_loading) msg = "Loading Navidrome library...";
         else if (!m_remote_err.empty()) msg = m_remote_err.c_str();
         else msg = library_manager::get()->is_library_enabled()
             ? "No albums found in the Media Library." : "Media Library is not configured (Preferences > Media Library).";
@@ -293,6 +368,24 @@ void AlbumList::paint(gfx::Canvas& cv) {
     }
     int rows = ((int)m_groups.size() + cols - 1) / cols;
     m_content_h = margin * 2 + rows * (cellH + gutter);
+    paint_filter_bar(cv, W);
+}
+
+// The typed search, over the top of the grid / carousel while there is one.
+void AlbumList::paint_filter_bar(gfx::Canvas& cv, int W) {
+    if (m_filter.empty()) return;
+    static const gfx::FontSpec f{ "Segoe UI", 10, false, true };
+    cv.set_font(f);
+    char count[48]; snprintf(count, sizeof count, "   %u of %u", (unsigned)m_groups.size(), (unsigned)m_all.size());
+    const std::string text = "Search: " + m_filter + count;
+    const int h = 22, w = std::min(W - 12, cv.text_width(text) + 20);
+    const gfx::Rect r{ (W - w) / 2, 6, w, h };
+    gfx::Color accent(0, 140, 220);
+    if (m_engine && !m_engine->configured_color("album_list", "highlight", accent)) m_engine->theme_color(accent);
+    fill_alpha(cv, r.x, r.y, r.w, r.h, color_of("overlay", gfx::Color(16, 16, 20)), 210);
+    cv.fill_rect(gfx::Rect{ r.x, r.bottom() - 2, r.w, 2 }, accent);
+    cv.draw_text(text, r, gfx::kAlignCenter | gfx::kVCenter | gfx::kSingleLine | gfx::kEndEllipsis,
+                 color_of("text", gfx::Color(235, 240, 255)));
 }
 
 int AlbumList::group_index_for_now_playing() const {
@@ -364,7 +457,7 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
     draw_one(c);
 
     // Caption for the album nearest the centre.
-    const Group& cg = m_groups[c];
+    const Group& cg = m_groups[std::clamp(c, 0, n - 1)];
     static const gfx::FontSpec fTitle{ "Segoe UI", 17, false, true };
     static const gfx::FontSpec fSub{ "Segoe UI", 13, false };
     cv.set_font(fTitle);
@@ -412,7 +505,30 @@ void AlbumList::on_click(int x, int y, bool dbl) {
 void AlbumList::on_rclick(int x, int y) {
     host()->focus();
     int idx = item_at(x, y);
-    if (idx < 0) return;
+    if (idx < 0) {
+        // Empty space: how the albums are listed.
+        enum { kArtist = 1, kAlbum, kYear, kAdded, kClear, kRefresh };
+        auto item = [](const char* label, int id, bool checked = false, bool enabled = true) {
+            ui::MenuItem m; m.label = label; m.id = id; m.checked = checked; m.enabled = enabled; return m;
+        };
+        ui::MenuItem sort; sort.label = "Sort by";
+        sort.children = { item("Artist", kArtist, m_sort == AlbumSort::Artist),
+                          item("Album", kAlbum, m_sort == AlbumSort::Album),
+                          item("Year (newest first)", kYear, m_sort == AlbumSort::Year),
+                          item("Recently added", kAdded, m_sort == AlbumSort::Added) };
+        ui::Menu menu = { sort, ui::MenuItem::sep(),
+                          item(m_filter.empty() ? "Type to search" : "Clear search (Esc)", kClear, false, !m_filter.empty()),
+                          item("Refresh (F5)", kRefresh) };
+        switch (ui::popup_menu(host(), x, y, menu)) {
+        case kArtist: set_sort(AlbumSort::Artist); break;
+        case kAlbum: set_sort(AlbumSort::Album); break;
+        case kYear: set_sort(AlbumSort::Year); break;
+        case kAdded: set_sort(AlbumSort::Added); break;
+        case kClear: set_filter(""); break;
+        case kRefresh: rebuild(); break;
+        }
+        return;
+    }
     m_selected = idx;
     invalidate();
     if (m_groups[idx].remote) {
@@ -464,7 +580,16 @@ void AlbumList::on_mouse_down(const ui::MouseEvent& e) {
     else if (e.button == ui::MouseButton::Right) on_rclick(e.x, e.y);
 }
 
-bool AlbumList::on_key_down(int key, unsigned) {
+bool AlbumList::on_key_down(int key, unsigned mods) {
+    // Type to search: letters, digits and spaces extend the filter, Backspace edits, Esc clears.
+    if (!(mods & (ui::kCtrl | ui::kAlt))) {
+        if ((key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key == ' ' && !m_filter.empty())) {
+            set_filter(m_filter + (char)tolower(key));
+            return true;
+        }
+        if (key == ui::kKeyBackspace && !m_filter.empty()) { set_filter(m_filter.substr(0, m_filter.size() - 1)); return true; }
+        if (key == ui::kKeyEscape && !m_filter.empty()) { set_filter(""); return true; }
+    }
     if (m_coverflow) {
         int t = m_cf_target;
         switch (key) {
@@ -479,6 +604,30 @@ bool AlbumList::on_key_down(int key, unsigned) {
     }
     if (key == ui::kKeyEnter && m_selected >= 0) { play_group(m_selected); return true; }
     if (key == ui::kKeyF5) { rebuild(); invalidate(); return true; }
+    if (!m_coverflow && !m_groups.empty()) {
+        // Grid navigation: arrows by tile/row, Page Up/Down by a screenful, Home/End.
+        int cols, cellW, cellH, gutter, margin;
+        const gfx::Rect b = host()->bounds();
+        layout_metrics(b.w, cols, cellW, cellH, gutter, margin);
+        const int page = cols * std::max(1, b.h / (cellH + gutter));
+        const int n = (int)m_groups.size(), cur = m_selected < 0 ? 0 : m_selected;
+        int next = -1;
+        switch (key) {
+        case ui::kKeyLeft: next = cur - 1; break;
+        case ui::kKeyRight: next = m_selected < 0 ? 0 : cur + 1; break;
+        case ui::kKeyUp: next = cur - cols; break;
+        case ui::kKeyDown: next = m_selected < 0 ? 0 : cur + cols; break;
+        case ui::kKeyPageUp: next = cur - page; break;
+        case ui::kKeyPageDown: next = cur + page; break;
+        case ui::kKeyHome: next = 0; break;
+        case ui::kKeyEnd: next = n - 1; break;
+        default: return false;
+        }
+        m_selected = std::clamp(next, 0, n - 1);
+        ensure_visible(m_selected);
+        invalidate();
+        return true;
+    }
     return false;
 }
 
