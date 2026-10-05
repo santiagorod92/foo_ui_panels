@@ -110,7 +110,16 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   (dropped anywhere else in the window, they're added to the end of the active playlist).
 - Lyrics panel: a timing correction per track on top of the global one, "Search online again"
   to replace wrong lyrics (even ones from tags or a sidecar file), and lrclib.net's
-  instrumental tracks shown as such.
+  instrumental tracks shown as such. Synced lyrics found anywhere (tags, sidecar `.lrc`, cache)
+  win over plain ones.
+- **Karaoke highlight**: with word-timed lyrics (enhanced LRC, `<mm:ss.xx>` before each word or
+  syllable) the current line fills in word by word as it's sung. Right-click › **Karaoke
+  highlight** can also estimate it for ordinary line-timed lyrics, or turn it off.
+- **Sync lyrics by tapping**: right-click › **Sync these lyrics by tapping** turns plain (or
+  badly timed) lyrics into LRC. The track restarts, and you press Space or click as each line
+  starts (Backspace undoes the last one and jumps back a little, Esc cancels). Then right-click
+  to save it as a `.lrc` next to the track (local files) or in the lyrics cache. Lyrics in the
+  file's own tags still come first on later plays.
 - Right-click **Edit code…** on a panel, with **Apply** to reload its script live — or edit
   the skin's scripts or `foo_ui_panels.ini` in any editor: saved changes are picked up within a
   second.
