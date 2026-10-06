@@ -1,0 +1,6 @@
+fill_rect 0,0,200,60 #1e1e24
+frame_rect 0,0,200,60 #3c3c46
+font Segoe UI 10
+img images/btn.png 4,24,16,16
+text "Band - Song" 4,4,188,12 f24 #dcdcdc
+button 4,24,16,16 POPUP:Popup

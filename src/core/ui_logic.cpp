@@ -116,4 +116,28 @@ const char* album_sort_name(AlbumSort s) {
     }
 }
 
+std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort, const std::string& filter) {
+    std::vector<size_t> v;
+    for (size_t i = 0; i < all.size(); ++i)
+        if (filter.empty() || filter_matches(filter, all[i].artist + " " + all[i].album)) v.push_back(i);
+    // Newest first, unknown (empty) last — for the year and date-added keys.
+    auto newest = [](const std::string& a, const std::string& b) {
+        if (a.empty() != b.empty()) return b.empty();
+        return a > b;
+    };
+    switch (sort) {
+    case AlbumSort::Album:
+        std::stable_sort(v.begin(), v.end(), [&](size_t a, size_t b) { return lower(all[a].album) < lower(all[b].album); });
+        break;
+    case AlbumSort::Year:
+        std::stable_sort(v.begin(), v.end(), [&](size_t a, size_t b) { return newest(all[a].year, all[b].year); });
+        break;
+    case AlbumSort::Added:
+        std::stable_sort(v.begin(), v.end(), [&](size_t a, size_t b) { return newest(all[a].added, all[b].added); });
+        break;
+    default: break; // `all` is already in artist|album order
+    }
+    return v;
+}
+
 } // namespace pui

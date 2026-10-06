@@ -50,6 +50,24 @@ std::string script_to_rtf(const std::string& text);
 std::vector<std::string> check_script(const std::string& text);
 // 1-based line and column (in characters) of byte offset `pos`.
 void line_col(const std::string& text, size_t pos, int& line, int& col);
+// The same for an editor's UTF-16 text and caret index (what the platform text views report);
+// "\r\n", "\r" and "\n" each end a line.
+template <class Str>
+void line_col_utf16(const Str& text, size_t pos, int& line, int& col) {
+    line = 1; col = 1;
+    for (size_t i = 0; i < pos && i < (size_t)text.size(); ++i) {
+        const auto c = text[i];
+        if (c == '\n' && i > 0 && text[i - 1] == '\r') continue; // second half of "\r\n"
+        if (c == '\r' || c == '\n') { ++line; col = 1; } else ++col;
+    }
+}
+// The longest script the editor colours; a bigger one stays plain text.
+constexpr size_t kEditorHighlightMax = 256 * 1024;
+// check_script()'s problems on one line ("⚠ a; b"), "" when there are none.
+std::string problems_summary(const std::vector<std::string>& problems);
+// The editor's status line: "Ln 3, Col 7    <summary or No problems found>    <apply_hint>",
+// plus a note when the script is too long to colour.
+std::string editor_status(int line, int col, const std::string& summary, const std::string& apply_hint, bool plain);
 // "error  panels/Display.txt: …" lines plus a summary line.
 std::string format_findings(const std::vector<LintFinding>& findings);
 

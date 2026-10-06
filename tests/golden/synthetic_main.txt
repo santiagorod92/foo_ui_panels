@@ -1,0 +1,44 @@
+fill_rect 0,0,640,400 #14161e
+gradient 0,0,640,6 #0078d7>#003c6e
+img images/bg.png 0,0,640,400
+img images/icon.png 10,10,16,16
+img images/icon.png 30,10,2,2
+font Segoe UI 12 bold
+text "Title: Song" 40,10,160,10 f24 #f0f0f0
+font Fancy Face 9
+glow 38,30,164,20
+text "14 items" 40,32,160,16 f25 #00ffff
+glow 38,48,124,34
+text "Wrapped text that goes on" 40,50,120,30 f160 #b4b4b4
+text "Plain" 40,82,100,14 f34 #00ffff
+round_rect 250,10,80,24 6,6 #3a3e48
+fill_rect_alpha 250,40,80,10 #0078d7 a128
+fill_rect 249,53,82,2 #ffffff
+fill_rect 249,63,82,2 #ffffff
+fill_rect 249,55,2,8 #ffffff
+fill_rect 329,55,2,8 #ffffff
+glow 38,94,164,18
+text "width 21" 40,96,160,14 f24 #00ffff
+glow 248,100,84,18
+text "no none" 250,102,80,14 f24 #00ffff
+img images/btn.png 10,130,24,24
+img images/btn.png 40,130,24,24
+text "Play" 70,130,80,24 f29 #00ffff
+img images/btn.png 160,130,0,0
+glow 248,116,84,18
+text "ffffff 323232" 250,118,80,14 f24 #00ffff
+button 10,130,24,24 PVAR:SET:syn.panel:2 tooltip=Second panel
+button 40,130,24,24 POPUP:Popup tooltip=Open the popup
+button 70,130,80,24 Playback/Play tooltip=Start playback
+button 160,130,11,15 Playback/Stop tooltip=Stop
+panel display Track Display 10,160,200,60
+panel playlist Single Column Playlist 220,160,200,120
+panel seek Seek Bar 10,290,200,8
+panel volume Volume 220,290,100,8
+panel spectrum Channel spectrum 10,230,200,50
+panel albums Album list 430,10,200,200
+panel tree Playlist switcher 430,220,200,60
+panel lyrics Lyric Show 430,290,200,60
+panel search Quick Search 10,310,200,20
+panel meter Peakmeter 220,310,100,20
+panel cover Album Art 330,310,90,60

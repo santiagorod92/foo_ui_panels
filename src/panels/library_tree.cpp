@@ -2,7 +2,6 @@
 #include "../core/skin_engine.h"
 #include "../core/navidrome_library_api.h"
 #include <algorithm>
-#include <functional>
 #include <map>
 
 namespace pui {
@@ -116,96 +115,73 @@ void LibraryTree::finish_data() {
 }
 
 std::string LibraryTree::item_key(int i) const {
-    const Item& it = m_items[i];
-    switch (it.node.kind) {
+    const TreeItem& it = m_tree.items[i];
+    switch (it.kind) {
     case kPlaylists: return "P";
     case kPlaylist:  return "p:" + it.label;
-    case kArtist:    return "a:" + m_artists[it.node.a].name;
-    case kAlbum:     return "b:" + m_artists[it.node.a].name + "|" + m_artists[it.node.a].albums[it.node.b].name;
+    case kArtist:    return "a:" + m_artists[it.a].name;
+    case kAlbum:     return "b:" + m_artists[it.a].name + "|" + m_artists[it.a].albums[it.b].name;
     default:         return "l:" + it.label;
     }
 }
 
 void LibraryTree::refresh_tree() {
-    const std::string selKey = m_sel >= 0 && m_sel < (int)m_items.size() ? item_key(m_sel) : std::string();
-    m_items.clear(); m_roots.clear();
-    m_items.reserve(m_artists.size() * 8 + 64);
-
-    auto add = [&](int parent, std::string text, Node node) {
-        Item it; it.label = std::move(text); it.node = node;
-        it.depth = parent < 0 ? 0 : m_items[parent].depth + 1;
-        m_items.push_back(std::move(it));
-        const int idx = (int)m_items.size() - 1;
-        if (parent < 0) m_roots.push_back(idx); else m_items[parent].children.push_back(idx);
-        return idx;
+    const std::string selKey = m_sel >= 0 && m_sel < (int)m_tree.items.size() ? item_key(m_sel) : std::string();
+    m_tree.clear();
+    m_tree.items.reserve(m_artists.size() * 8 + 64);
+    auto add = [&](int parent, std::string text, Kind kind, int a = -1, int b = -1) {
+        return m_tree.add(parent, std::move(text), kind, a, b);
     };
 
     auto pm = playlist_manager::get();
     const t_size np = pm->get_playlist_count();
-    int pls = add(-1, "Playlists", { kPlaylists });
+    int pls = add(-1, "Playlists", kPlaylists);
     for (t_size i = 0; i < np; ++i) {
         pfc::string8 nm; pm->playlist_get_name(i, nm);
-        add(pls, std::string(nm.c_str()) + "  (" + std::to_string(pm->playlist_get_item_count(i)) + ")", { kPlaylist, (int)i });
+        add(pls, std::string(nm.c_str()) + "  (" + std::to_string(pm->playlist_get_item_count(i)) + ")", kPlaylist, (int)i);
     }
-    if (m_remote_loading) add(-1, "Loading Navidrome library...", { kLoading });
-    else if (!m_remote_err.empty()) add(-1, m_remote_err, { kLoading });
+    if (m_remote_loading) add(-1, "Loading Navidrome library...", kLoading);
+    else if (!m_remote_err.empty()) add(-1, m_remote_err, kLoading);
     if (m_artists.empty() && !m_remote_loading)
-        add(-1, "No music found (Media Library empty, Navidrome not available)", { kLoading });
+        add(-1, "No music found (Media Library empty, Navidrome not available)", kLoading);
 
     for (size_t a = 0; a < m_artists.size(); ++a) {
         const Artist& ar = m_artists[a];
-        int ai = add(-1, ar.name + "  (" + std::to_string(ar.albums.size()) + ")", { kArtist, (int)a });
+        int ai = add(-1, ar.name + "  (" + std::to_string(ar.albums.size()) + ")", kArtist, (int)a);
         for (size_t b = 0; b < ar.albums.size(); ++b)
-            add(ai, ar.albums[b].name, { kAlbum, (int)a, (int)b });
+            add(ai, ar.albums[b].name, kAlbum, (int)a, (int)b);
     }
     m_sel = -1;
-    for (int i = 0; i < (int)m_items.size(); ++i) {
+    for (int i = 0; i < (int)m_tree.items.size(); ++i) {
         const std::string k = item_key(i);
-        if (m_expandedKeys.count(k)) m_items[i].expanded = true;
+        if (m_expandedKeys.count(k)) m_tree.items[i].expanded = true;
         if (!selKey.empty() && k == selKey) m_sel = i;
     }
-    rebuild_rows();
-    invalidate();
-}
-
-void LibraryTree::rebuild_rows() {
-    m_rows.clear();
-    std::function<void(int)> walk = [&](int i) {
-        m_rows.push_back(i);
-        if (m_items[i].expanded) for (int c : m_items[i].children) walk(c);
-    };
-    for (int r : m_roots) walk(r);
+    m_tree.rebuild_rows();
     clamp_scroll();
+    invalidate();
 }
 
 void LibraryTree::clamp_scroll() {
-    const int H = host() ? host()->bounds().h : 0;
-    const int maxs = std::max(0, (int)m_rows.size() * kRowH - H);
-    m_scroll = std::max(0, std::min(m_scroll, maxs));
+    m_scroll = pui::clamp_scroll(m_scroll, (int)m_tree.rows.size() * kRowH, host() ? host()->bounds().h : 0);
 }
 
-int LibraryTree::row_at(int y) const {
-    int r = (y + m_scroll) / kRowH;
-    return (y >= 0 && r >= 0 && r < (int)m_rows.size()) ? r : -1;
-}
+int LibraryTree::row_at(int y) const { return fixed_row_at(y, m_scroll, kRowH, (int)m_tree.rows.size()); }
 
 void LibraryTree::select_row(int row) {
-    if (m_rows.empty()) return;
-    row = std::max(0, std::min((int)m_rows.size() - 1, row));
-    m_sel = m_rows[row];
-    const int H = host()->bounds().h;
-    if (row * kRowH < m_scroll) m_scroll = row * kRowH;
-    else if ((row + 1) * kRowH > m_scroll + H) m_scroll = (row + 1) * kRowH - H;
+    if (m_tree.rows.empty()) return;
+    row = std::max(0, std::min((int)m_tree.rows.size() - 1, row));
+    m_sel = m_tree.rows[row];
+    m_scroll = scroll_into_view(m_scroll, row * kRowH, (row + 1) * kRowH, host()->bounds().h);
     clamp_scroll();
     invalidate();
 }
 
+// Remembers the expansion by key, so it survives the tree being rebuilt.
 void LibraryTree::toggle(int item) {
-    Item& it = m_items[item];
-    if (it.children.empty()) return;
-    it.expanded = !it.expanded;
-    if (it.expanded) m_expandedKeys.insert(item_key(item)); else m_expandedKeys.erase(item_key(item));
-    rebuild_rows();
+    if (!m_tree.toggle(item)) return;
+    if (m_tree.items[item].expanded) m_expandedKeys.insert(item_key(item)); else m_expandedKeys.erase(item_key(item));
+    clamp_scroll();
     invalidate();
 }
 
@@ -216,12 +192,12 @@ void LibraryTree::paint(gfx::Canvas& cv) {
     cv.fill_rect(gfx::Rect{ 0, 0, W, H }, bg);
     cv.set_font(kFont);
     const int first = m_scroll / kRowH;
-    for (int r = first; r < (int)m_rows.size(); ++r) {
+    for (int r = first; r < (int)m_tree.rows.size(); ++r) {
         const int y = r * kRowH - m_scroll;
         if (y > H) break;
-        const Item& it = m_items[m_rows[r]];
+        const TreeItem& it = m_tree.items[m_tree.rows[r]];
         const int x = kPad + it.depth * kIndent;
-        if (m_rows[r] == m_sel) cv.fill_rect_alpha(gfx::Rect{ 0, y, W, kRowH }, accent, 150);
+        if (m_tree.rows[r] == m_sel) cv.fill_rect_alpha(gfx::Rect{ 0, y, W, kRowH }, accent, 150);
         if (!it.children.empty()) { // [+] / [-] expander
             const int bx = x, by = y + (kRowH - 9) / 2;
             cv.frame_rect(gfx::Rect{ bx, by, 9, 9 }, lines);
@@ -232,11 +208,8 @@ void LibraryTree::paint(gfx::Canvas& cv) {
                      gfx::kSingleLine | gfx::kVCenter | gfx::kEndEllipsis, text);
     }
     // Thin scroll position indicator.
-    const int total = (int)m_rows.size() * kRowH;
-    if (total > H && H > 0) {
-        const int th = std::max(20, H * H / total), ty = (H - th) * m_scroll / std::max(1, total - H);
-        cv.fill_rect_alpha(gfx::Rect{ W - 5, ty, 4, th }, lines, 200);
-    }
+    const ScrollThumb th = scroll_thumb(m_scroll, (int)m_tree.rows.size() * kRowH, H);
+    if (th.visible) cv.fill_rect_alpha(gfx::Rect{ W - 5, th.y, 4, th.h }, lines, 200);
 }
 
 void LibraryTree::on_wheel(int, int, float notches) {
@@ -249,8 +222,8 @@ void LibraryTree::on_mouse_down(const ui::MouseEvent& e) {
     host()->focus();
     const int row = row_at(e.y);
     if (row < 0) return;
-    const int item = m_rows[row];
-    const Item& it = m_items[item];
+    const int item = m_tree.rows[row];
+    const TreeItem& it = m_tree.items[item];
     const int x = kPad + it.depth * kIndent;
     m_sel = item;
     invalidate();
@@ -258,37 +231,29 @@ void LibraryTree::on_mouse_down(const ui::MouseEvent& e) {
     if (e.button != ui::MouseButton::Left) return;
     if (!it.children.empty() && e.x >= x - 2 && e.x < x + 12) { toggle(item); return; }
     if (e.double_click) {
-        const Kind k = it.node.kind;
+        const int k = it.kind;
         if (k == kAlbum || k == kPlaylist) activate(item); // no expand toggle for these
         else toggle(item);
     }
 }
 
 bool LibraryTree::on_key_down(int key, unsigned) {
-    int row = -1;
-    for (int r = 0; r < (int)m_rows.size(); ++r) if (m_rows[r] == m_sel) { row = r; break; }
+    if (key == ui::kKeyF5) { load_local(); start_remote_load(); finish_data(); return true; }
+    const int row = m_tree.row_of(m_sel);
     const int page = std::max(1, host()->bounds().h / kRowH - 1);
-    switch (key) {
-    case ui::kKeyF5: load_local(); start_remote_load(); finish_data(); return true;
-    case ui::kKeyUp:       select_row(row < 0 ? 0 : row - 1); return true;
-    case ui::kKeyDown:     select_row(row + 1); return true;
-    case ui::kKeyPageUp:   select_row(row - page); return true;
-    case ui::kKeyPageDown: select_row(row + page); return true;
-    case ui::kKeyHome:     select_row(0); return true;
-    case ui::kKeyEnd:      select_row((int)m_rows.size() - 1); return true;
-    }
+    const int to = list_nav(key, row, (int)m_tree.rows.size(), page);
+    if (to >= 0) { select_row(to); return true; }
     if (m_sel < 0) return false;
-    Item& it = m_items[m_sel];
+    int selRow, toggleItem;
+    if (m_tree.horizontal_key(key, row, selRow, toggleItem)) {
+        if (toggleItem >= 0) toggle(toggleItem);
+        else if (selRow >= 0) select_row(selRow);
+        return true;
+    }
+    const TreeItem& it = m_tree.items[m_sel];
     switch (key) {
-    case ui::kKeyRight:
-        if (!it.children.empty() && !it.expanded) toggle(m_sel); else if (!it.children.empty()) select_row(row + 1);
-        return true;
-    case ui::kKeyLeft:
-        if (it.expanded) { toggle(m_sel); return true; }
-        for (int r = row - 1; r >= 0; --r) if (m_items[m_rows[r]].depth < it.depth) { select_row(r); break; }
-        return true;
     case ui::kKeyEnter: {
-        const Kind k = it.node.kind;
+        const int k = it.kind;
         if (k == kAlbum || k == kPlaylist || k == kArtist) activate(m_sel); // Enter plays the artist
         else toggle(m_sel);
         return true;
@@ -340,7 +305,7 @@ void LibraryTree::play_artist(const Artist& ar, bool replace) {
 }
 
 void LibraryTree::activate(int item) {
-    const Node n = m_items[item].node;
+    const TreeItem& n = m_tree.items[item];
     if (n.kind == kAlbum) play_album(m_artists[n.a].albums[n.b], true);
     else if (n.kind == kArtist) play_artist(m_artists[n.a], true);
     else if (n.kind == kPlaylist) {
@@ -350,7 +315,7 @@ void LibraryTree::activate(int item) {
 }
 
 void LibraryTree::context_menu(int item, int x, int y) {
-    const Node n = m_items[item].node;
+    const TreeItem n = m_tree.items[item]; // a copy: the menu may rebuild the tree
     if (n.kind != kAlbum && n.kind != kPlaylist && n.kind != kArtist) return;
     auto mi = [](const char* label, int id) { ui::MenuItem m; m.label = label; m.id = id; return m; };
     ui::Menu menu;

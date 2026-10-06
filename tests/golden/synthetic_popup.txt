@@ -1,0 +1,3 @@
+fill_rect 0,0,300,200 #18181c
+font Segoe UI 10
+text "Popup" 8,8,276,12 f24 #f0f0f0

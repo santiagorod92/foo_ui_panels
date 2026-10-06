@@ -68,7 +68,9 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   snapshots) + `gfx::Image` + platform image decoding. Text flags mirror DrawText's.
 - `src/ui/view.h` — `ui::View` (panel logic: paint/input/timers), `ui::ViewHost` (platform child
   window), `ui::MainWindow` (what scripts do to the window), text field, menus, track context
-  menu, colour picker, editor window, embedded foreign UI element.
+  menu, colour picker, editor window, embedded foreign UI element. Key/mod codes: `src/ui/keys.h`
+  (SDK-free). `src/ui/host_input.h` = what every platform host does with a view (start, paint +
+  focus ring, press takes focus, key → view → Tab) — both hosts call it, don't re-implement.
 - `src/core/script_runtime.{h,cpp}` — the `$functions` (SDK-free): ONE table (`script_functions()`)
   drives dispatch, skin diagnostics and the generated `docs/SCRIPT_FUNCTIONS.md` (`make docs`; a
   test fails if stale). Needs from fb2k/platform go through `ScriptEnv`; engine state is
@@ -86,16 +88,22 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - SDK-free, unit-tested (`tests/`, `make test`): `script_util` (script/ini parsing, `$eval`,
   menu-action matching), `lyrics_parse` (LRC, lrclib JSON), `playlist_ops.h`, `meter_math.h`,
   `skin_config`, `ui_logic` (zoom steps/mapping, mini-mode plan, skin-command parsing, album search/sort),
-  `script_runtime` (+ `pvars.h`), `skin_lint`. Panel type → kind is `panel_kind()` (script_util).
+  `list_logic` (native panels' geometry/scroll/keyboard nav: `GroupedRows`, `TreeRows`, `GridLayout`,
+  `CoverFlow` — panels keep only fb2k + drawing calls), `prefs_model` (+ `prefs_text` wording,
+  picker lists), `builtin_skin`, `script_runtime` (+ `pvars.h`), `skin_lint`. Panel type → kind is `panel_kind()` (script_util).
   `make test` compiles them WITHOUT the SDK include path — never `#include "../fb2k.h"` there;
   new pure logic goes in one of these (or a new SDK-free file added to `TEST_SRC`) with a test.
+- Golden render tests (`tests/test_render_golden.cpp`): scripts run via `tests/mini_titleformat.h`
+  (test-only titleformat subset) and every canvas op compared with `tests/golden/*.txt`;
+  `UPDATE_GOLDEN=1 make test` regenerates. `tests/skins/synthetic` must call every script function
+  (a test checks) and lint clean (CI). It's ours — `.gitignore` re-includes it past `skins/`.
 - `src/core/ui_settings.{h,cpp}` — zoom setting + always-on-top (the core's standard config
   object, applied via `config_object_notify`); `main_menu.cpp` — View › Panels UI commands.
 - Zoom: engine/views always work in skin units. Windows hosts convert with `pui::win::zoom()`
   (`platform/win/zoom.h`) and `GdiCanvas` scales via a GDI world transform (GDI+ drawn with an
   identity DC transform + its own scale — Wine's GDI+ inherits the DC transform); macOS scales
   the root view's bounds (`set_root_zoom`).
-- `src/core/component.cpp` — `DECLARE_COMPONENT_VERSION`, built-in fallback skin.
+- `src/core/component.cpp` — `DECLARE_COMPONENT_VERSION`; welcome screen script in `builtin_skin.cpp`.
 - `src/core/button.h`, `fs_util.h` (UTF-8 paths/files), vendored `navidrome_*_api.h` (GUIDs
   are C++17 `inline` variables — `FOOGUIDDECL` is Windows-only `selectany`).
 - `src/panels/` — native panels, one `ui::View` each: `track_display`, `seekbar`, `volume`,

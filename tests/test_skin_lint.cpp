@@ -110,3 +110,22 @@ TEST("editor: script_to_rtf colours tokens and escapes") {
     CHECK(r.find("\\u233?") != std::string::npos); // é
     CHECK(r.back() == '}');
 }
+
+TEST("editor status line: caret position, problems, long scripts") {
+    int line, col;
+    line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 0, line, col);
+    CHECK(line == 1 && col == 1);
+    line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 4, line, col); // "\r\n" is one line break
+    CHECK(line == 2 && col == 1);
+    line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 6, line, col);
+    CHECK(line == 2 && col == 3);
+    line_col_utf16(std::u16string(u"a\rb\nc"), 99, line, col);   // lone \r (RichEdit) and \n
+    CHECK(line == 3 && col == 2);
+
+    CHECK_EQ(problems_summary({}), std::string());
+    CHECK_EQ(problems_summary({ "a", "b" }), std::string("\xe2\x9a\xa0 a; b"));
+    CHECK_EQ(editor_status(3, 7, "", "Ctrl+S: apply", false),
+             std::string("Ln 3, Col 7    No problems found    Ctrl+S: apply"));
+    CHECK_EQ(editor_status(1, 1, "\xe2\x9a\xa0 x", "Ctrl+S: apply", true),
+             std::string("Ln 1, Col 1    \xe2\x9a\xa0 x    Ctrl+S: apply    (long script: no colouring)"));
+}

@@ -14,6 +14,7 @@
 #pragma once
 #include "../ui/view.h"
 #include "../core/navidrome_library_api.h"
+#include "../core/list_logic.h"
 #include "../core/ui_logic.h"
 #include <atomic>
 #include <map>
@@ -61,7 +62,7 @@ private:
     void set_sort(AlbumSort s);
     void ensure_visible(int idx);           // grid: scroll so album idx is in view
     void paint_filter_bar(gfx::Canvas& cv, int W);
-    void layout_metrics(int clientW, int& cols, int& cellW, int& cellH, int& gutter, int& margin) const;
+    GridLayout grid(int clientW) const;
     // The skin's album case art (asset.cd_case) and the cover's window inside it
     // (asset.cd_case_window = x y w h, in the case image's pixels). No case: a bare square cover.
     struct CaseArt { std::string img; int iw = 1, ih = 1, wx = 0, wy = 0, ww = 1, wh = 1; };

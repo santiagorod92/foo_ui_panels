@@ -75,6 +75,33 @@ std::string PrefsModel::skin_dir() const { return m_b.skin_dir(m_now.root, m_now
 
 std::vector<std::string> PrefsModel::main_choices() const { return main_script_candidates(skin_dir()); }
 
+std::string PrefsModel::root_note() const {
+    return "The skins root folder holds one subfolder per skin. Leave it empty to use the single skin in " +
+           m_b.skin_dir("", "") + ". Main script: the skin's top-level .txt to run (automatic when there is only one).";
+}
+
+// Index i of a picker whose entry 0 means "" and entries 1.. are `values`.
+static int index_in(const std::vector<std::string>& values, const std::string& v) {
+    if (v.empty()) return 0;
+    auto it = std::find(values.begin(), values.end(), v);
+    return it == values.end() ? 0 : (int)(it - values.begin()) + 1;
+}
+static std::string value_at(const std::vector<std::string>& values, int i) {
+    return i <= 0 || i > (int)values.size() ? std::string() : values[(size_t)i - 1];
+}
+static std::vector<std::string> with_first(const char* first, const std::vector<std::string>& rest) {
+    std::vector<std::string> v{ first };
+    v.insert(v.end(), rest.begin(), rest.end());
+    return v;
+}
+
+std::vector<std::string> PrefsModel::skin_labels() const { return with_first(prefs_text::kOwnFolder, m_skins); }
+int PrefsModel::skin_index() const { return index_in(m_skins, m_now.active); }
+void PrefsModel::set_skin_index(int i) { set_active(value_at(m_skins, i)); }
+std::vector<std::string> PrefsModel::main_labels() const { return with_first(prefs_text::kAutomatic, main_choices()); }
+int PrefsModel::main_index() const { return index_in(main_choices(), m_now.main); }
+void PrefsModel::set_main_index(int i) { set_main(value_at(main_choices(), i)); }
+
 std::string PrefsModel::main_script(std::string* why) const {
     const std::string dir = skin_dir();
     SkinConfig cfg;
@@ -116,6 +143,12 @@ void PrefsModel::load_script() {
 const std::vector<int>& PrefsModel::zoom_choices() {
     static const std::vector<int> z = { 75, 90, 100, 110, 125, 150, 175, 200, 250, 300 };
     return z;
+}
+
+std::vector<std::string> PrefsModel::zoom_labels(const std::string& automatic) {
+    std::vector<std::string> v{ automatic };
+    for (int z : zoom_choices()) v.push_back(std::to_string(z) + "%");
+    return v;
 }
 
 int PrefsModel::zoom_index() const {

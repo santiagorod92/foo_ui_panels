@@ -5,6 +5,7 @@
 // Self-drawn (no native tree control), so it looks the same on every platform.
 #pragma once
 #include "../ui/view.h"
+#include "../core/list_logic.h"
 #include <atomic>
 #include <memory>
 #include <set>
@@ -35,23 +36,15 @@ private:
         std::vector<metadb_handle_ptr> items;
     };
     struct Artist { std::string name, remote_id; std::vector<Album> albums; };
+    // TreeItem::kind; a/b: playlist index, or artist (+ album) index into m_artists.
     enum Kind { kLoading, kPlaylists, kPlaylist, kArtist, kAlbum };
-    struct Node { Kind kind; int a = -1, b = -1; };
     struct RemoteAlbum { std::string artist, album, id, artist_id; };
-    struct Item {
-        std::string label;
-        Node node;
-        std::vector<int> children;
-        bool expanded = false;
-        int depth = 0;
-    };
 
     void load_local();
     void start_remote_load();
     void merge_remote(std::vector<RemoteAlbum>&& add);
     void finish_data();          // sort + refresh
     void refresh_tree();         // rebuild the items from the data (keeps expansion/selection)
-    void rebuild_rows();         // visible rows from the expanded items
     int  row_at(int y) const;    // visible row index at view-y, or -1
     void select_row(int row);    // select + scroll into view
     void clamp_scroll();
@@ -65,8 +58,7 @@ private:
 
     SkinEngine* m_engine = nullptr;
     std::vector<Artist> m_artists;
-    std::vector<Item> m_items;
-    std::vector<int> m_roots, m_rows;
+    TreeRows m_tree;
     int m_sel = -1;    // selected item index
     int m_scroll = 0;  // px
     std::set<std::string> m_expandedKeys;

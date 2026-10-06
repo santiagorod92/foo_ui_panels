@@ -54,6 +54,13 @@ std::wstring get_text(HWND ctl) {
     return w;
 }
 std::string get_utf8(HWND ctl) { return to_utf8(get_text(ctl)); }
+std::wstring w(const char* s) { return to_wide(s); }
+// A combo box's entries and selection, from the model's picker lists.
+void fill_combo(HWND combo, const std::vector<std::string>& labels, int sel) {
+    SendMessageW(combo, CB_RESETCONTENT, 0, 0);
+    for (auto& l : labels) SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)to_wide(l).c_str());
+    SendMessageW(combo, CB_SETCURSEL, sel, 0);
+}
 void set_text(HWND ctl, const std::string& s) { SetWindowTextW(ctl, to_wide(s).c_str()); }
 COLORREF colorref_of(gfx::Color c) { return RGB(c.r, c.g, c.b); }
 
@@ -137,34 +144,32 @@ private:
                                  CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
 
         m_tab = child(wnd, WC_TABCONTROLW, L"", WS_TABSTOP, kIdTab);
-        for (const wchar_t* t : { L"General", L"Script", L"Variables", L"Overrides" }) {
-            TCITEMW ti = {}; ti.mask = TCIF_TEXT; ti.pszText = (LPWSTR)t;
+        for (const char* t : prefs_text::kTabs) {
+            const std::wstring name = w(t);
+            TCITEMW ti = {}; ti.mask = TCIF_TEXT; ti.pszText = (LPWSTR)name.c_str();
             TabCtrl_InsertItem(m_tab, TabCtrl_GetItemCount(m_tab), &ti);
         }
         for (HWND* p : { &m_pageGeneral, &m_pageScript, &m_pageVariables, &m_pageOverrides })
             *p = CreateWindowExW(0, kPageClass, L"", WS_CHILD, 0, 0, 0, 0, wnd, nullptr, core_api::get_my_instance(), this);
 
         HWND p = m_pageGeneral;
-        m_rootLabel = child(p, L"STATIC", L"Skins root folder (one subfolder per skin — leave empty to use the single skin next to the component):", 0);
+        m_rootLabel = child(p, L"STATIC", w(prefs_text::kRoot).c_str(), 0);
         m_rootEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdRootEdit, WS_EX_CLIENTEDGE);
         m_rootBrowseBtn = child(p, L"BUTTON", L"Browse...", WS_TABSTOP, kIdRootBrowse);
-        m_skinLabel = child(p, L"STATIC", L"Active skin:", 0);
+        m_skinLabel = child(p, L"STATIC", w(prefs_text::kSkin).c_str(), 0);
         m_skinCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdSkinCombo, WS_EX_CLIENTEDGE);
-        m_mainLabel = child(p, L"STATIC", L"Main script:", 0);
+        m_mainLabel = child(p, L"STATIC", w(prefs_text::kMain).c_str(), 0);
         m_mainCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdMainCombo, WS_EX_CLIENTEDGE);
         m_skinWarning = child(p, L"STATIC", L"", 0);
-        m_zoomLabel = child(p, L"STATIC", L"Zoom:", 0);
+        m_zoomLabel = child(p, L"STATIC", w(prefs_text::kZoom).c_str(), 0);
         m_zoomCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdZoomCombo, WS_EX_CLIENTEDGE);
-        SendMessageW(m_zoomCombo, CB_ADDSTRING, 0, (LPARAM)L"Automatic (display scaling)");
-        for (int z : PrefsModel::zoom_choices()) {
-            wchar_t buf[16]; swprintf(buf, 16, L"%d%%", z);
-            SendMessageW(m_zoomCombo, CB_ADDSTRING, 0, (LPARAM)buf);
-        }
-        m_onTopCheck = child(p, L"BUTTON", L"Keep the player window on top of other windows", WS_TABSTOP | BS_AUTOCHECKBOX, kIdOnTop);
+        fill_combo(m_zoomCombo, PrefsModel::zoom_labels(prefs_text::kZoomAutoScaled), 0);
+        m_onTopCheck = child(p, L"BUTTON", w(prefs_text::kOnTop).c_str(), WS_TABSTOP | BS_AUTOCHECKBOX, kIdOnTop);
+        m_rootNote = child(p, L"STATIC", L"", 0);
         m_preview = child(p, L"STATIC", L"", SS_OWNERDRAW, kIdPreview);
 
         p = m_pageScript;
-        m_scriptLabel = child(p, L"STATIC", L"Active skin's main script:", 0);
+        m_scriptLabel = child(p, L"STATIC", w(prefs_text::kScript).c_str(), 0);
         m_scriptEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
                              ES_WANTRETURN | WS_VSCROLL | WS_HSCROLL, kIdScriptEdit, WS_EX_CLIENTEDGE);
         // Plain EDIT controls silently cap input at 30,000 chars without this — real scripts run ~36KB.
@@ -172,26 +177,27 @@ private:
         SendMessageW(m_scriptEdit, WM_SETFONT, (WPARAM)m_monoFont, TRUE);
 
         p = m_pageVariables;
-        m_varsNote = child(p, L"STATIC", L"Persistent variables ($getpvar/$setpvar) the skin uses. Double-click a value to edit.", 0);
+        m_varsNote = child(p, L"STATIC", w(prefs_text::kVarsNote).c_str(), 0);
         m_varsList = child(p, WC_LISTVIEWW, L"", WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
                            kIdVarsList, WS_EX_CLIENTEDGE);
         ListView_SetExtendedListViewStyle(m_varsList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
         LVCOLUMNW col = {}; col.mask = LVCF_TEXT | LVCF_WIDTH;
-        col.cx = 220; col.pszText = (LPWSTR)L"Variable"; ListView_InsertColumn(m_varsList, 0, &col);
-        col.cx = 300; col.pszText = (LPWSTR)L"Value";    ListView_InsertColumn(m_varsList, 1, &col);
-        m_varsRescanBtn = child(p, L"BUTTON", L"Find the skin's variables", WS_TABSTOP, kIdVarsRescan);
+        const std::wstring colVar = w(prefs_text::kVariable), colVal = w(prefs_text::kValue);
+        col.cx = 220; col.pszText = (LPWSTR)colVar.c_str(); ListView_InsertColumn(m_varsList, 0, &col);
+        col.cx = 300; col.pszText = (LPWSTR)colVal.c_str(); ListView_InsertColumn(m_varsList, 1, &col);
+        m_varsRescanBtn = child(p, L"BUTTON", w(prefs_text::kVarsFind).c_str(), WS_TABSTOP, kIdVarsRescan);
 
         p = m_pageOverrides;
-        m_ovNote = child(p, L"STATIC", L"Fallbacks used when the active skin doesn't set its own font / accent colour. Leave blank to defer to the skin.", 0);
-        m_fontFaceLabel = child(p, L"STATIC", L"Font face:", 0);
+        m_ovNote = child(p, L"STATIC", w(prefs_text::kOverridesNote).c_str(), 0);
+        m_fontFaceLabel = child(p, L"STATIC", w(prefs_text::kFontFace).c_str(), 0);
         m_fontFaceEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdFontFaceEdit, WS_EX_CLIENTEDGE);
-        m_fontSizeLabel = child(p, L"STATIC", L"Size:", 0);
+        m_fontSizeLabel = child(p, L"STATIC", w(prefs_text::kFontSize).c_str(), 0);
         m_fontSizeEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER, kIdFontSizeEdit, WS_EX_CLIENTEDGE);
         m_fontPickBtn = child(p, L"BUTTON", L"Pick font...", WS_TABSTOP, kIdFontPickBtn);
-        m_accentLabel = child(p, L"STATIC", L"Accent colour:", 0);
+        m_accentLabel = child(p, L"STATIC", w(prefs_text::kAccent).c_str(), 0);
         m_accentSwatch = child(p, L"BUTTON", L"", BS_OWNERDRAW, kIdAccentSwatch, WS_EX_CLIENTEDGE);
         m_accentPickBtn = child(p, L"BUTTON", L"Pick colour...", WS_TABSTOP, kIdAccentPickBtn);
-        m_accentClearBtn = child(p, L"BUTTON", L"Clear overrides", WS_TABSTOP, kIdAccentClearBtn);
+        m_accentClearBtn = child(p, L"BUTTON", w(prefs_text::kClearOverrides).c_str(), WS_TABSTOP, kIdAccentClearBtn);
 
         ShowWindow(m_pageGeneral, SW_SHOW);
         refresh_all();
@@ -215,25 +221,9 @@ private:
     void refresh_skin_choice() {
         const bool was = m_updating;
         m_updating = true;
-        const auto& skins = m_model.skins();
-        SendMessageW(m_skinCombo, CB_RESETCONTENT, 0, 0);
-        SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)L"(the component's own folder)");
-        int sel = 0;
-        for (size_t i = 0; i < skins.size(); ++i) {
-            SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(skins[i]).c_str());
-            if (skins[i] == m_model.pending().active) sel = (int)i + 1;
-        }
-        SendMessageW(m_skinCombo, CB_SETCURSEL, sel, 0);
-
-        m_mainChoices = m_model.main_choices();
-        SendMessageW(m_mainCombo, CB_RESETCONTENT, 0, 0);
-        SendMessageW(m_mainCombo, CB_ADDSTRING, 0, (LPARAM)L"(automatic)");
-        sel = 0;
-        for (size_t i = 0; i < m_mainChoices.size(); ++i) {
-            SendMessageW(m_mainCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(m_mainChoices[i]).c_str());
-            if (m_mainChoices[i] == m_model.pending().main) sel = (int)i + 1;
-        }
-        SendMessageW(m_mainCombo, CB_SETCURSEL, sel, 0);
+        fill_combo(m_skinCombo, m_model.skin_labels(), m_model.skin_index());
+        fill_combo(m_mainCombo, m_model.main_labels(), m_model.main_index());
+        set_text(m_rootNote, m_model.root_note());
 
         const std::string warn = m_model.skin_warning();
         SetWindowTextW(m_skinWarning, warn.empty() ? L"" : (L"⚠ " + to_wide(warn)).c_str());
@@ -378,7 +368,7 @@ private:
             } else {
                 gfx::FontSpec f; f.face = "Segoe UI"; f.size = 9;
                 cv.set_font(f);
-                cv.draw_text("No preview yet: a skin gets one the first time it is shown.",
+                cv.draw_text(prefs_text::kNoPreview,
                              gfx::Rect{ 8, 0, w - 16, h }, gfx::kAlignCenter | gfx::kWordWrap,
                              gfx::Color(170, 170, 170));
             }
@@ -412,7 +402,8 @@ private:
         MoveWindow(m_skinWarning, pad, y, rc.right - pad * 2, labelH, TRUE); y += labelH + 8;
         MoveWindow(m_zoomLabel, pad, y, 100, labelH, TRUE);
         MoveWindow(m_zoomCombo, pad + 104, y - 2, comboW, editH, TRUE); y += editH + 8;
-        MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE); y += labelH + 12;
+        MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE); y += labelH + 8;
+        MoveWindow(m_rootNote, pad, y, rc.right - pad * 2, labelH * 2, TRUE); y += labelH * 2 + 8;
         // The skin's preview fills the rest of the page (4:3 at most).
         const int pw = std::max(0, (int)rc.right - pad * 2), ph = std::max(0, std::min(pw * 3 / 4, (int)rc.bottom - y - pad));
         MoveWindow(m_preview, pad, y, pw, ph, TRUE);
@@ -454,16 +445,13 @@ private:
         case kIdRootEdit: if (code == EN_KILLFOCUS) root_edited(); break;
         case kIdSkinCombo:
             if (code == CBN_SELCHANGE) {
-                const int i = (int)SendMessageW(m_skinCombo, CB_GETCURSEL, 0, 0);
-                const auto& skins = m_model.skins();
-                m_model.set_active(i <= 0 || i > (int)skins.size() ? std::string() : skins[(size_t)i - 1]);
+                m_model.set_skin_index((int)SendMessageW(m_skinCombo, CB_GETCURSEL, 0, 0));
                 refresh_skin_choice(); changed();
             }
             break;
         case kIdMainCombo:
             if (code == CBN_SELCHANGE) {
-                const int i = (int)SendMessageW(m_mainCombo, CB_GETCURSEL, 0, 0);
-                m_model.set_main(i <= 0 || i > (int)m_mainChoices.size() ? std::string() : m_mainChoices[(size_t)i - 1]);
+                m_model.set_main_index((int)SendMessageW(m_mainCombo, CB_GETCURSEL, 0, 0));
                 refresh_skin_choice(); changed();
             }
             break;
@@ -542,7 +530,6 @@ private:
 
     PrefsModel m_model{ prefs_backend() };
     bool m_updating = false;
-    std::vector<std::string> m_mainChoices;
     std::string m_previewPath;
 
     HWND m_wnd = nullptr, m_tab = nullptr;
@@ -551,7 +538,7 @@ private:
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,
          m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr,
          m_mainLabel = nullptr, m_mainCombo = nullptr,
-         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr, m_preview = nullptr;
+         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr, m_rootNote = nullptr, m_preview = nullptr;
     // Script
     HWND m_scriptLabel = nullptr, m_scriptEdit = nullptr;
     // Variables

@@ -10,8 +10,6 @@
 
 namespace pui {
 
-static const int HEADER_H = 46;
-static const int ROW_H = 19;
 
 // Compiled titleformat scripts (lazy, shared).
 struct PLScripts {
@@ -60,21 +58,19 @@ void PlaylistView::on_attached() {
     if (!m_events) m_events = std::make_unique<Events>(this);
 }
 
-const std::vector<PlaylistView::Group>& PlaylistView::groups() {
-    if (!m_dirty) return m_groups;
+const GroupedRows& PlaylistView::layout() {
+    if (!m_dirty) return m_layout;
     g_pl.ensure();
-    m_groups.clear();
     auto pm = playlist_manager::get();
-    t_size n = pm->activeplaylist_get_item_count();
-    pfc::string8 last; bool first = true;
+    const t_size n = pm->activeplaylist_get_item_count();
+    std::vector<std::string> keys(n);
     for (t_size i = 0; i < n; ++i) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, i);
-        pfc::string8 k = fmt(h, g_pl.key);
-        if (first || strcmp(k, last) != 0) { m_groups.push_back(Group{}); last = k; first = false; }
-        m_groups.back().items.push_back(i);
+        keys[i] = fmt(h, g_pl.key).c_str();
     }
+    m_layout.set_groups(GroupedRows::runs(keys));
     m_dirty = false;
-    return m_groups;
+    return m_layout;
 }
 
 static const gfx::FontSpec kHdrFont{ "Segoe UI", 15, false, true };
@@ -116,7 +112,8 @@ void PlaylistView::paint(gfx::Canvas& cv) {
 
     const unsigned kLine = gfx::kSingleLine;
 
-    const auto& groups = this->groups();
+    const GroupedRows& L = layout();
+    const int HEADER_H = L.header_h(), ROW_H = L.row_h();
     auto pm = playlist_manager::get();
     metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
 
@@ -124,12 +121,19 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         m_restoreScroll = false;
         m_scroll = m_savedScroll = atoi(m_engine->view_state(scroll_state_key()).c_str());
     }
-    int y = -m_scroll;
-    for (const auto& g : groups) {
-        if (g.items.empty()) continue;
+    clamp_scroll(); // the restored position may be past the end
+    if (m_engine && m_scroll != m_savedScroll) {
+        m_savedScroll = m_scroll;
+        m_engine->set_view_state(scroll_state_key(), std::to_string(m_scroll));
+    }
+    // From the first group on screen down.
+    for (size_t g = L.group_count() ? L.group_at(m_scroll) : 0; g < L.group_count(); ++g) {
+        int y = L.group_top(g) - m_scroll;
+        if (y >= H) break;
+        const t_size first = L.group_start(g), count = L.group_size(g);
         // ---- album header ----
-        if (y + HEADER_H > 0 && y < H) {
-            metadb_handle_ptr h0; pm->activeplaylist_get_item_handle(h0, g.items[0]);
+        if (y + HEADER_H > 0) {
+            metadb_handle_ptr h0; pm->activeplaylist_get_item_handle(h0, first);
             // cover thumb: folder.* on disk, else the album-art pipeline (navidrome:// etc.)
             {
                 pfc::string8 cov = fmt(h0, g_pl.cover);
@@ -140,7 +144,7 @@ void PlaylistView::paint(gfx::Canvas& cv) {
             cv.draw_text(art.get_ptr(), gfx::Rect::ltrb(50, y + 2, W - 70, y + 18), kLine | gfx::kEndEllipsis,
                          col("text", gfx::Color(235, 240, 255)));
             // track count, right
-            char cnt[32]; snprintf(cnt, sizeof cnt, "%u TRACKS", (unsigned)g.items.size());
+            char cnt[32]; snprintf(cnt, sizeof cnt, "%u TRACKS", (unsigned)count);
             cv.set_font(kSubFont);
             cv.draw_text(cnt, gfx::Rect::ltrb(W - 120, y + 3, W - 6, y + 18), gfx::kAlignRight | kLine,
                          col("text_dim", gfx::Color(150, 170, 210)));
@@ -159,8 +163,8 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         }
         y += HEADER_H;
         // ---- track rows ----
-        for (t_size idx : g.items) {
-            if (y + ROW_H > 0 && y < H) {
+        for (t_size idx = first; idx < first + count && y < H; ++idx) {
+            if (y + ROW_H > 0) {
                 metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, idx);
                 bool playing = np.is_valid() && h == np;
                 bool selected = pm->activeplaylist_is_item_selected(idx);
@@ -185,25 +189,18 @@ void PlaylistView::paint(gfx::Canvas& cv) {
                             : atoi(fmt(h, g_pl.rating).get_ptr());
                 if (r < 0) r = 0; if (r > 5) r = 5;
                 const std::string stars = m_engine ? m_engine->asset("rating_stars", r) : std::string();
+                const StarStrip ss = star_strip(W);
                 if (!stars.empty())
-                    draw_image(cv, stars, W - 46 - 60, y + (ROW_H - 11) / 2, 55, 11);
+                    draw_image(cv, stars, ss.x, y + (ROW_H - 11) / 2, ss.w, 11);
             }
             y += ROW_H;
         }
-    }
-    m_content_h = y + m_scroll;
-    const int before = m_scroll;
-    clamp_scroll();
-    if (m_scroll != before) invalidate(); // the restored position was past the end
-    if (m_engine && m_scroll != m_savedScroll) {
-        m_savedScroll = m_scroll;
-        m_engine->set_view_state(scroll_state_key(), std::to_string(m_scroll));
     }
 
     // Drag-to-reorder insertion point: a bar between rows, in the highlight colour.
     if (m_dragging && m_drop_idx >= 0) {
         const t_size n = pm->activeplaylist_get_item_count();
-        int ly = (t_size)m_drop_idx < n ? item_top(m_drop_idx) : (n ? item_top((int)n - 1) + ROW_H : 0);
+        int ly = (t_size)m_drop_idx < n ? L.item_top(m_drop_idx) : (n ? L.item_top((int)n - 1) + ROW_H : 0);
         ly -= m_scroll;
         cv.fill_rect(gfx::Rect{ 2, ly - 1, W - 4, 2 }, gfx::Color(std::min(255, hl.r + 80), std::min(255, hl.g + 80), std::min(255, hl.b + 80)));
     }
@@ -211,75 +208,24 @@ void PlaylistView::paint(gfx::Canvas& cv) {
 
 enum { kTimerFind = 2, kTimerAutoScroll = 3, kFindResetMs = 1000, kDragThreshold = 4 };
 
-int PlaylistView::item_at(int cy) {
-    const auto& groups = this->groups();
-    int y = -m_scroll;
-    for (const auto& g : groups) {
-        if (g.items.empty()) continue;
-        y += HEADER_H;
-        for (t_size idx : g.items) {
-            if (cy >= y && cy < y + ROW_H) return (int)idx;
-            y += ROW_H;
-        }
-    }
-    return -1;
-}
+int PlaylistView::item_at(int y) { return layout().item_at(y + m_scroll); }
 
-int PlaylistView::item_top(int want) {
-    int y = 0;
-    for (const auto& g : groups()) {
-        if (g.items.empty()) continue;
-        y += HEADER_H;
-        if (want >= (int)g.items.front() && want <= (int)g.items.back())
-            return y + (want - (int)g.items.front()) * ROW_H;
-        y += (int)g.items.size() * ROW_H;
-    }
-    return -1;
-}
-
-// Before the row whose upper half is under y (a group header counts as its first row's upper
-// half), after the last row below everything.
-int PlaylistView::drop_index_at(int cy) {
-    int y = -m_scroll;
-    t_size last = 0; bool any = false;
-    for (const auto& g : groups()) {
-        if (g.items.empty()) continue;
-        if (cy < y + HEADER_H) return (int)g.items.front();
-        y += HEADER_H;
-        for (t_size idx : g.items) {
-            if (cy < y + ROW_H / 2) return (int)idx;
-            y += ROW_H;
-            last = idx; any = true;
-        }
-    }
-    return any ? (int)last + 1 : 0;
-}
+int PlaylistView::drop_index_at(int y) { return layout().drop_index_at(y + m_scroll); }
 
 void PlaylistView::clamp_scroll() {
-    int maxs = m_content_h - (host() ? host()->bounds().h : 0); if (maxs < 0) maxs = 0;
-    if (m_scroll > maxs) m_scroll = maxs;
-    if (m_scroll < 0) m_scroll = 0;
+    m_scroll = pui::clamp_scroll(m_scroll, layout().content_height(), host() ? host()->bounds().h : 0);
 }
 
 void PlaylistView::ensure_visible(int idx) {
     if (!host()) return;
-    const int top = item_top(idx);
-    if (top < 0) return;
-    const int H = host()->bounds().h;
     // The group's first row brings its header along, so the album stays identifiable.
-    bool first = false;
-    for (const auto& g : groups()) if (!g.items.empty() && (int)g.items.front() == idx) { first = true; break; }
-    const int want = first ? top - HEADER_H : top;
-    if (want < m_scroll) m_scroll = want;
-    else if (top + ROW_H > m_scroll + H) m_scroll = top + ROW_H - H;
+    m_scroll = layout().reveal(m_scroll, idx, host()->bounds().h);
     invalidate();
 }
 
-bool PlaylistView::on_stars(int x) const {
-    if (!has_stars() || !host()) return false;
-    const int W = host()->bounds().w;
-    const int starX = W - 106, starW = 55; // must match the paint() star rect
-    return x >= starX && x < starX + starW;
+int PlaylistView::star_under(int x) const {
+    if (!has_stars() || !host()) return 0;
+    return star_at(star_strip(host()->bounds().w), x);
 }
 
 void PlaylistView::on_click(int x, int y, bool dbl, bool shift, bool ctrl) {
@@ -287,10 +233,9 @@ void PlaylistView::on_click(int x, int y, bool dbl, bool shift, bool ctrl) {
     if (idx < 0) return;
     auto pm = playlist_manager::get();
     // Click on the rating stars → set this track's rating (1..5) like the skin.
-    if (!dbl && !shift && !ctrl && on_stars(x)) {
-        const int starX = host()->bounds().w - 106, starW = 55;
+    const int star = star_under(x);
+    if (!dbl && !shift && !ctrl && star) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, idx);
-        int star = (x - starX) * 5 / starW + 1; if (star < 1) star = 1; if (star > 5) star = 5;
         if (m_engine) m_engine->set_rating(h, star);
         invalidate();
         return;
@@ -330,7 +275,7 @@ void PlaylistView::on_rclick(int x, int y) {
 }
 
 void PlaylistView::on_wheel(int, int, float notches) {
-    m_scroll -= (int)(notches * ROW_H * 3);
+    m_scroll -= (int)(notches * m_layout.row_h() * 3);
     clamp_scroll();
     invalidate();
 }
@@ -352,12 +297,9 @@ void PlaylistView::on_mouse_move(int x, int y, unsigned, bool left_down) {
             return;
         }
     }
-    const int W = host()->bounds().w;
-    const int starX = W - 106, starW = 55;
-    int hr = -1, hs = 0, idx = item_at(y);
-    if (idx >= 0 && on_stars(x)) {
-        hr = idx; hs = (x - starX) * 5 / starW + 1; if (hs < 1) hs = 1; if (hs > 5) hs = 5;
-    }
+    int hr = -1, hs = 0;
+    const int idx = item_at(y), star = star_under(x);
+    if (idx >= 0 && star) { hr = idx; hs = star; }
     if (hr != m_hover_row || hs != m_hover_stars) {
         m_hover_row = hr; m_hover_stars = hs;
         invalidate();
@@ -376,9 +318,10 @@ void PlaylistView::on_mouse_down(const ui::MouseEvent& e) {
         auto pm = playlist_manager::get();
         // A plain press on an already selected row keeps the selection (it may be the start of
         // dragging all of it); the click's single-select happens on release instead.
-        m_press_deferred = idx >= 0 && !shift && !ctrl && !on_stars(e.x) && pm->activeplaylist_is_item_selected(idx);
+        const bool onStars = star_under(e.x) != 0;
+        m_press_deferred = idx >= 0 && !shift && !ctrl && !onStars && pm->activeplaylist_is_item_selected(idx);
         if (!m_press_deferred) on_click(e.x, e.y, false, shift, ctrl);
-        if (idx >= 0 && !on_stars(e.x) && pm->activeplaylist_is_item_selected(idx)) {
+        if (idx >= 0 && !onStars && pm->activeplaylist_is_item_selected(idx)) {
             m_press_idx = idx; m_press_y = e.y; m_dragging = false; m_drop_idx = -1;
             host()->capture_mouse(true);
         }
@@ -416,7 +359,7 @@ void PlaylistView::finish_drag(int y) {
 void PlaylistView::on_timer(int id) {
     if (id == kTimerFind) { host()->kill_timer(kTimerFind); m_find.clear(); return; }
     if (id == kTimerAutoScroll && m_dragging) {
-        const int H = host()->bounds().h, old = m_scroll;
+        const int H = host()->bounds().h, old = m_scroll, ROW_H = m_layout.row_h();
         if (m_press_y < ROW_H) m_scroll -= ROW_H;
         else if (m_press_y > H - ROW_H) m_scroll += ROW_H;
         clamp_scroll();
@@ -450,30 +393,21 @@ void PlaylistView::move_focus(int idx, unsigned mods) {
 // Letters/digits typed with no modifier jump to the next track whose title — or album artist,
 // the grouped view's headline — starts with what was typed in the last second.
 bool PlaylistView::find_as_you_type(int key) {
-    if (!((key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key == ' ' && !m_find.empty())))
-        return false;
+    if (!typeahead_key(key, !m_find.empty())) return false;
     m_find += (char)key;
     host()->set_timer(kTimerFind, kFindResetMs);
     auto pm = playlist_manager::get();
     const t_size n = pm->activeplaylist_get_item_count();
     if (!n) return true;
     g_pl.ensure();
-    auto starts = [this](const pfc::string8& s) { // ASCII case-insensitive prefix (keys are A-Z/0-9/space)
-        if (s.length() < m_find.size()) return false;
-        for (size_t i = 0; i < m_find.size(); ++i)
-            if (toupper((unsigned char)s[i]) != (unsigned char)m_find[i]) return false;
-        return true;
-    };
     // A fresh search starts after the focused track (so typing the same letter again moves on);
     // a longer prefix re-tests the focused one first.
-    t_size focus = pm->activeplaylist_get_focus_item();
-    if (focus >= n) focus = 0;
-    const t_size first = m_find.size() == 1 ? focus + 1 : focus;
-    for (t_size k = 0; k < n; ++k) {
-        const t_size i = (first + k) % n;
+    const int hit = typeahead_find(n, pm->activeplaylist_get_focus_item(), m_find.size(), [&](size_t i) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, i);
-        if (starts(fmt(h, g_pl.title)) || starts(fmt(h, g_pl.artist))) { move_focus((int)i, 0); break; }
-    }
+        return starts_with_upper(fmt(h, g_pl.title).c_str(), m_find) ||
+               starts_with_upper(fmt(h, g_pl.artist).c_str(), m_find);
+    });
+    if (hit >= 0) move_focus(hit, 0);
     return true;
 }
 
@@ -501,15 +435,10 @@ bool PlaylistView::on_key_down(int key, unsigned mods) {
     const int n = (int)pm->activeplaylist_get_item_count();
     int focus = (int)pm->activeplaylist_get_focus_item();
     if (focus < 0 || focus >= n) focus = -1;
-    const int page = std::max(1, (host() ? host()->bounds().h : 0) / ROW_H - 1);
-    switch (key) {
-    case ui::kKeyUp:       move_focus(focus < 0 ? 0 : focus - 1, mods); return true;
-    case ui::kKeyDown:     move_focus(focus + 1, mods); return true;
-    case ui::kKeyPageUp:   move_focus(focus < 0 ? 0 : focus - page, mods); return true;
-    case ui::kKeyPageDown: move_focus(focus + page, mods); return true;
-    case ui::kKeyHome:     move_focus(0, mods); return true;
-    case ui::kKeyEnd:      move_focus(n - 1, mods); return true;
-    case ui::kKeyEnter:
+    const int page = std::max(1, (host() ? host()->bounds().h : 0) / m_layout.row_h() - 1);
+    const int to = list_nav(key, focus, n, page);
+    if (to >= 0) { move_focus(to, mods); return true; }
+    if (key == ui::kKeyEnter) {
         if (focus >= 0) pm->activeplaylist_execute_default_action(focus);
         return true;
     }
