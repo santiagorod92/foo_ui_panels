@@ -17,7 +17,8 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   verified in the VM) owning its window, plus a `ui_element_mac` layout element ("Panels UI").
 - macOS runtime testing: the local VM in sibling repo `../macos-devbox` (`mvm`, dockur/macos,
   Intel guest — bundle must keep its x86_64 slice). `make mac-vm-test` = mac-build → deploy →
-  relaunch → screenshot; `make mac-vm-skin`, `make mac-vm-navidrome[-config]` (foo_navidrome + its Wine settings), `make mac-vm-<mvm cmd>`. Never `docker prune`/`rm`.
+  relaunch → screenshot; `make mac-vm` boots it and opens the noVNC tab only once macOS is up
+  (input during OpenCore's picker cancels its auto-boot timeout; `VNC=0` = no tab); `make mac-vm-skin`, `make mac-vm-navidrome[-config]` (foo_navidrome + its Wine settings), `make mac-vm-<mvm cmd>`. Never `docker prune`/`rm`.
 
 ## Key decisions
 - Target service (Windows): full UI replacement via `user_interface` (`foobar2000/SDK/ui.h`, v1–v4),

@@ -1,4 +1,4 @@
-.PHONY: help build deploy launch run kill clean check-portable test skin-lint docs mac-build mac-vm mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config
+.PHONY: help build deploy launch run kill clean check-portable test skin-lint docs mac-build mac-vm mac-vm-open mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config
 
 help:
 	@echo "foo_ui_panels — make targets"
@@ -16,7 +16,8 @@ help:
 	@echo "  mac-build       build the macOS bundle (build-mac/foo_ui_panels.component, universal)"
 	@echo ""
 	@echo "  macOS VM (sibling ../macos-devbox, mvm — one-time setup in its README):"
-	@echo "  mac-vm          boot the VM, then mac-vm-test"
+	@echo "  mac-vm          boot the VM, open its screen (VNC) in the browser, then mac-vm-test (VNC=0: no browser)"
+	@echo "  mac-vm-open     open the VM screen (noVNC) in the browser once macOS has booted"
 	@echo "  mac-vm-test     mac-build, deploy the bundle into the VM, relaunch foobar2000, screenshot"
 	@echo "  mac-vm-skin     copy skins/\$$SKIN (default: the only/first one), or SKIN_DIR=<folder>, into the guest's skin folder"
 	@echo "  mac-vm-navidrome         install foo_navidrome in the VM: latest release, NAVIDROME=v1.18.0 (tag)"
@@ -88,9 +89,31 @@ SKIN ?= $(notdir $(firstword $(wildcard skins/*)))
 SKIN_DIR ?= skins/$(SKIN)
 MAC_SKIN_DIR = Library/foobar2000-v2/foo_ui_panels
 
+# mac-vm opens the guest's screen (the container's noVNC page) in the browser once the guest has
+# booted, then waits for its session and runs mac-vm-test. VNC=0 skips the browser tab.
+VNC ?= 1
+MVM_ENV = $(dir $(MVM))mvm.env
+
 mac-vm:
+	$(MVM) up
+	@if [ "$(VNC)" != 0 ]; then $(MAKE) --no-print-directory mac-vm-open; fi
 	$(MVM) up --wait
 	$(MAKE) mac-vm-test
+
+# The guest's screen in the browser. Not before the guest is past OpenCore's boot picker: the
+# picker boots the default disk after a short timeout, but any input cancels that timeout and a
+# freshly connected noVNC tab sends pointer events — the VM would then sit at the picker. So wait
+# for the guest's sshd (macOS is up), then open. Ports: mvm.env / environment, else the defaults.
+mac-vm-open:
+	@eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
+	  web=http://127.0.0.1:$${MVM_WEB_PORT:-8006}; ssh=$${MVM_SSH_PORT:-50922}; \
+	  echo "waiting for macOS to boot (sshd on :$$ssh) before opening $$web ..."; \
+	  for i in $$(seq 1 180); do \
+	    timeout 6 bash -c "exec 3<>/dev/tcp/127.0.0.1/$$ssh && head -c4 <&3" 2>/dev/null | grep -q '^SSH-' && break; \
+	    sleep 5; \
+	  done; \
+	  curl -fs -o /dev/null "$$web" || { echo "VM screen not answering at $$web (make mac-vm-logs)"; exit 1; }; \
+	  $(MVM) web
 
 mac-vm-test: mac-build
 	$(MVM) deploy build-mac/foo_ui_panels.component --launch
