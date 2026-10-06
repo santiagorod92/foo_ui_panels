@@ -1,6 +1,7 @@
 #include "lyrics_parse.h"
 #include <algorithm>
 #include <cctype>
+#include <cstdio>
 #include <cstdlib>
 
 namespace pui {
@@ -32,11 +33,18 @@ bool parse_lrc_time(const std::string& tag, double& out) {
     return true;
 }
 
+std::string format_lrc_time(double t) {
+    long cs = t > 0 ? (long)(t * 100 + 0.5) : 0;
+    char buf[32];
+    snprintf(buf, sizeof buf, "%02ld:%02ld.%02ld", cs / 6000, cs / 100 % 60, cs % 100);
+    return buf;
+}
+
 // LRC (or plain) text -> lines. Lines with no [mm:ss.xx] tag are kept only for plain lyrics.
-bool parse_lyrics(std::string text, std::vector<std::pair<double, std::string>>& lines, bool& synced) {
+bool parse_lyrics(std::string text, std::vector<LyricLine>& lines, bool& synced) {
     if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
     lines.clear(); synced = false;
-    std::vector<std::pair<double, std::string>> timed, plain;
+    std::vector<LyricLine> timed, plain;
     double offset = 0;
     size_t pos = 0;
     while (pos <= text.size()) {
@@ -62,25 +70,202 @@ bool parse_lyrics(std::string text, std::vector<std::pair<double, std::string>>&
         }
         if (meta && ts.empty()) continue;
         std::string body = line.substr(p);
-        // strip inline word timestamps <mm:ss.xx>
+        // Inline word timestamps <mm:ss.xx> come out of the text, remembered by position.
         std::string clean;
+        std::vector<LyricWord> stamps;
         for (size_t i = 0; i < body.size(); ++i) {
-            if (body[i] == '<') { size_t e = body.find('>', i); double t; if (e != std::string::npos && parse_lrc_time(body.substr(i + 1, e - i - 1), t)) { i = e; continue; } }
+            if (body[i] == '<') {
+                size_t e = body.find('>', i); double t;
+                if (e != std::string::npos && parse_lrc_time(body.substr(i + 1, e - i - 1), t)) {
+                    stamps.push_back({ clean.size(), t }); i = e; continue;
+                }
+            }
             clean += body[i];
         }
-        body = trim(clean);
-        if (!ts.empty()) for (double t : ts) timed.push_back({ t - offset, body });
-        else plain.push_back({ -1, body });
+        LyricLine out;
+        out.text = trim(clean);
+        size_t lead = 0;
+        while (lead < clean.size() && (unsigned char)clean[lead] <= ' ') ++lead;
+        for (auto w : stamps) {
+            // Positions into the trimmed text; a stamp before spaces belongs to the next word.
+            size_t pos = w.pos > lead ? w.pos - lead : 0;
+            while (pos < out.text.size() && out.text[pos] == ' ') ++pos;
+            if (pos >= out.text.size()) { out.end = w.t; continue; }
+            if (!out.words.empty() && out.words.back().pos == pos) out.words.back().t = w.t;
+            else out.words.push_back({ pos, w.t });
+        }
+        if (!ts.empty()) {
+            // Word stamps are absolute for the first [tag]; repeats of the line (one per extra
+            // tag) shift them along with it.
+            for (double t : ts) {
+                LyricLine c = out;
+                const double shift = t - ts[0] - offset;
+                c.t = t - offset;
+                for (auto& w : c.words) w.t += shift;
+                if (c.end >= 0) c.end += shift;
+                timed.push_back(std::move(c));
+            }
+        } else {
+            out.words.clear(); out.end = -1;
+            plain.push_back(std::move(out));
+        }
     }
     if (!timed.empty()) {
-        std::stable_sort(timed.begin(), timed.end(), [](auto& a, auto& b) { return a.first < b.first; });
-        lines = timed; synced = true;
+        std::stable_sort(timed.begin(), timed.end(), [](auto& a, auto& b) { return a.t < b.t; });
+        lines = std::move(timed); synced = true;
     } else {
-        while (!plain.empty() && plain.back().second.empty()) plain.pop_back();
-        while (!plain.empty() && plain.front().second.empty()) plain.erase(plain.begin());
-        lines = plain;
+        while (!plain.empty() && plain.back().text.empty()) plain.pop_back();
+        while (!plain.empty() && plain.front().text.empty()) plain.erase(plain.begin());
+        lines = std::move(plain);
     }
     return !lines.empty();
+}
+
+bool parse_lyrics(std::string text, std::vector<std::pair<double, std::string>>& lines, bool& synced) {
+    std::vector<LyricLine> l;
+    lines.clear();
+    if (!parse_lyrics(std::move(text), l, synced)) return false;
+    for (auto& x : l) lines.push_back({ x.t, std::move(x.text) });
+    return true;
+}
+
+// ---- karaoke -------------------------------------------------------------------------------
+
+KaraokeTiming karaoke_timing(const LyricLine& line, double next_t, bool estimate) {
+    KaraokeTiming k;
+    if (line.t < 0 || line.text.empty()) return k;
+    if (!line.words.empty()) {
+        k.words = line.words;
+        if (line.end > k.words.back().t) k.end = line.end;
+        else if (next_t > k.words.back().t) k.end = next_t;
+        else k.end = k.words.back().t + 1.0;
+        return k;
+    }
+    if (!estimate) return k;
+    // No word stamps: spread the words over the line by length. A line rarely takes longer to
+    // sing than ~70 ms a character; the next line's start caps it (gaps are instrumental).
+    std::vector<size_t> starts;
+    for (size_t i = 0; i < line.text.size(); ++i)
+        if (line.text[i] != ' ' && (i == 0 || line.text[i - 1] == ' ')) starts.push_back(i);
+    if (starts.empty()) return k;
+    double dur = std::max(1.0, line.text.size() * 0.07);
+    if (next_t > line.t) dur = std::min(dur, next_t - line.t);
+    k.end = line.t + dur;
+    for (size_t s : starts) k.words.push_back({ s, line.t + dur * s / line.text.size() });
+    return k;
+}
+
+double karaoke_progress(const KaraokeTiming& k, size_t i, double pos) {
+    if (i >= k.words.size()) return 0;
+    const double a = k.words[i].t, b = i + 1 < k.words.size() ? k.words[i + 1].t : k.end;
+    if (pos >= b) return 1;
+    if (pos <= a || b <= a) return pos >= a ? 1 : 0;
+    return (pos - a) / (b - a);
+}
+
+std::vector<KaraokePiece> layout_karaoke(const std::string& text, const std::vector<LyricWord>& words,
+                                         int max_w, const std::function<int(std::string_view)>& measure,
+                                         int* rows_out) {
+    // Pieces: maximal runs of non-space text not crossing a segment start. A run of spaces
+    // between them is where a row may break.
+    struct Raw { size_t start, len; int seg, w; bool space_before; };
+    std::vector<Raw> raw;
+    auto seg_at = [&](size_t pos) {
+        int s = -1;
+        for (size_t i = 0; i < words.size() && words[i].pos <= pos; ++i) s = (int)i;
+        return s;
+    };
+    bool space = false;
+    for (size_t i = 0; i < text.size();) {
+        if (text[i] == ' ') { space = true; ++i; continue; }
+        size_t j = i + 1;
+        while (j < text.size() && text[j] != ' ') {
+            bool segStart = false;
+            for (auto& w : words) if (w.pos == j) segStart = true;
+            if (segStart) break;
+            ++j;
+        }
+        raw.push_back({ i, j - i, seg_at(i), measure(std::string_view(text).substr(i, j - i)), space && !raw.empty() });
+        space = false;
+        i = j;
+    }
+    const int spaceW = measure(" ");
+    // Greedy wrap by words (a word = pieces joined without a space).
+    std::vector<KaraokePiece> out;
+    std::vector<std::pair<size_t, size_t>> rowRanges; // [first, last) into out
+    std::vector<int> rowW;
+    int row = 0, x = 0;
+    size_t rowFirst = 0;
+    for (size_t i = 0; i < raw.size();) {
+        size_t j = i + 1;
+        int ww = raw[i].w;
+        while (j < raw.size() && !raw[j].space_before) ww += raw[j++].w;
+        const int lead = (x > 0 && raw[i].space_before) ? spaceW : 0;
+        if (x > 0 && x + lead + ww > max_w) {
+            rowRanges.push_back({ rowFirst, out.size() }); rowW.push_back(x);
+            ++row; x = 0; rowFirst = out.size();
+        } else x += lead;
+        for (size_t k = i; k < j; ++k) {
+            out.push_back({ raw[k].start, raw[k].len, x, row, raw[k].seg });
+            x += raw[k].w;
+        }
+        i = j;
+    }
+    if (!out.empty()) { rowRanges.push_back({ rowFirst, out.size() }); rowW.push_back(x); }
+    for (size_t r = 0; r < rowRanges.size(); ++r) {
+        const int dx = std::max(0, (max_w - rowW[r]) / 2);
+        for (size_t k = rowRanges[r].first; k < rowRanges[r].second; ++k) out[k].x += dx;
+    }
+    if (rows_out) *rows_out = (int)rowRanges.size();
+    return out;
+}
+
+// ---- tap-to-sync ---------------------------------------------------------------------------
+
+void LrcSync::begin(const std::vector<std::string>& lines) {
+    m_lines.clear();
+    for (auto& l : lines) m_lines.push_back(trim(l));
+    while (!m_lines.empty() && m_lines.back().empty()) m_lines.pop_back();
+    m_times.assign(m_lines.size(), -1);
+    m_next = 0;
+    skip_blank();
+    m_active = !m_lines.empty();
+}
+
+void LrcSync::skip_blank() {
+    while (m_next < m_lines.size() && m_lines[m_next].empty()) ++m_next;
+}
+
+size_t LrcSync::stamped() const {
+    size_t n = 0;
+    for (double t : m_times) if (t >= 0) ++n;
+    return n;
+}
+
+bool LrcSync::stamp(double t) {
+    if (!m_active || done()) return false;
+    for (size_t i = m_next; i-- > 0;)
+        if (m_times[i] >= 0) { t = std::max(t, m_times[i]); break; }
+    m_times[m_next++] = std::max(0.0, t);
+    skip_blank();
+    return true;
+}
+
+int LrcSync::undo() {
+    for (size_t i = m_next; i-- > 0;) {
+        if (m_times[i] >= 0) { m_times[i] = -1; m_next = i; return (int)i; }
+    }
+    return -1;
+}
+
+std::string LrcSync::to_lrc(const std::string& artist, const std::string& title, const std::string& album) const {
+    std::string o;
+    if (!artist.empty()) o += "[ar:" + artist + "]\n";
+    if (!title.empty()) o += "[ti:" + title + "]\n";
+    if (!album.empty()) o += "[al:" + album + "]\n";
+    for (size_t i = 0; i < m_lines.size(); ++i)
+        if (m_times[i] >= 0) o += "[" + format_lrc_time(m_times[i]) + "]" + m_lines[i] + "\n";
+    return o;
 }
 
 

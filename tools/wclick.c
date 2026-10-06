@@ -1,4 +1,4 @@
-// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP]
+// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP|menukey:VK]
 // Dev tool: posts a mouse/key event to the deepest visible child of the Panels UI main window
 // (or another top-level window by title) at client point (x,y). Runs inside Wine next to
 // foobar2000, so UI tests never touch the host's real mouse — except `hover`, which moves the
@@ -21,6 +21,12 @@ int main(int argc, char** argv) {
     if (!top) { printf("no window\n"); return 1; }
     const char* what = argc > ai ? argv[ai] : "l";
     if (!strcmp(what, "close")) { PostMessageW(top, WM_CLOSE, 0, 0); return 0; }
+    if (!strncmp(what, "menukey:", 8)) { // a key to the open popup menu (x, y ignored)
+        HWND m = FindWindowW(L"#32768", NULL);
+        if (!m) { printf("no menu\n"); return 1; }
+        PostMessageW(m, WM_KEYDOWN, (WPARAM)strtoul(what + 8, NULL, 0), 0);
+        return 0;
+    }
     if (!strncmp(what, "post:", 5)) { // post:MSG:WPARAM:LPARAM to the main window (numbers, 0x ok)
         char* q = (char*)what + 5;
         UINT m = (UINT)strtoul(q, &q, 0); if (*q == ':') ++q;

@@ -13,8 +13,9 @@ closed-source — this is a ground-up reimplementation aiming for skin compatibi
   (`../foobar2000/`, `../pfc/`; see CLAUDE.md "Build"). Columns UI
   (https://github.com/reupen/columns_ui, LGPL-3.0) consulted as reference only.
 - **Target service**: Windows — full UI replacement via `user_interface` (SDK
-  `foobar2000/SDK/ui.h`), the slot `foo_ui_classic` / Columns UI occupy. macOS — a
-  `ui_element_mac` layout element hosting the whole canvas.
+  `foobar2000/SDK/ui.h`), the slot `foo_ui_classic` / Columns UI occupy. macOS — the same
+  `user_interface` module (Preferences › Display, owning its own window), plus a `ui_element_mac`
+  layout element ("Panels UI") hosting the whole canvas inside the Default UI.
 - **Engine shape**: not a splitter tree. A skin is a titleformat script re-evaluated on every
   repaint that places panels at absolute computed rects (`$panel`) and draws directly
   (`SkinEngine`, `src/core/skin_engine.cpp`).
@@ -25,15 +26,15 @@ closed-source — this is a ground-up reimplementation aiming for skin compatibi
 
 Done: skeleton DLL, scripted canvas engine, skin loader + per-skin `foo_ui_panels.ini`, native
 panels (track display, seek bar, volume, grouped playlist, spectrum, peak meter, album art,
-album browser / cover flow, playlist switcher, quick search, lyrics), tray icon, hot reload, skin diagnostics, macOS port, release
-pipeline. User-facing detail: README "What's implemented".
+album browser / cover flow, playlist switcher, quick search, lyrics with karaoke and
+tap-to-sync), tray icon, hot reload, skin diagnostics, zoom, mini mode, View › Panels UI menu,
+macOS port (runtime-tested in a macOS VM), release pipeline.
+User-facing detail: README "What's implemented".
 
 ## Open
 
-- macOS runtime is unverified (builds in CI, never loaded in a real foobar2000 for Mac).
 - Accepted but not implemented: `$scplsetlayout` — it only appears in Single Column Playlist's
   own layout scripts, which the native playlist doesn't run.
 - Panel types without a native view are hosted DUI elements by name, so on macOS they only work
   if a Mac element of that name exists.
-- No separate mini-player mode: skins build theirs from `WINDOWSIZE:` + a height check (fooAvA
-  does), which works as is.
+- Only fooAvA has been tested; other Panels UI skins from the 0.9.x days are untested.

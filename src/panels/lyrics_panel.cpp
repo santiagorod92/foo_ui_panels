@@ -19,7 +19,9 @@ const int kTickMs = 50;
 std::vector<LyricsPanel*> g_panels;      // live instances, for repaint-all after a setting/fetch change
 unsigned g_version = 0;                  // bumped whenever a fetch stores a new cache file
 std::set<std::string> g_fetching, g_failed;
-std::set<std::string> g_preferCache; // keys the user re-searched: the fresh download beats tags/sidecars
+// Keys whose lyrics the user just replaced (a new search, a tap-sync), with the file that holds
+// them: it beats tags/sidecars for the rest of the session.
+std::map<std::string, std::string> g_prefer;
 
 std::string lower(std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; }
 
@@ -32,6 +34,7 @@ struct Settings {
     int dim = 65;                          // % black over the cover
     int offsetMs = 0;                      // shift lyric timing
     bool online = false;                   // auto-search lrclib.net when nothing is found locally
+    int karaoke = 1;                       // 0 off, 1 word-timed lyrics only, 2 also estimated
 };
 
 gfx::Color parse_col(const std::string& s, gfx::Color def) {
@@ -54,6 +57,7 @@ Settings read_settings(SkinEngine* e) {
     s.dim = std::max(0, std::min(95, num("lyr.dim", s.dim)));
     s.offsetMs = num("lyr.offset", 0);
     s.online = e->get_pvar("lyr.online") == "1";
+    s.karaoke = std::max(0, std::min(2, num("lyr.karaoke", s.karaoke)));
     s.plain = parse_col(e->get_pvar("lyr.col.plain"), s.plain);
     s.synced = parse_col(e->get_pvar("lyr.col.synced"), s.synced);
     s.current = parse_col(e->get_pvar("lyr.col.current"), s.current);
@@ -152,43 +156,49 @@ TrackIds ids_for(const metadb_handle_ptr& np) {
     return t;
 }
 
-// Tags, then sidecar files, then the local cache.
-bool load_local(const metadb_handle_ptr& np, const TrackIds& ids,
-                std::vector<std::pair<double, std::string>>& lines, bool& synced) {
+// The track's path without its extension, for sidecar .lrc/.txt files ("" if not a local file).
+std::string sidecar_base(const metadb_handle_ptr& np) {
+    pfc::string8 path = np->get_path();
+    if (strncmp(path, "file://", 7) != 0) return {};
+    std::string nat = to_native(path);
+    size_t dot = nat.find_last_of('.'), sl = nat.find_last_of("\\/");
+    if (nat.empty() || dot == std::string::npos || (sl != std::string::npos && dot < sl)) return {};
+    return nat.substr(0, dot);
+}
+
+// Tags, then sidecar files, then the local cache — synced lyrics from any of them beat plain ones.
+bool load_local(const metadb_handle_ptr& np, const TrackIds& ids, std::vector<LyricLine>& lines, bool& synced) {
     static const char* kFields[] = { "syncedlyrics", "synced lyrics", "lyrics", "unsyncedlyrics",
                                      "unsynced lyrics", "unsynced_lyrics" };
-    std::string cached;
-    if (g_preferCache.count(ids.key) && !ids.cache.empty() && read_small_file(ids.cache, cached)
-        && parse_lyrics(cached, lines, synced))
+    std::string text;
+    auto pref = g_prefer.find(ids.key);
+    if (pref != g_prefer.end() && read_small_file(pref->second, text) && parse_lyrics(text, lines, synced))
         return true;
+    std::vector<LyricLine> plain;
+    // True once synced lyrics are in `lines`; plain ones are kept as the fallback.
+    auto take = [&](const std::string& t) {
+        std::vector<LyricLine> l; bool s = false;
+        if (!parse_lyrics(t, l, s)) return false;
+        if (s) { lines = std::move(l); synced = true; return true; }
+        if (plain.empty()) plain = std::move(l);
+        return false;
+    };
     file_info_impl info;
-    bool have = false;
-    std::vector<std::pair<double, std::string>> l; bool s = false;
     if (np->get_info(info)) {
         for (t_size i = 0; i < info.meta_get_count(); ++i) {
             std::string name = lower(info.meta_enum_name(i));
             bool match = false; for (auto f : kFields) if (name == f) match = true;
-            if (!match || info.meta_enum_value_count(i) == 0) continue;
-            if (parse_lyrics(info.meta_enum_value(i, 0), l, s) && (!have || s)) {
-                lines = l; synced = s; have = true;
-                if (s) return true;
-            }
-        }
-        if (have) return true;
-    }
-    pfc::string8 path = np->get_path();
-    if (strncmp(path, "file://", 7) == 0) {
-        std::string nat = to_native(path);
-        size_t dot = nat.find_last_of('.'), sl = nat.find_last_of("\\/");
-        if (!nat.empty() && dot != std::string::npos && (sl == std::string::npos || dot > sl)) {
-            std::string base = nat.substr(0, dot), text;
-            for (const char* ext : { ".lrc", ".txt" })
-                if (read_small_file(base + ext, text) && parse_lyrics(text, lines, synced)) return true;
+            if (match && info.meta_enum_value_count(i) > 0 && take(info.meta_enum_value(i, 0))) return true;
         }
     }
-    std::string text;
-    if (!ids.cache.empty() && read_small_file(ids.cache, text) && parse_lyrics(text, lines, synced)) return true;
-    return false;
+    const std::string base = sidecar_base(np);
+    if (!base.empty())
+        for (const char* ext : { ".lrc", ".txt" })
+            if (read_small_file(base + ext, text) && take(text)) return true;
+    if (!ids.cache.empty() && read_small_file(ids.cache, text) && take(text)) return true;
+    if (plain.empty()) return false;
+    lines = std::move(plain); synced = false;
+    return true;
 }
 
 // ---- lrclib.net ----------------------------------------------------------------------------
@@ -218,7 +228,7 @@ void finish_fetch(const std::string& key, bool ok, const std::string& text, cons
     if (ok && !cacheFile.empty()) {
         write_file(cacheFile, text);
         // An explicit search replaces whatever was showing (tags/sidecar included) this session.
-        g_preferCache.insert(key);
+        g_prefer[key] = cacheFile;
         ++g_version;
     } else if (!ok) g_failed.insert(key);
     for (auto* p : g_panels) p->invalidate();
@@ -243,19 +253,15 @@ void LyricsPanel::refresh_track() {
     if (key == m_key && m_version == g_version) return;
     const bool trackChanged = key != m_key;
     m_key = key; m_version = g_version;
-    if (trackChanged) { m_scroll = 0; m_holdUntil = 0; }
+    if (trackChanged) { m_scroll = 0; m_holdUntil = 0; m_sync.cancel(); }
     m_lyrics = Lyrics();
     m_idsKey.clear();
     if (!np.is_valid()) return;
     TrackIds ids = ids_for(np);
     m_idsKey = ids.key;
-    std::vector<std::pair<double, std::string>> lines; bool synced = false;
-    if (load_local(np, ids, lines, synced)) {
-        m_lyrics.synced = synced;
-        for (auto& l : lines) m_lyrics.lines.push_back({ l.first, l.second });
-    } else if (read_settings(m_engine).online && !ids.title.empty() && !g_failed.count(ids.key)) {
+    if (!load_local(np, ids, m_lyrics.lines, m_lyrics.synced) && read_settings(m_engine).online
+        && !ids.title.empty() && !g_failed.count(ids.key))
         start_fetch();
-    }
 }
 
 void LyricsPanel::start_fetch() {
@@ -321,7 +327,8 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
     const gfx::Color black(0, 0, 0);
 
     bool settled = true;
-    if (m_lyrics.lines.empty()) {
+    const bool syncing = m_sync.active();
+    if (m_lyrics.lines.empty() && !syncing) {
         std::string msg, link;
         const TrackIds ids = np.is_valid() ? ids_for(np) : TrackIds();
         if (!np.is_valid()) msg = "Nothing playing";
@@ -343,25 +350,37 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
             cv.set_font(fnorm);
         }
     } else {
+        // In sync mode the lines being stamped are listed instead, in the same layout.
+        const size_t n = syncing ? m_sync.lines().size() : m_lyrics.lines.size();
+        auto text_of = [&](size_t i) -> const std::string& {
+            return syncing ? m_sync.lines()[i] : m_lyrics.lines[i].text;
+        };
+        // Current line: last timestamp at/before the playback position (syncing: the line the
+        // next tap stamps, or the last one once all are done).
+        int cur = -1;
+        double pos = 0;
+        if (syncing) {
+            cur = m_sync.done() ? (int)n - 1 : (int)m_sync.next();
+        } else if (m_lyrics.synced && np.is_valid()) {
+            const int ms = s.offsetMs + track_offset(m_idsKey);
+            pos = playback_control::get()->playback_get_position() + ms / 1000.0;
+            for (size_t i = 0; i < n; ++i) if (m_lyrics.lines[i].t <= pos) cur = (int)i; else break;
+        }
         struct Placed { int y, h; };
-        std::vector<Placed> pl(m_lyrics.lines.size());
+        std::vector<Placed> pl(n);
         const int gap = std::max(4, s.size / 3);
         int total = 0;
-        for (size_t i = 0; i < m_lyrics.lines.size(); ++i) {
-            int h = cv.text_height(m_lyrics.lines[i].text, tw, dtf);
+        for (size_t i = 0; i < n; ++i) {
+            // The current line is bold, which may wrap onto one more row.
+            cv.set_font((int)i == cur ? fbold : fnorm);
+            int h = cv.text_height(text_of(i), tw, dtf);
             pl[i] = { total, h };
             total += h + gap;
         }
-        // Current line: last timestamp at/before the playback position.
-        int cur = -1;
-        if (m_lyrics.synced && np.is_valid()) {
-            const int ms = s.offsetMs + track_offset(m_idsKey);
-            double pos = playback_control::get()->playback_get_position() + ms / 1000.0;
-            for (size_t i = 0; i < m_lyrics.lines.size(); ++i) if (m_lyrics.lines[i].t <= pos) cur = (int)i; else break;
-        }
+        const bool follow = syncing || m_lyrics.synced;
         const int topPad = H / 3;
         double target = m_scroll;
-        if (m_lyrics.synced) {
+        if (follow) {
             if (cur >= 0) target = pl[cur].y + pl[cur].h / 2.0 - H / 2.0 + topPad;
             else target = 0;
             if (tick_ms() >= m_holdUntil) {
@@ -372,19 +391,146 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
             m_scroll = std::max(0.0, std::min(m_scroll, (double)std::max(0, total + topPad - H)));
         }
         const int y0 = topPad - (int)m_scroll;
-        for (size_t i = 0; i < m_lyrics.lines.size(); ++i) {
+        for (size_t i = 0; i < n; ++i) {
             int y = y0 + pl[i].y;
             if (y + pl[i].h < 0 || y > H) continue;
-            const std::string& text = m_lyrics.lines[i].text;
+            const std::string& text = text_of(i);
             if (text.empty()) continue;
-            const bool isCur = (int)i == cur;
+            const bool isCur = (int)i == cur && !(syncing && m_sync.done());
             cv.set_font(isCur ? fbold : fnorm);
             gfx::Rect r{ padX, y, tw, pl[i].h };
+            gfx::Color col;
+            if (syncing) col = isCur ? s.current : (m_sync.time(i) >= 0 ? s.synced : s.plain);
+            else col = !m_lyrics.synced ? s.plain : (isCur ? s.current : s.synced);
+            if (!syncing && isCur && paint_karaoke_line(cv, i, r, pos, s.karaoke, s.current, s.plain)) continue;
             cv.draw_text(text, gfx::Rect{ r.x + 1, r.y + 1, r.w, r.h }, dtf, black);
-            cv.draw_text(text, r, dtf, !m_lyrics.synced ? s.plain : (isCur ? s.current : s.synced));
+            cv.draw_text(text, r, dtf, col);
+        }
+        if (syncing) {
+            // Instructions + progress strip along the top.
+            size_t count = 0;
+            for (auto& l : m_sync.lines()) if (!l.empty()) ++count;
+            char hdr[200];
+            if (m_sync.done())
+                snprintf(hdr, sizeof hdr, "All %zu lines stamped - right-click to save", count);
+            else
+                snprintf(hdr, sizeof hdr, "Sync %zu/%zu - Space or click: stamp the highlighted line as it starts - Backspace: undo - Esc: cancel",
+                         m_sync.stamped(), count);
+            gfx::FontSpec fh{ "Segoe UI", (float)std::max(8, s.size * 2 / 3), true };
+            cv.set_font(fh);
+            const unsigned hf = gfx::kAlignCenter | gfx::kWordWrap;
+            const int hh = cv.text_height(hdr, W - 16, hf) + 10;
+            fill_alpha(cv, 0, 0, W, hh, gfx::Color(0, 0, 0), 170);
+            cv.draw_text(hdr, gfx::Rect{ 8, 5, W - 16, hh - 10 }, hf, s.current);
         }
     }
     m_settling = !settled;
+}
+
+// The current line with its sung part in `sung`, the rest in `unsung`, the word being sung
+// blending from one to the other. False (nothing drawn) when the line has no karaoke timing.
+bool LyricsPanel::paint_karaoke_line(gfx::Canvas& cv, size_t i, const gfx::Rect& r, double pos, int mode,
+                                     gfx::Color sung, gfx::Color unsung) {
+    if (mode <= 0 || i >= m_lyrics.lines.size()) return false;
+    const LyricLine& line = m_lyrics.lines[i];
+    const double next = i + 1 < m_lyrics.lines.size() ? m_lyrics.lines[i + 1].t : -1;
+    const KaraokeTiming k = karaoke_timing(line, next, mode >= 2);
+    if (k.words.empty()) return false;
+    int rows = 0;
+    const auto pieces = layout_karaoke(line.text, k.words, r.w,
+                                       [&](std::string_view t) { return cv.text_width(t); }, &rows);
+    const int lh = std::max(1, cv.text_height("Ag", r.w, gfx::kSingleLine));
+    const int top = r.y + std::max(0, (r.h - rows * lh) / 2);
+    const unsigned f = gfx::kSingleLine | gfx::kNoClip;
+    auto mix = [](int a, int b, double t) { return (int)(a + (b - a) * t + 0.5); };
+    for (const auto& p : pieces) {
+        const std::string_view t = std::string_view(line.text).substr(p.start, p.len);
+        const double prog = p.seg < 0 ? 1.0 : karaoke_progress(k, (size_t)p.seg, pos);
+        const gfx::Color c(mix(unsung.r, sung.r, prog), mix(unsung.g, sung.g, prog), mix(unsung.b, sung.b, prog));
+        const gfx::Rect pr{ r.x + p.x, top + p.row * lh, cv.text_width(t) + 4, lh };
+        cv.draw_text(t, gfx::Rect{ pr.x + 1, pr.y + 1, pr.w, pr.h }, f, gfx::Color(0, 0, 0));
+        cv.draw_text(t, pr, f, c);
+    }
+    return true;
+}
+
+// ---- tap-to-sync ------------------------------------------------------------------------------
+
+void LyricsPanel::begin_sync() {
+    std::vector<std::string> lines;
+    for (auto& l : m_lyrics.lines) lines.push_back(l.text);
+    m_sync.begin(lines);
+    if (!m_sync.active()) return;
+    m_scroll = 0; m_holdUntil = 0;
+    // From the top: the first tap belongs to the first line.
+    auto pc = playback_control::get();
+    if (pc->is_playing() && pc->playback_can_seek()) pc->playback_seek(0);
+    host()->focus();
+    invalidate();
+}
+
+void LyricsPanel::sync_stamp() {
+    auto pc = playback_control::get();
+    if (!pc->is_playing() || !m_sync.stamp(pc->playback_get_position() + read_settings(m_engine).offsetMs / 1000.0))
+        return;
+    m_holdUntil = 0;
+    invalidate();
+}
+
+void LyricsPanel::sync_undo() {
+    const int line = m_sync.undo();
+    if (line < 0) return;
+    // Back to just before the previous stamped line, so the undone one can be tapped again.
+    double prev = 0;
+    for (int i = line; i-- > 0;) if (m_sync.time(i) >= 0) { prev = m_sync.time(i) - 1.0; break; }
+    auto pc = playback_control::get();
+    if (pc->is_playing() && pc->playback_can_seek())
+        pc->playback_seek(std::max(0.0, prev - read_settings(m_engine).offsetMs / 1000.0));
+    m_holdUntil = 0;
+    invalidate();
+}
+
+void LyricsPanel::save_sync(bool sidecar) {
+    metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
+    if (!np.is_valid() || !m_sync.stamped()) return;
+    const TrackIds ids = ids_for(np);
+    const std::string path = sidecar ? (sidecar_base(np).empty() ? std::string() : sidecar_base(np) + ".lrc") : ids.cache;
+    if (path.empty() || !write_file(path, m_sync.to_lrc(ids.artist, ids.title, ids.album))) {
+        ui::message_box(host(), "Lyrics", "Couldn't save the lyrics to\n" + (path.empty() ? std::string("(no location)") : path));
+        return;
+    }
+    // Fresh timings: the old per-track correction no longer applies.
+    set_track_offset(ids.key, 0);
+    g_prefer[ids.key] = path;
+    g_failed.erase(ids.key);
+    ++g_version;
+    m_sync.cancel();
+    for (auto* p : g_panels) p->invalidate();
+}
+
+void LyricsPanel::show_sync_menu(int x, int y) {
+    enum { kStamp = 1, kUndo, kSaveSidecar, kSaveCache, kCancel };
+    metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
+    const bool canSidecar = np.is_valid() && !sidecar_base(np).empty();
+    const bool any = m_sync.stamped() > 0;
+    auto item = [](std::string label, int id, bool enabled = true) {
+        ui::MenuItem m; m.label = std::move(label); m.id = id; m.enabled = enabled; return m;
+    };
+    ui::Menu menu;
+    menu.push_back(item("Stamp the highlighted line (Space)", kStamp, !m_sync.done()));
+    menu.push_back(item("Undo the last stamp (Backspace)", kUndo, any));
+    menu.push_back(ui::MenuItem::sep());
+    menu.push_back(item("Save as .lrc next to the track", kSaveSidecar, any && canSidecar));
+    menu.push_back(item("Save to the lyrics cache", kSaveCache, any));
+    menu.push_back(ui::MenuItem::sep());
+    menu.push_back(item("Cancel syncing (Esc)", kCancel));
+    switch (ui::popup_menu(host(), x, y, menu)) {
+    case kStamp: sync_stamp(); break;
+    case kUndo: sync_undo(); break;
+    case kSaveSidecar: save_sync(true); break;
+    case kSaveCache: save_sync(false); break;
+    case kCancel: m_sync.cancel(); invalidate(); break;
+    }
 }
 
 // ---- settings menu ----------------------------------------------------------------------------
@@ -392,8 +538,8 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
 void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, int x, int y) {
     if (!engine) return;
     const Settings s = read_settings(engine);
-    enum { kSize = 100, kDim = 200, kOffset = 300, kTrackOffset = 400, kColPlain = 1, kColSynced = 2, kColCur = 3,
-           kOnline = 4, kFetchNow = 5, kReset = 6, kTrackOffsetReset = 7 };
+    enum { kSize = 100, kDim = 200, kOffset = 300, kTrackOffset = 400, kKaraoke = 500, kColPlain = 1, kColSynced = 2,
+           kColCur = 3, kOnline = 4, kFetchNow = 5, kReset = 6, kTrackOffsetReset = 7, kSync = 8 };
     static const int kTrackSteps[] = { -500, -100, 100, 500 };
     // The now-playing track's key (per-track offset) and whether it has lyrics showing.
     std::string key; bool haveLyrics = false;
@@ -409,7 +555,7 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     auto sub = [](std::string label, ui::Menu children) {
         ui::MenuItem m; m.label = std::move(label); m.children = std::move(children); return m;
     };
-    ui::Menu sizes, dims, offs, cols, toffs;
+    ui::Menu sizes, dims, offs, cols, toffs, kara;
     char l[32];
     for (int i = 0; i < 7; ++i) { snprintf(l, sizeof l, "%d pt", kSizes[i]); sizes.push_back(item(l, kSize + i, s.size == kSizes[i])); }
     for (int i = 0; i < 6; ++i) { snprintf(l, sizeof l, "%d%%", kDims[i]); dims.push_back(item(l, kDim + i, s.dim == kDims[i])); }
@@ -418,6 +564,9 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     toffs.push_back(ui::MenuItem::sep());
     snprintf(l, sizeof l, "Reset (now %+.1f s)", trackMs / 1000.0);
     toffs.push_back(item(l, kTrackOffsetReset));
+    kara.push_back(item("Off", kKaraoke + 0, s.karaoke == 0));
+    kara.push_back(item("Word-timed lyrics only", kKaraoke + 1, s.karaoke == 1));
+    kara.push_back(item("All synced lyrics (estimated timing)", kKaraoke + 2, s.karaoke == 2));
     cols.push_back(item("Lyrics without timestamps...", kColPlain));
     cols.push_back(item("Timestamped lines...", kColSynced));
     cols.push_back(item("Current line...", kColCur));
@@ -427,7 +576,13 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     menu.push_back(sub("Cover darkening", dims));
     menu.push_back(sub("Timing offset (all tracks)", offs));
     if (!key.empty()) menu.push_back(sub("Timing offset (this track)", toffs));
+    menu.push_back(sub("Karaoke highlight", kara));
     menu.push_back(ui::MenuItem::sep());
+    {
+        ui::MenuItem m = item("Sync these lyrics by tapping (restarts the track)...", kSync);
+        m.enabled = haveLyrics;
+        menu.push_back(m);
+    }
     menu.push_back(item(haveLyrics ? "Search online again (replace these lyrics)" : "Search lyrics online now (lrclib.net)", kFetchNow));
     menu.push_back(item("Search online automatically", kOnline, s.online));
     menu.push_back(ui::MenuItem::sep());
@@ -442,15 +597,17 @@ void LyricsPanel::show_settings_menu(SkinEngine* engine, ui::ViewHost* owner, in
     if (cmd >= kSize && cmd < kSize + 7) engine->set_pvar("lyr.size", std::to_string(kSizes[cmd - kSize]));
     else if (cmd >= kDim && cmd < kDim + 6) engine->set_pvar("lyr.dim", std::to_string(kDims[cmd - kDim]));
     else if (cmd >= kOffset && cmd < kOffset + 7) engine->set_pvar("lyr.offset", std::to_string(kOffsets[cmd - kOffset]));
+    else if (cmd >= kKaraoke && cmd < kKaraoke + 3) engine->set_pvar("lyr.karaoke", std::to_string(cmd - kKaraoke));
     else if (cmd >= kTrackOffset && cmd < kTrackOffset + 4) set_track_offset(key, trackMs + kTrackSteps[cmd - kTrackOffset]);
     else if (cmd == kTrackOffsetReset) set_track_offset(key, 0);
     else if (cmd == kColPlain) pick("lyr.col.plain", s.plain);
     else if (cmd == kColSynced) pick("lyr.col.synced", s.synced);
     else if (cmd == kColCur) pick("lyr.col.current", s.current);
     else if (cmd == kOnline) engine->set_pvar("lyr.online", s.online ? "0" : "1");
+    else if (cmd == kSync) { for (auto* p : g_panels) if (!p->m_lyrics.lines.empty() && p->host() && p->host()->visible()) { p->begin_sync(); break; } }
     else if (cmd == kFetchNow) { for (auto* p : g_panels) if (p->host() && p->host()->visible()) { p->start_fetch(); break; } }
     else if (cmd == kReset)
-        for (const char* k : { "lyr.size", "lyr.dim", "lyr.offset", "lyr.online", "lyr.col.plain", "lyr.col.synced", "lyr.col.current" })
+        for (const char* k : { "lyr.size", "lyr.dim", "lyr.offset", "lyr.online", "lyr.col.plain", "lyr.col.synced", "lyr.col.current", "lyr.karaoke" })
             engine->set_pvar(k, "");
     for (auto* p : g_panels) p->invalidate();
 }
@@ -470,11 +627,27 @@ void LyricsPanel::on_mouse_move(int x, int y, unsigned, bool) {
 }
 
 void LyricsPanel::on_mouse_down(const ui::MouseEvent& e) {
+    if (m_sync.active()) {
+        host()->focus();
+        if (e.button == ui::MouseButton::Left) sync_stamp();
+        else if (e.button == ui::MouseButton::Right) show_sync_menu(e.x, e.y);
+        return;
+    }
     if (e.button == ui::MouseButton::Left) {
         if (!m_link.empty() && m_link.contains(e.x, e.y)) start_fetch();
     } else if (e.button == ui::MouseButton::Right) {
         show_settings_menu(m_engine, host(), e.x, e.y);
     }
+}
+
+bool LyricsPanel::on_key_down(int key, unsigned mods) {
+    if (!m_sync.active() || (mods & (ui::kCtrl | ui::kAlt))) return false;
+    switch (key) {
+    case ' ': case ui::kKeyEnter: case ui::kKeyDown: sync_stamp(); return true;
+    case ui::kKeyBackspace: case ui::kKeyUp: sync_undo(); return true;
+    case ui::kKeyEscape: m_sync.cancel(); invalidate(); return true;
+    }
+    return false;
 }
 
 } // namespace pui
