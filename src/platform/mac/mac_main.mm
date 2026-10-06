@@ -67,6 +67,12 @@ public:
 
     // --- ui::View (the canvas) ---
     void on_attached() override { host()->set_timer(1, 500); } // progress bar / time readout
+    // Tab from the canvas: into the panels that take keys (SkinEngine::focus_next_panel).
+    bool on_key_down(int key, unsigned mods) override {
+        if (key != pui::ui::kKeyTab) return false;
+        m_skin.focus_next_panel({}, (mods & pui::ui::kShift) != 0);
+        return true;
+    }
     // Only the progress bar / time readout advance on their own; everything else repaints
     // through SkinEngine's play_callback. Stopped/paused: nothing to do.
     void on_timer(int) override {
@@ -203,6 +209,16 @@ public:
         if (NSWindow* win = view().window) win.level = on ? NSFloatingWindowLevel : NSNormalWindowLevel;
     }
     double zoom() const override { return m_zoom; }
+    // The canvas view with its subviews (the hosted panels), at the screen's resolution.
+    pui::gfx::ImagePtr capture() override {
+        NSView* v = view();
+        if (!v || NSIsEmptyRect(v.bounds)) return nullptr;
+        NSBitmapImageRep* rep = [v bitmapImageRepForCachingDisplayInRect:v.bounds];
+        if (!rep) return nullptr;
+        [v cacheDisplayInRect:v.bounds toBitmapImageRep:rep];
+        CGImageRef img = rep.CGImage;
+        return img ? pui::gfx::image_from_cgimage(CGImageRetain(img)) : nullptr;
+    }
     // Keep the canvas the same size in skin units when it's our own window (a fixed-size skin
     // grows/shrinks); inside foobar2000's layout the window isn't ours to resize, the canvas
     // just shows less or more of the skin.
@@ -239,18 +255,6 @@ private:
 
 } // namespace
 
-namespace pui::mac {
-void reload_skin_everywhere() { for (auto* r : g_roots) r->reload_skin(); }
-void set_pvar_everywhere(const std::string& key, const std::string& value) {
-    if (g_roots.empty()) {
-        PvarMap m = load_all_pvars();
-        if (value.empty()) m.erase(key); else m[key] = value;
-        save_all_pvars(m);
-        return;
-    }
-    for (auto* r : g_roots) { r->skin().set_pvar(key, value); r->skin().repaint_all(); }
-}
-} // namespace pui::mac
 
 @interface FooUIPanelsController : NSViewController
 @end

@@ -225,6 +225,41 @@ public:
                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
     double zoom() const override { return pui::win::zoom(); }
+    // The canvas, then every panel view on it (bottom to top), each asked for a copy of itself
+    // (WM_PRINTCLIENT) — off-screen, so overlapping windows don't matter. Foreign windows (hosted
+    // UI elements) keep the canvas beneath them.
+    pui::gfx::ImagePtr capture() override {
+        if (!m_wnd || IsIconic(m_wnd)) return nullptr;
+        RECT rc = {}; GetClientRect(m_wnd, &rc);
+        if (rc.right <= 0 || rc.bottom <= 0) return nullptr;
+        HDC wdc = GetDC(m_wnd), mdc = CreateCompatibleDC(wdc);
+        HBITMAP bmp = CreateCompatibleBitmap(wdc, rc.right, rc.bottom);
+        HGDIOBJ old = SelectObject(mdc, bmp);
+        FillRect(mdc, &rc, (HBRUSH)GetStockObject(BLACK_BRUSH));
+        { pui::gfx::GdiCanvas cv(mdc, rc.right, rc.bottom, pui::win::zoom()); m_skin.render(cv, cv.width(), cv.height()); }
+        std::vector<HWND> kids;
+        for (HWND c = GetWindow(m_wnd, GW_CHILD); c; c = GetWindow(c, GW_HWNDNEXT)) kids.push_back(c);
+        for (auto it = kids.rbegin(); it != kids.rend(); ++it) { // GW_CHILD is the top of the z-order
+            wchar_t cls[64] = {};
+            GetClassNameW(*it, cls, 64);
+            RECT r;
+            if (!IsWindowVisible(*it) || wcsncmp(cls, L"foo_ui_panels_view", 18) != 0 || !GetWindowRect(*it, &r)) continue;
+            MapWindowPoints(nullptr, m_wnd, (POINT*)&r, 2);
+            const int w = r.right - r.left, h = r.bottom - r.top;
+            if (w <= 0 || h <= 0) continue;
+            HDC cdc = CreateCompatibleDC(wdc);
+            HBITMAP cb = CreateCompatibleBitmap(wdc, w, h);
+            HGDIOBJ cold = SelectObject(cdc, cb);
+            BitBlt(cdc, 0, 0, w, h, mdc, r.left, r.top, SRCCOPY); // views that don't print keep the canvas
+            SendMessageW(*it, WM_PRINTCLIENT, (WPARAM)cdc, PRF_CLIENT);
+            BitBlt(mdc, r.left, r.top, w, h, cdc, 0, 0, SRCCOPY);
+            SelectObject(cdc, cold); DeleteObject(cb); DeleteDC(cdc);
+        }
+        pui::gfx::ImagePtr img;
+        { pui::gfx::GdiCanvas cv(mdc, rc.right, rc.bottom); img = cv.snapshot(pui::gfx::Rect{ 0, 0, rc.right, rc.bottom }); }
+        SelectObject(mdc, old); DeleteObject(bmp); DeleteDC(mdc); ReleaseDC(m_wnd, wdc);
+        return img;
+    }
     // Keeps the canvas the same size in skin units, so a fixed-size skin just grows/shrinks
     // instead of being re-laid out (or clipped) at the new scale. A maximised window stays put.
     void apply_zoom() override {
@@ -406,6 +441,8 @@ private:
         }
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
+            // Tab from the canvas: into the panels that take keys (SkinEngine::focus_next_panel).
+            if (msg == WM_KEYDOWN && wp == VK_TAB && self) { self->m_skin.focus_next_panel({}, GetKeyState(VK_SHIFT) < 0); return 0; }
             // Dispatch configured keyboard shortcuts (Ctrl+P -> Preferences, etc.).
             if (keyboard_shortcut_manager::get()->on_keydown_auto(wp))
                 return 0;

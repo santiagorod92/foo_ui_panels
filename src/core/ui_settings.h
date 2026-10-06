@@ -19,6 +19,10 @@ int effective_zoom_percent();
 bool always_on_top();
 void set_always_on_top(bool on);
 
+// Whether panels mark script problems on the skin itself (SkinEngine::draw_problem_marker).
+bool show_script_problems();
+void set_show_script_problems(bool on); // repaints
+
 // Applies the stored zoom / always-on-top to every open Panels UI window (main thread).
 void apply_view_settings();
 

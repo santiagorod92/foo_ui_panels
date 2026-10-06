@@ -60,7 +60,7 @@ private:
         void on_items_removed(const bit_array&, t_size, t_size) override { m_v->m_anchor = -1; changed(); }
         void on_items_modified(const bit_array&) override { changed(); }
         void on_items_replaced(const bit_array&, const pfc::list_base_const_t<playlist_callback::t_on_items_replaced_entry>&) override { changed(); }
-        void on_playlist_switch() override { m_v->m_scroll = 0; m_v->m_anchor = -1; changed(); }
+        void on_playlist_switch() override { m_v->m_restoreScroll = true; m_v->m_anchor = -1; changed(); }
         void on_items_selection_change(const bit_array&, const bit_array&) override { m_v->invalidate(); }
         void on_item_focus_change(t_size, t_size) override { m_v->invalidate(); }
         // "Show now playing" & co.
@@ -72,6 +72,11 @@ private:
     std::vector<Group> m_groups;
     bool m_dirty = true;
     int m_scroll = 0;       // vertical scroll offset (px)
+    // Each playlist's scroll position is kept (SkinEngine::view_state) and restored when it is
+    // shown again, at the first paint that has laid it out.
+    bool m_restoreScroll = true;
+    int m_savedScroll = -1;
+    std::string scroll_state_key() const;
     int m_content_h = 0;    // total laid-out height (for clamping)
     int m_anchor = -1;      // last clicked item (shift-range anchor)
     int m_hover_row = -1;   // item whose stars the cursor is over (preview)

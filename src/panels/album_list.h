@@ -97,6 +97,11 @@ private:
     bool m_cf_user = false;     // user navigated; stop auto-centring on the playing album
     bool m_cf_init = false;
     std::vector<std::pair<int, gfx::Rect>> m_cf_hits; // drawn covers, back-to-front
+    // The album last selected (cover flow: the one the user moved to) is kept per mode
+    // (SkinEngine::view_state) and selected again when the browser is rebuilt or reopened.
+    bool m_restoreSel = true;
+    std::string m_savedSel;
+    std::string view_key() const { return m_coverflow ? "album_list.coverflow.album" : "album_list.grid.album"; }
 
     // Remote (Navidrome) library state. m_alive/m_abort outlive the window so worker callbacks
     // can tell whether `this` is still there before touching it.

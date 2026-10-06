@@ -15,6 +15,10 @@ cfg_var_modern::cfg_int g_zoom_cfg(g_zoom_guid, 0);
 const GUID g_ontop_guid = { 0x8e5a3c29, 0x1f7b, 0x4d06, { 0x9c, 0x42, 0x6a, 0x8e, 0x0b, 0x3d, 0x5f, 0x71 } };
 cfg_var_modern::cfg_bool g_ontop_cfg(g_ontop_guid, false);
 
+// {5D8B2E64-3A17-4C9F-8E21-7B4D6F0A9C35} — bool: mark script problems on the skin.
+const GUID g_problems_guid = { 0x5d8b2e64, 0x3a17, 0x4c9f, { 0x8e, 0x21, 0x7b, 0x4d, 0x6f, 0x0a, 0x9c, 0x35 } };
+cfg_var_modern::cfg_bool g_problems_cfg(g_problems_guid, true);
+
 // Always on top is foobar2000's own setting (View > Always on Top, Alt+A): the core keeps it in
 // a standard config object and leaves applying it to the UI module, like Columns UI does.
 bool ontop_object(config_object::ptr& out) {
@@ -46,6 +50,12 @@ void set_always_on_top(bool on) {
     config_object::ptr o;
     if (ontop_object(o)) o->set_data_bool(on); // the notify above applies it
     else { g_ontop_cfg.set(on); apply_on_top(); }
+}
+
+bool show_script_problems() { return g_problems_cfg.get(); }
+void set_show_script_problems(bool on) {
+    g_problems_cfg.set(on);
+    for (SkinEngine* e : SkinEngine::live()) e->repaint_all();
 }
 
 int effective_zoom_percent() {

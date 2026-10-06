@@ -33,10 +33,19 @@ std::string clean_action(std::string a);
 std::string unquote(std::string s);
 // Image option string ("alpha-200nokeepaspectROTATEFLIP-6"): only the keys present are written.
 void parse_img_opts(const std::string& o, int& alpha, int& flip);
-// $drawstring/$draw_text options -> gfx text flags ("vcenter" also matches "center", as legacy did).
+// $drawstring/$draw_text options -> gfx text flags ("vcenter" also matches "center", as legacy did;
+// "wrap" — word-wrapped lines — is this engine's addition).
 unsigned text_opts(const std::string& o);
 // "glowexpand-N" / "glowalpha-N" anywhere in a $font token tail.
 void parse_glow_tail(const std::string& t, int& expand, int& alpha);
+// What a $panel() type becomes: one of the native views, or a hosted foreign UI element
+// (Embedded, see map_type). `z`: whether the panel is raised above its siblings — always
+// (overlays: spectrum strips, peak meter, search box), never (bars and lists under the skin's
+// own drawing), or only when a per-panel script hosts it (Child).
+enum class PanelKind { TrackDisplay, Seekbar, Volume, Playlist, Spectrum, PeakMeter, AlbumArt, AlbumList,
+                       Lyrics, QuickSearch, LibraryTree, Embedded };
+enum class PanelZ { Child, Top, Bottom };
+PanelKind panel_kind(const std::string& type, PanelZ* z = nullptr);
 // Legacy panel type -> name of the Default UI element to host, nullptr for the native panels,
 // the type itself (t.c_str()) when there's no mapping.
 const char* map_type(const std::string& t);

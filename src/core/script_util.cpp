@@ -147,6 +147,7 @@ unsigned text_opts(const std::string& o) {
     if (o.find("center")  != std::string::npos) f |= gfx::kAlignCenter;
     if (o.find("right")   != std::string::npos) f |= gfx::kAlignRight;
     if (o.find("vcenter") != std::string::npos) f |= gfx::kVCenter | gfx::kSingleLine;
+    if (o.find("wrap") != std::string::npos && !(f & gfx::kSingleLine)) f |= gfx::kWordWrap; // ours, not legacy
     return f;
 }
 
@@ -157,6 +158,26 @@ void parse_glow_tail(const std::string& t, int& expand, int& alpha) {
     if (e != std::string::npos) expand = atoi(t.c_str() + e + 11);
     size_t a = t.find("glowalpha-");
     if (a != std::string::npos) alpha = atoi(t.c_str() + a + 10);
+}
+
+PanelKind panel_kind(const std::string& type, PanelZ* z) {
+    auto has = [&](const char* k) { return type.find(k) != std::string::npos; };
+    PanelZ zz = PanelZ::Child;
+    PanelKind k;
+    if (has("Playlist switcher"))                                  k = PanelKind::LibraryTree;
+    else if (has("Quick Search"))                                  { k = PanelKind::QuickSearch; zz = PanelZ::Top; }
+    else if (has("Lyric"))                                         k = PanelKind::Lyrics;
+    else if (has("Track Display"))                                 k = PanelKind::TrackDisplay;
+    else if (has("Seek"))                                          { k = PanelKind::Seekbar; zz = PanelZ::Bottom; }
+    else if (has("Volume"))                                        { k = PanelKind::Volume; zz = PanelZ::Bottom; }
+    else if (has("Single Column Playlist") || has("ELPlaylist"))   { k = PanelKind::Playlist; zz = PanelZ::Bottom; }
+    else if (has("Album list") || has("Graphical Browser") || has("Chronflow")) k = PanelKind::AlbumList;
+    else if (has("Peakmeter") || has("Peak Meter"))                { k = PanelKind::PeakMeter; zz = PanelZ::Top; }
+    else if (has("Album Art"))                                     k = PanelKind::AlbumArt;
+    else if (has("spectrum") || has("Spectrum"))                   { k = PanelKind::Spectrum; zz = PanelZ::Top; }
+    else                                                           { k = PanelKind::Embedded; zz = PanelZ::Bottom; }
+    if (z) *z = zz;
+    return k;
 }
 
 const char* map_type(const std::string& t) {

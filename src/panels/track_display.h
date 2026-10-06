@@ -47,6 +47,7 @@ private:
     // sees these since it only walks the master canvas script; see SkinEngine::host_child_panel.
     std::vector<Placement> m_childPlacements;
     std::set<std::string> m_shownChildren; // names hosted last paint, to hide ones that drop out
+    gfx::Rect m_problemMarker; // see SkinEngine::draw_problem_marker
 };
 
 } // namespace pui

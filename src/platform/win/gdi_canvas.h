@@ -21,6 +21,7 @@ public:
     int height() const override { return m_lh; }
     double scale() const { return m_scale; }
     int dpi() const override { return m_dpi; }
+    double device_scale() const override { return m_scale; }
 
     void fill_rect(const Rect& r, Color c) override;
     void fill_rect_alpha(const Rect& r, Color c, int alpha) override;

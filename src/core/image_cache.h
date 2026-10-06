@@ -71,6 +71,10 @@ void fill_alpha(gfx::Canvas& cv, int x, int y, int w, int h, gfx::Color c, int a
 // wallpaper. Returns false if the image can't load.
 bool image_avg_color(const std::string& path, gfx::Color& out);
 
+// `path` with a '*'/'?' wildcard in its file name resolved to the first match (as loading does);
+// unchanged when nothing matches or there is no wildcard.
+std::string resolve_wildcard(const std::string& path);
+
 // True if `path` names an existing regular file (UTF-8).
 bool file_exists(const std::string& path);
 

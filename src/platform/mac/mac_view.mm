@@ -7,6 +7,7 @@
 #include "../../core/skin_paths.h"
 #include "../../core/ui_logic.h"
 #include "../../core/ui_settings.h"
+#include "../../core/skin_lint.h"
 #include <map>
 #include <string>
 #include <sys/stat.h>
@@ -104,7 +105,13 @@ public:
         // Unregistered views pass a file drag on to the nearest registered ancestor (the root
         // canvas), so only views that take files ask for them.
         if (opts.accept_files) [m_ns registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
+        if (!opts.accessible_name.empty()) { // what VoiceOver calls the panel
+            m_ns.accessibilityElement = YES;
+            m_ns.accessibilityRole = NSAccessibilityGroupRole;
+            m_ns.accessibilityLabel = ns(opts.accessible_name);
+        }
     }
+    const ViewOptions& options() const { return m_opts; }
     ~MacViewHost() override {
         for (auto& kv : m_timers) [kv.second invalidate];
         m_timers.clear();
@@ -186,6 +193,11 @@ public:
         if (m_window) [m_window makeKeyAndOrderFront:nil];
         [m_ns.window makeFirstResponder:m_ns];
     }
+    void set_focus_ring(bool on) override {
+        if (m_ring == on) return;
+        m_ring = on;
+        [m_ns setNeedsDisplay:YES];
+    }
     void set_cursor(Cursor c) override {
         m_ns.cursor = cursor_of(c);
         [m_ns.window invalidateCursorRectsForView:m_ns];
@@ -213,6 +225,7 @@ public:
         if (!(scale > 0)) scale = m_ns.window ? m_ns.window.backingScaleFactor : 1.0;
         gfx::CGCanvas cv(w, h, scale);
         m_view->paint(cv);
+        if (m_ring && m_ns.window.firstResponder == m_ns) draw_focus_ring(cv);
         CGImageRef img = cv.copy_image();
         if (!img) return;
         CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
@@ -241,6 +254,7 @@ private:
     std::map<int, NSTimer*> m_timers;
     NSTimer* m_frameTimer = nil;
     bool m_popup = false;
+    bool m_ring = false; // keyboard focus ring (set_focus_ring)
 };
 
 MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
@@ -274,6 +288,7 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)viewDidHide { if (auto* h = host_of(self); h && h->live()) h->view()->on_visibility(false); }
 - (void)viewDidUnhide { if (auto* h = host_of(self); h && h->live()) h->view()->on_visibility(true); }
 - (BOOL)becomeFirstResponder { if (auto* h = host_of(self); h && h->live()) h->view()->on_focus(); return YES; }
+- (BOOL)resignFirstResponder { if (auto* h = host_of(self)) h->set_focus_ring(false); return YES; }
 - (void)updateTrackingAreas {
     [super updateTrackingAreas];
     if (_tracking) [self removeTrackingArea:_tracking];
@@ -308,6 +323,7 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 }
 - (void)mouseDown:(NSEvent*)e {
     [self takeFocus];
+    if (auto* h = host_of(self)) h->set_focus_ring(false);
     if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Left]);
 }
 - (void)mouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Left]); }
@@ -329,6 +345,10 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)keyDown:(NSEvent*)e {
     auto* h = host_of(self);
     if (h && h->live() && h->view()->on_key_down(map_key(e), mods_of(e))) return;
+    if (h && map_key(e) == kKeyTab && h->options().on_tab) {
+        h->options().on_tab((e.modifierFlags & NSEventModifierFlagShift) != 0);
+        return;
+    }
     [super keyDown:e];
 }
 // NSDraggingDestination: files from Finder (registered in MacViewHost when accept_files).
@@ -439,29 +459,100 @@ int run_menu(NSMenu* m, FooUIPanelsMenuTarget* target, NSView* view, NSPoint pt)
 }
 
 // "Edit code..." windows, by key.
-struct Editor { NSWindow* window; NSTextView* text; FooUIPanelsWindowDelegate* delegate; std::function<bool(const std::string&)> apply; };
+struct Editor {
+    NSWindow* window; NSTextView* text; FooUIPanelsWindowDelegate* delegate;
+    std::function<bool(const std::string&)> apply;
+    NSTextField* status = nil;
+    std::string original; // as opened: Revert goes back to it
+    std::string check;    // the last check_script() summary
+};
 std::map<std::string, std::shared_ptr<Editor>> g_editors;
+
+// Colours the script in the text view (token byte ranges mapped to UTF-16 indices).
+void highlight_editor(NSTextView* tv) {
+    const std::string u = tv.string.UTF8String ?: "";
+    if (u.size() > 256 * 1024) return; // a huge script stays plain (as on Windows)
+    std::vector<NSUInteger> at; // UTF-16 index of every UTF-8 byte
+    at.reserve(u.size() + 1);
+    NSUInteger idx = 0;
+    for (size_t i = 0; i < u.size();) {
+        const unsigned char c = (unsigned char)u[i];
+        const size_t n = c < 0x80 ? 1 : c < 0xE0 ? 2 : c < 0xF0 ? 3 : 4;
+        for (size_t k = 0; k < n && i + k < u.size(); ++k) at.push_back(idx);
+        idx += n == 4 ? 2 : 1;
+        i += n;
+    }
+    at.push_back(idx);
+    NSTextStorage* ts = tv.textStorage;
+    [ts beginEditing];
+    [ts addAttribute:NSForegroundColorAttributeName value:NSColor.textColor range:NSMakeRange(0, ts.length)];
+    for (const pui::ScriptToken& t : pui::tokenize_script(u)) {
+        NSColor* c = NSColor.systemOrangeColor;
+        switch (t.kind) {
+        case pui::ScriptToken::Kind::Function: c = NSColor.systemBlueColor; break;
+        case pui::ScriptToken::Kind::Field:    c = NSColor.systemPurpleColor; break;
+        case pui::ScriptToken::Kind::Quoted:   c = NSColor.systemGreenColor; break;
+        case pui::ScriptToken::Kind::Paren:    break;
+        }
+        const NSUInteger a = at[t.start], b = at[std::min(t.start + t.len, at.size() - 1)];
+        if (b > a && b <= ts.length) [ts addAttribute:NSForegroundColorAttributeName value:c range:NSMakeRange(a, b - a)];
+    }
+    [ts endEditing];
+}
+
+void update_editor_status(Editor& ed) {
+    NSString* str = ed.text.string;
+    const NSUInteger pos = ed.text.selectedRange.location;
+    int line = 1, col = 1;
+    for (NSUInteger i = 0; i < pos && i < str.length; ++i) {
+        if ([str characterAtIndex:i] == '\n') { ++line; col = 1; } else ++col;
+    }
+    ed.status.stringValue = [NSString stringWithFormat:@"Ln %d, Col %d    %@    \u2318S: apply", line, col,
+                             ed.check.empty() ? @"No problems found" : ns(ed.check)];
+}
+
+void recheck_editor(Editor& ed) {
+    ed.check.clear();
+    for (auto& p : pui::check_script(ed.text.string.UTF8String ?: "")) ed.check += (ed.check.empty() ? "\xe2\x9a\xa0 " : "; ") + p;
+    update_editor_status(ed);
+}
 
 } // namespace
 
-@interface FooUIPanelsEditorActions : NSObject
+@interface FooUIPanelsEditorActions : NSObject <NSTextViewDelegate>
 @property (nonatomic, assign) std::string* key;
 - (void)apply:(id)sender;
 - (void)ok:(id)sender;
 - (void)cancel:(id)sender;
+- (void)revert:(id)sender;
 @end
 
 @implementation FooUIPanelsEditorActions
-- (BOOL)run {
+- (std::shared_ptr<Editor>)editor {
     auto it = g_editors.find(*self.key);
-    if (it == g_editors.end()) return NO;
-    auto ed = it->second;
-    return ed->apply ? ed->apply(ed->text.string.UTF8String ?: "") : YES;
+    return it == g_editors.end() ? nullptr : it->second;
+}
+- (BOOL)run {
+    auto ed = [self editor];
+    if (!ed) return NO;
+    if (ed->apply && !ed->apply(ed->text.string.UTF8String ?: "")) return NO;
+    highlight_editor(ed->text);
+    recheck_editor(*ed);
+    return YES;
 }
 - (void)apply:(id)sender { [self run]; }
 - (void)ok:(id)sender { if ([self run]) pui::ui::close_text_editor(*self.key); }
 - (void)cancel:(id)sender { pui::ui::close_text_editor(*self.key); }
-- (void)dealloc { delete self.key; }
+- (void)revert:(id)sender {
+    if (auto ed = [self editor]) { ed->text.string = ns(ed->original); [self run]; }
+}
+- (void)textDidChange:(NSNotification*)n {
+    [NSObject cancelPreviousPerformRequestsWithTarget:self selector:@selector(recheck) object:nil];
+    [self performSelector:@selector(recheck) withObject:nil afterDelay:0.4];
+}
+- (void)recheck { if (auto ed = [self editor]) { highlight_editor(ed->text); recheck_editor(*ed); } }
+- (void)textViewDidChangeSelection:(NSNotification*)n { if (auto ed = [self editor]) update_editor_status(*ed); }
+- (void)dealloc { [NSObject cancelPreviousPerformRequestsWithTarget:self]; delete self.key; }
 @end
 
 namespace pui::ui {
@@ -604,42 +695,93 @@ void message_box(ViewHost*, const std::string& title, const std::string& text) {
     [a runModal];
 }
 
+std::string choose_folder(MainWindow&, const std::string& title, const std::string& start) {
+    NSOpenPanel* p = [NSOpenPanel openPanel];
+    p.canChooseDirectories = YES;
+    p.canChooseFiles = NO;
+    p.allowsMultipleSelection = NO;
+    p.message = ns(title);
+    if (!start.empty()) p.directoryURL = [NSURL fileURLWithPath:ns(start)];
+    if ([p runModal] != NSModalResponseOK || !p.URL.fileSystemRepresentation) return {};
+    return p.URL.fileSystemRepresentation;
+}
+
+void open_url(const std::string& url) {
+    if (NSURL* u = [NSURL URLWithString:ns(url)]) [[NSWorkspace sharedWorkspace] openURL:u];
+}
+
+void open_file(const std::string& path) {
+    [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:ns(path)]];
+}
+
+void reveal_in_file_manager(const std::string& path) {
+    BOOL dir = NO;
+    NSString* p = ns(path);
+    if ([[NSFileManager defaultManager] fileExistsAtPath:p isDirectory:&dir] && dir)
+        [[NSWorkspace sharedWorkspace] openURL:[NSURL fileURLWithPath:p]];
+    else
+        [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:p] ]];
+}
+
 void open_text_editor(MainWindow&, const std::string& key, const std::string& title,
                       const std::string& text, std::function<bool(const std::string&)> apply) {
     auto it = g_editors.find(key);
     if (it != g_editors.end()) { [it->second->window makeKeyAndOrderFront:nil]; return; }
     auto ed = std::make_shared<Editor>();
     ed->apply = std::move(apply);
-    NSWindow* w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 760, 520)
+    ed->original = text;
+    const CGFloat W = 820, H = 560;
+    NSWindow* w = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, W, H)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
         backing:NSBackingStoreBuffered defer:NO];
     w.releasedWhenClosed = NO;
     w.title = ns(title);
     NSView* content = w.contentView;
-    const CGFloat pad = 8, bw = 80, bh = 28;
-    NSScrollView* sc = [[NSScrollView alloc] initWithFrame:NSMakeRect(pad, bh + 2 * pad, 760 - 2 * pad, 520 - bh - 3 * pad)];
+    const CGFloat pad = 8, bw = 80, bh = 28, sh = 18;
+    NSScrollView* sc = [[NSScrollView alloc] initWithFrame:NSMakeRect(pad, bh + sh + 3 * pad, W - 2 * pad, H - bh - sh - 4 * pad)];
     sc.hasVerticalScroller = YES;
     sc.autoresizingMask = NSViewWidthSizable | NSViewHeightSizable;
     NSTextView* tv = [[NSTextView alloc] initWithFrame:sc.contentView.bounds];
     tv.font = [NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular];
     tv.string = ns(text);
     tv.richText = NO;
+    tv.allowsUndo = YES;
     tv.automaticQuoteSubstitutionEnabled = NO;
+    tv.automaticDashSubstitutionEnabled = NO;
+    tv.automaticTextReplacementEnabled = NO;
     tv.autoresizingMask = NSViewWidthSizable;
     sc.documentView = tv;
     [content addSubview:sc];
+    NSTextField* status = [NSTextField labelWithString:@""];
+    status.frame = NSMakeRect(pad, bh + 2 * pad, W - 2 * pad, sh);
+    status.autoresizingMask = NSViewWidthSizable | NSViewMaxYMargin;
+    status.lineBreakMode = NSLineBreakByTruncatingTail;
+    status.font = [NSFont systemFontOfSize:NSFont.smallSystemFontSize];
+    status.textColor = NSColor.secondaryLabelColor;
+    [content addSubview:status];
     FooUIPanelsEditorActions* act = [FooUIPanelsEditorActions new];
     act.key = new std::string(key);
-    struct { NSString* t; SEL s; } btns[] = { { @"Cancel", @selector(cancel:) }, { @"OK", @selector(ok:) }, { @"Apply", @selector(apply:) } };
-    CGFloat x = 760 - pad - bw;
+    tv.delegate = act;
+    // Cmd+S applies, Cmd+Return is OK, Esc cancels.
+    struct { NSString* t; SEL s; NSString* key; NSEventModifierFlags mods; } btns[] = {
+        { @"Cancel", @selector(cancel:), @"\e", 0 },
+        { @"OK", @selector(ok:), @"\r", NSEventModifierFlagCommand },
+        { @"Apply", @selector(apply:), @"s", NSEventModifierFlagCommand } };
+    CGFloat x = W - pad - bw;
     for (auto& b : btns) {
         NSButton* btn = [NSButton buttonWithTitle:b.t target:act action:b.s];
         btn.frame = NSMakeRect(x, pad, bw, bh);
         btn.autoresizingMask = NSViewMinXMargin | NSViewMaxYMargin;
+        btn.keyEquivalent = b.key;
+        btn.keyEquivalentModifierMask = b.mods;
         [content addSubview:btn];
         x -= bw + pad;
     }
-    ed->window = w; ed->text = tv;
+    NSButton* revert = [NSButton buttonWithTitle:@"Revert" target:act action:@selector(revert:)];
+    revert.frame = NSMakeRect(pad, pad, bw, bh);
+    revert.autoresizingMask = NSViewMaxXMargin | NSViewMaxYMargin;
+    [content addSubview:revert];
+    ed->window = w; ed->text = tv; ed->status = status;
     ed->delegate = [FooUIPanelsWindowDelegate new];
     // Keep the actions object alive with the window; forget the editor when it closes.
     std::string k = key;
@@ -647,6 +789,8 @@ void open_text_editor(MainWindow&, const std::string& key, const std::string& ti
     ed->delegate.onClose = ^{ keep = nil; dispatch_async(dispatch_get_main_queue(), ^{ g_editors.erase(k); }); };
     w.delegate = ed->delegate;
     g_editors[key] = ed;
+    highlight_editor(tv);
+    recheck_editor(*ed);
     [w center];
     [w makeKeyAndOrderFront:nil];
 }

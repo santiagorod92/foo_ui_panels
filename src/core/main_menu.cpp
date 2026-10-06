@@ -44,7 +44,7 @@ GUID guid_for(const std::string& kind, const std::string& name) {
 
 // --- View > Panels UI ------------------------------------------------------------------------
 class panels_commands : public mainmenu_commands {
-    enum Cmd { kMini, kZoomIn, kZoomOut, kZoomReset, kReload, kOnTop };
+    enum Cmd { kMini, kZoomIn, kZoomOut, kZoomReset, kReload, kProblems, kOnTop };
     struct Entry { Cmd cmd; GUID id; const char* name; const char* desc; };
     static const std::vector<Entry>& entries() {
         // {E1A4…} family: fixed GUIDs, one per command.
@@ -59,6 +59,8 @@ class panels_commands : public mainmenu_commands {
               "Back to automatic zoom (the system's display scaling)." },
             { kReload, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x06 } }, "Reload skin",
               "Reloads the active skin from disk." },
+            { kProblems, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x07 } }, "Show script problems",
+              "Marks panels whose script doesn't compile, is missing or uses unknown functions." },
 #ifdef __APPLE__
             // The Windows core has its own View > Always on Top (same setting); the macOS one doesn't.
             { kOnTop, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x01 } }, "Always on top",
@@ -97,6 +99,7 @@ public:
         }
         case kReload: if (!e) flags |= flag_disabled; break;
         case kOnTop: if (always_on_top()) flags |= flag_checked; break;
+        case kProblems: if (show_script_problems()) flags |= flag_checked; break;
         default: break;
         }
         return true;
@@ -111,6 +114,7 @@ public:
         case kZoomReset: step_zoom(0); break;
         case kReload: SkinEngine::reload_all(); break;
         case kOnTop: set_always_on_top(!always_on_top()); break;
+        case kProblems: set_show_script_problems(!show_script_problems()); break;
         }
     }
 };
