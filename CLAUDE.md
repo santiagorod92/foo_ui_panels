@@ -13,11 +13,19 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `#include "../fb2k.h"`, never `win_sdk.h`. `make check-portable` (also in CI) enforces it.
 - A new platform need = a new method/function in `src/gfx/canvas.h` or `src/ui/view.h`,
   implemented in BOTH `src/platform/win/` and `src/platform/mac/`.
+- **Every change is verified on both platforms before it ships** — logic, panel or platform
+  code alike: (1) `make test` + `make check-portable` (+ `make skin-lint
+  LINT_DIR=tests/skins/synthetic`), with new pure logic covered by a unit/golden test;
+  (2) both builds; (3) runtime on Windows in the local Wine foobar2000 (`make deploy`,
+  `scripts/ui-test.sh` to click/type/screenshot); (4) runtime on macOS in the VM
+  (`make mac-vm` / `make mac-vm-test`, `mvm click|key|shot`). Exercise the changed feature
+  itself, not just "it loads". Anything that couldn't be checked (and why) goes in the PR.
 - macOS integration: a `user_interface` module ("Panels UI (reborn)", Preferences › Display —
   verified in the VM) owning its window, plus a `ui_element_mac` layout element ("Panels UI").
 - macOS runtime testing: the local VM in sibling repo `../macos-devbox` (`mvm`, dockur/macos,
   Intel guest — bundle must keep its x86_64 slice). `make mac-vm-test` = mac-build → deploy →
-  relaunch → screenshot; `make mac-vm-skin`, `make mac-vm-navidrome[-config]` (foo_navidrome + its Wine settings), `make mac-vm-<mvm cmd>`. Never `docker prune`/`rm`.
+  relaunch → screenshot; `make mac-vm` boots it and opens the noVNC tab only once macOS is up
+  (input during OpenCore's picker cancels its auto-boot timeout; `VNC=0` = no tab); `make mac-vm-skin`, `make mac-vm-navidrome[-config]` (foo_navidrome + its Wine settings), `make mac-vm-<mvm cmd>`. Never `docker prune`/`rm`.
 
 ## Key decisions
 - Target service (Windows): full UI replacement via `user_interface` (`foobar2000/SDK/ui.h`, v1–v4),
