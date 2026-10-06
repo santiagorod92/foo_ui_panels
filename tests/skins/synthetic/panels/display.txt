@@ -1,0 +1,5 @@
+// The Track Display panel's script.
+$drawrect(0,0,%_width%,%_height%,brushcolor-30-30-36 pencolor-60-60-70)
+$font(Segoe UI,10,,220-220-220)
+$alignabs(4,4,$sub(%_width%,8),16,left,top)[%artist%] - [%title%]
+$button(4,24,0,0,16,16,images\btn.png,images\btn_hover.png,POPUP:Popup)

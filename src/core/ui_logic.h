@@ -51,4 +51,10 @@ enum class AlbumSort { Artist, Album, Year, Added };
 AlbumSort album_sort_from(const std::string& s); // "artist" / "album" / "year" / "added"
 const char* album_sort_name(AlbumSort s);
 
+// What the browser shows: indices into `all` (kept in artist|album order) whose artist + album
+// match `filter`, in `sort` order — album name A-Z, or year / date added newest first with
+// unknown ones last. Stable, so ties stay in artist order.
+struct AlbumKeys { std::string artist, album, year, added; };
+std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort, const std::string& filter);
+
 } // namespace pui

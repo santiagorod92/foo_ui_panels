@@ -13,7 +13,7 @@
 #include "tooltip.h"
 #include "drop_files.h"
 #include "zoom.h"
-#include "../../ui/view.h"
+#include "../../ui/host_input.h"
 #include "../../core/skin_paths.h"
 #include "../../core/ui_logic.h"
 #include "../../core/ui_settings.h"
@@ -147,8 +147,7 @@ public:
     }
 
     void start() {
-        m_view->attach_host(this);
-        m_view->on_attached();
+        start_view(*m_view, *this);
         if (m_opts.render_fps > 0) {
             // timeBeginPeriod sharpens the frame sleep (default Windows/Wine granularity is
             // ~15.6ms, which makes frames land unevenly and animations stutter).
@@ -221,8 +220,8 @@ private:
             HDC mem = CreateCompatibleDC(dc);
             HBITMAP bmp = CreateCompatibleBitmap(dc, rc.right, rc.bottom);
             HGDIOBJ ob = SelectObject(mem, bmp);
-            { gfx::GdiCanvas cv(mem, rc.right, rc.bottom, win::zoom()); m_view->paint(cv);
-              if (m_ring && GetFocus() == m_wnd) draw_focus_ring(cv); }
+            { gfx::GdiCanvas cv(mem, rc.right, rc.bottom, win::zoom());
+              paint_view(*m_view, cv, m_ring && GetFocus() == m_wnd); }
             BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
             SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
         }
@@ -277,6 +276,10 @@ private:
         e.x = logi(GET_X_LPARAM(lp)); e.y = logi(GET_Y_LPARAM(lp));
         e.button = b; e.mods = key_mods(); e.double_click = dbl;
         return e;
+    }
+    void press(LPARAM lp, MouseButton b, bool dbl, bool live) {
+        if (!dbl && press_takes_focus(b)) { SetFocus(m_wnd); set_focus_ring(false); }
+        if (live) m_view->on_mouse_down(mouse_event(lp, b, dbl));
     }
 
     static LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp);
@@ -399,13 +402,11 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
         self->m_tracking = false;
         if (live) v->on_mouse_leave();
         return 0;
-    // Take keyboard focus on a press: a panel that handles keys (playlist Ctrl+A / Delete)
-    // only gets WM_KEYDOWN while it holds focus, and clicking it is what says "this one".
-    case WM_LBUTTONDOWN:   SetFocus(wnd); self->set_focus_ring(false); if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Left, false)); return 0;
-    case WM_LBUTTONDBLCLK: if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Left, true)); return 0;
-    case WM_RBUTTONDOWN:   SetFocus(wnd); self->set_focus_ring(false); if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Right, false)); return 0;
-    case WM_RBUTTONDBLCLK: if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Right, true)); return 0;
-    case WM_MBUTTONDOWN:   if (live) v->on_mouse_down(self->mouse_event(lp, MouseButton::Middle, false)); return 0;
+    case WM_LBUTTONDOWN:   self->press(lp, MouseButton::Left, false, live); return 0;
+    case WM_LBUTTONDBLCLK: self->press(lp, MouseButton::Left, true, live); return 0;
+    case WM_RBUTTONDOWN:   self->press(lp, MouseButton::Right, false, live); return 0;
+    case WM_RBUTTONDBLCLK: self->press(lp, MouseButton::Right, true, live); return 0;
+    case WM_MBUTTONDOWN:   self->press(lp, MouseButton::Middle, false, live); return 0;
     case WM_LBUTTONUP:     if (live) v->on_mouse_up(self->mouse_event(lp, MouseButton::Left, false)); return 0;
     case WM_RBUTTONUP:     if (live) v->on_mouse_up(self->mouse_event(lp, MouseButton::Right, false)); return 0;
     case WM_MBUTTONUP:     if (live) v->on_mouse_up(self->mouse_event(lp, MouseButton::Middle, false)); return 0;
@@ -416,8 +417,7 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
     }
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
-        if (live && v->on_key_down(map_key(wp), key_mods())) return 0;
-        if (wp == VK_TAB && self->m_opts.on_tab) { self->m_opts.on_tab(GetKeyState(VK_SHIFT) < 0); return 0; }
+        if (dispatch_key(*v, live, self->m_opts, map_key(wp), key_mods())) return 0;
         // Unhandled: configured keyboard shortcuts still work while a panel has focus.
         if (keyboard_shortcut_manager::get()->on_keydown_auto(wp)) return 0;
         break;
@@ -533,7 +533,7 @@ std::wstring editor_text(HWND ed) {
 // takes ~1 s at 9 KB and ~50 s at 45 KB (quadratic), with the player frozen meanwhile.
 size_t highlight_limit() {
     static const bool wine = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version") != nullptr;
-    return wine ? 8 * 1024 : 256 * 1024;
+    return wine ? 8 * 1024 : kEditorHighlightMax;
 }
 
 // Colours the script: the whole text replaced at once by an RTF copy with its tokens coloured
@@ -563,21 +563,13 @@ bool highlight_editor(HWND ed) {
 void update_editor_status(HWND wnd, EditorState* st) {
     HWND ed = GetDlgItem(wnd, IDC_CODE);
     CHARRANGE sel; SendMessageW(ed, EM_EXGETSEL, 0, (LPARAM)&sel);
-    const std::wstring w = editor_text(ed);
-    int line = 1, col = 1;
-    for (LONG i = 0; i < sel.cpMin && i < (LONG)w.size(); ++i) {
-        if (w[(size_t)i] == L'\r' || w[(size_t)i] == L'\n') { ++line; col = 1; } else ++col;
-    }
-    std::string s = "Ln " + std::to_string(line) + ", Col " + std::to_string(col) + "    " +
-                    (st->check.empty() ? "No problems found" : st->check) + "    Ctrl+S: apply" +
-                    (st->plain ? "    (long script: no colouring)" : "");
-    SetWindowTextW(GetDlgItem(wnd, IDC_STATUS), widen(s).c_str());
+    int line, col;
+    line_col_utf16(editor_text(ed), (size_t)std::max<LONG>(0, sel.cpMin), line, col);
+    SetWindowTextW(GetDlgItem(wnd, IDC_STATUS), widen(editor_status(line, col, st->check, "Ctrl+S: apply", st->plain)).c_str());
 }
 
 void recheck_editor(HWND wnd, EditorState* st) {
-    const auto problems = check_script(narrow(editor_text(GetDlgItem(wnd, IDC_CODE))));
-    st->check.clear();
-    for (auto& p : problems) st->check += (st->check.empty() ? "\xe2\x9a\xa0 " : "; ") + p;
+    st->check = problems_summary(check_script(narrow(editor_text(GetDlgItem(wnd, IDC_CODE)))));
     update_editor_status(wnd, st);
 }
 

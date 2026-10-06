@@ -17,6 +17,15 @@ namespace {
 
 
 NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()] ?: @""; }
+NSString* ns(const char* s) { return [NSString stringWithUTF8String:s] ?: @""; }
+namespace text = pui::prefs_text;
+
+// A popup's entries and selection, from the model's picker lists.
+void fill_popup(NSPopUpButton* p, const std::vector<std::string>& labels, int sel) {
+    [p removeAllItems];
+    for (auto& l : labels) [p addItemWithTitle:ns(l)];
+    if (sel >= 0 && sel < p.numberOfItems) [p selectItemAtIndex:sel];
+}
 std::string utf8(NSString* s) { return s.UTF8String ? s.UTF8String : ""; }
 
 NSTextField* label(NSString* text) {
@@ -61,6 +70,7 @@ NSStackView* column(NSArray<NSView*>* views) {
     NSTextField* _previewNote;
     NSPopUpButton* _zoomPopup;
     NSButton* _onTopCheck;
+    NSTextField* _rootNote;
     // Script
     NSTextView* _scriptView;
     NSTextField* _scriptPathLabel;
@@ -77,8 +87,8 @@ NSStackView* column(NSArray<NSView*>* views) {
     _model->load();
 
     NSTabView* tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(0, 0, 640, 440)];
-    for (NSArray* t in @[ @[ @"General", [self generalTab] ], @[ @"Script", [self scriptTab] ],
-                          @[ @"Variables", [self variablesTab] ], @[ @"Overrides", [self overridesTab] ] ]) {
+    for (NSArray* t in @[ @[ ns(text::kTabs[0]), [self generalTab] ], @[ ns(text::kTabs[1]), [self scriptTab] ],
+                          @[ ns(text::kTabs[2]), [self variablesTab] ], @[ ns(text::kTabs[3]), [self overridesTab] ] ]) {
         NSTabViewItem* item = [[NSTabViewItem alloc] initWithIdentifier:t[0]];
         item.label = t[0];
         item.view = t[1];
@@ -108,17 +118,15 @@ NSStackView* column(NSArray<NSView*>* views) {
 
     _zoomPopup = [[NSPopUpButton alloc] initWithFrame:NSZeroRect pullsDown:NO];
     _zoomPopup.target = self; _zoomPopup.action = @selector(zoomChanged:);
-    [_zoomPopup addItemWithTitle:@"Automatic (100%)"];
-    for (int z : pui::PrefsModel::zoom_choices()) [_zoomPopup addItemWithTitle:[NSString stringWithFormat:@"%d%%", z]];
-    _onTopCheck = [NSButton checkboxWithTitle:@"Keep the player window on top of other windows"
-                                       target:self action:@selector(onTopChanged:)];
+    fill_popup(_zoomPopup, pui::PrefsModel::zoom_labels(text::kZoomAuto100), 0);
+    _onTopCheck = [NSButton checkboxWithTitle:ns(text::kOnTop) target:self action:@selector(onTopChanged:)];
 
     NSGridView* grid = [NSGridView gridViewWithViews:@[
-        @[ label(@"Skins root folder:"), rootRow ],
-        @[ label(@"Active skin:"), _skinPopup ],
-        @[ label(@"Main script:"), _mainPopup ],
+        @[ label(ns(text::kRoot)), rootRow ],
+        @[ label(ns(text::kSkin)), _skinPopup ],
+        @[ label(ns(text::kMain)), _mainPopup ],
         @[ [NSGridCell emptyContentView], _warning ],
-        @[ label(@"Zoom:"), _zoomPopup ],
+        @[ label(ns(text::kZoom)), _zoomPopup ],
         @[ [NSGridCell emptyContentView], _onTopCheck ],
     ]];
     grid.rowSpacing = 10;
@@ -132,7 +140,7 @@ NSStackView* column(NSArray<NSView*>* views) {
     _preview.layer.backgroundColor = [NSColor colorWithWhite:0.12 alpha:1].CGColor;
     [_preview.widthAnchor constraintEqualToConstant:240].active = YES;
     [_preview.heightAnchor constraintEqualToConstant:180].active = YES;
-    _previewNote = note(@"No preview yet: a skin gets one the first time it is shown.");
+    _previewNote = note(ns(text::kNoPreview));
     NSStackView* previewCol = [NSStackView stackViewWithViews:@[ _preview, _previewNote ]];
     previewCol.orientation = NSUserInterfaceLayoutOrientationVertical;
     previewCol.alignment = NSLayoutAttributeLeading;
@@ -141,9 +149,8 @@ NSStackView* column(NSArray<NSView*>* views) {
     NSStackView* top = [NSStackView stackViewWithViews:@[ grid, previewCol ]];
     top.alignment = NSLayoutAttributeTop;
     top.spacing = 16;
-    return column(@[ top, note(@"The skins root folder holds one subfolder per skin. Leave it empty to use the single "
-                                @"skin in ~/Library/foobar2000-v2/foo_ui_panels. Main script: the skin's top-level "
-                                @".txt to run (automatic when there is only one).") ]);
+    _rootNote = note(@"");
+    return column(@[ top, _rootNote ]);
 }
 
 - (NSView*)scriptTab {
@@ -170,9 +177,9 @@ NSStackView* column(NSArray<NSView*>* views) {
 - (NSView*)variablesTab {
     NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     _varsTable = [[NSTableView alloc] initWithFrame:NSZeroRect];
-    for (NSString* name in @[ @"Variable", @"Value" ]) {
+    for (NSString* name in @[ @"Variable", @"Value" ]) { // identifiers; titles from prefs_text
         NSTableColumn* c = [[NSTableColumn alloc] initWithIdentifier:name];
-        c.title = name;
+        c.title = ns([name isEqualToString:@"Value"] ? text::kValue : text::kVariable);
         c.width = [name isEqualToString:@"Value"] ? 300 : 200;
         [_varsTable addTableColumn:c];
     }
@@ -182,9 +189,8 @@ NSStackView* column(NSArray<NSView*>* views) {
     scroll.documentView = _varsTable;
     scroll.hasVerticalScroller = YES;
     [scroll.heightAnchor constraintGreaterThanOrEqualToConstant:300].active = YES;
-    NSButton* find = [NSButton buttonWithTitle:@"Find the skin's variables" target:self action:@selector(rescanVars:)];
-    NSStackView* page = column(@[ note(@"Persistent variables ($getpvar/$setpvar) the skin uses. Double-click a value to edit it."),
-                                  scroll, find ]);
+    NSButton* find = [NSButton buttonWithTitle:ns(text::kVarsFind) target:self action:@selector(rescanVars:)];
+    NSStackView* page = column(@[ note(ns(text::kVarsNote)), scroll, find ]);
     [scroll.widthAnchor constraintEqualToAnchor:page.widthAnchor constant:-32].active = YES;
     return page;
 }
@@ -197,7 +203,7 @@ NSStackView* column(NSArray<NSView*>* views) {
     _fontSize = [NSTextField textFieldWithString:@""];
     _fontSize.delegate = self;
     [_fontSize.widthAnchor constraintEqualToConstant:50].active = YES;
-    NSStackView* fontRow = [NSStackView stackViewWithViews:@[ _fontFace, [NSTextField labelWithString:@"Size:"], _fontSize ]];
+    NSStackView* fontRow = [NSStackView stackViewWithViews:@[ _fontFace, [NSTextField labelWithString:ns(text::kFontSize)], _fontSize ]];
 
     _accentWell = [[NSColorWell alloc] initWithFrame:NSMakeRect(0, 0, 44, 24)];
     _accentWell.target = self; _accentWell.action = @selector(accentChanged:);
@@ -205,14 +211,13 @@ NSStackView* column(NSArray<NSView*>* views) {
     NSStackView* accentRow = [NSStackView stackViewWithViews:@[ _accentWell, clearAccent ]];
 
     NSGridView* grid = [NSGridView gridViewWithViews:@[
-        @[ label(@"Font face:"), fontRow ],
-        @[ label(@"Accent colour:"), accentRow ],
+        @[ label(ns(text::kFontFace)), fontRow ],
+        @[ label(ns(text::kAccent)), accentRow ],
     ]];
     grid.rowSpacing = 10;
     grid.columnSpacing = 8;
-    NSButton* clear = [NSButton buttonWithTitle:@"Clear overrides" target:self action:@selector(clearOverrides:)];
-    return column(@[ note(@"Fallbacks used when the active skin doesn't set its own font / accent colour. "
-                          @"Leave blank to defer to the skin."), grid, clear ]);
+    NSButton* clear = [NSButton buttonWithTitle:ns(text::kClearOverrides) target:self action:@selector(clearOverrides:)];
+    return column(@[ note(ns(text::kOverridesNote)), grid, clear ]);
 }
 
 // --- model -> UI -------------------------------------------------------------------------------
@@ -220,17 +225,10 @@ NSStackView* column(NSArray<NSView*>* views) {
     const pui::PrefsSettings& s = _model->pending();
     _rootField.stringValue = s.root.empty() ? @"(none: the component's own folder)" : ns(s.root);
 
-    [_skinPopup removeAllItems];
-    for (auto& name : _model->skins()) [_skinPopup addItemWithTitle:ns(name)];
-    if (!s.active.empty()) [_skinPopup selectItemWithTitle:ns(s.active)];
-    _skinPopup.enabled = !_model->skins().empty();
-
-    [_mainPopup removeAllItems];
-    [_mainPopup addItemWithTitle:@"Automatic"];
-    for (auto& c : _model->main_choices()) [_mainPopup addItemWithTitle:ns(c)];
-    if (s.main.empty() || ![_mainPopup itemWithTitle:ns(s.main)]) [_mainPopup selectItemAtIndex:0];
-    else [_mainPopup selectItemWithTitle:ns(s.main)];
+    fill_popup(_skinPopup, _model->skin_labels(), _model->skin_index());
+    fill_popup(_mainPopup, _model->main_labels(), _model->main_index());
     _warning.stringValue = ns(_model->skin_warning());
+    _rootNote.stringValue = ns(_model->root_note());
 
     const std::string preview = _model->preview_image();
     NSImage* img = preview.empty() ? nil : [[NSImage alloc] initWithContentsOfFile:ns(preview)];
@@ -276,11 +274,8 @@ NSStackView* column(NSArray<NSView*>* views) {
 }
 
 - (void)clearRoot:(id)sender { _model->set_root(""); [self commit]; }
-- (void)skinChanged:(id)sender { _model->set_active(utf8(_skinPopup.titleOfSelectedItem)); [self commit]; }
-- (void)mainChanged:(id)sender {
-    _model->set_main(_mainPopup.indexOfSelectedItem <= 0 ? std::string() : utf8(_mainPopup.titleOfSelectedItem));
-    [self commit];
-}
+- (void)skinChanged:(id)sender { _model->set_skin_index((int)_skinPopup.indexOfSelectedItem); [self commit]; }
+- (void)mainChanged:(id)sender { _model->set_main_index((int)_mainPopup.indexOfSelectedItem); [self commit]; }
 - (void)zoomChanged:(id)sender { _model->set_zoom_index((int)_zoomPopup.indexOfSelectedItem); [self commit]; }
 - (void)onTopChanged:(id)sender { _model->set_on_top(_onTopCheck.state == NSControlStateValueOn); [self commit]; }
 

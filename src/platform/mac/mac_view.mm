@@ -4,6 +4,7 @@
 #include "../../fb2k.h"
 #include "mac_view.h"
 #include "mac_canvas.h"
+#include "../../ui/host_input.h"
 #include "../../core/skin_paths.h"
 #include "../../core/ui_logic.h"
 #include "../../core/ui_settings.h"
@@ -224,8 +225,7 @@ public:
         double scale = [m_ns convertSizeToBacking:NSMakeSize(1, 1)].width;
         if (!(scale > 0)) scale = m_ns.window ? m_ns.window.backingScaleFactor : 1.0;
         gfx::CGCanvas cv(w, h, scale);
-        m_view->paint(cv);
-        if (m_ring && m_ns.window.firstResponder == m_ns) draw_focus_ring(cv);
+        paint_view(*m_view, cv, m_ring && m_ns.window.firstResponder == m_ns);
         CGImageRef img = cv.copy_image();
         if (!img) return;
         CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
@@ -235,8 +235,7 @@ public:
 
 private:
     void start() {
-        m_view->attach_host(this);
-        m_view->on_attached();
+        start_view(*m_view, *this);
         if (m_opts.render_fps > 0) {
             FooUIPanelsView* v = m_ns;
             m_frameTimer = [NSTimer timerWithTimeInterval:1.0 / m_opts.render_fps repeats:YES
@@ -314,25 +313,23 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)mouseMoved:(NSEvent*)e { [self move:e]; }
 - (void)mouseDragged:(NSEvent*)e { [self move:e]; }
 - (void)mouseExited:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_leave(); }
-- (void)takeFocus {
-    // Nothing makes a plain NSView the first responder on its own, and without that the view
-    // never sees keyDown: — so a panel's keyboard handling (playlist Cmd+A / Delete) would
-    // depend on whatever happened to hold focus.
-    NSWindow* w = self.window;
-    if (w && w.firstResponder != self) [w makeFirstResponder:self];
+// Nothing makes a plain NSView the first responder on its own, and without that the view never
+// sees keyDown: — so a press takes the focus itself (press_takes_focus).
+- (void)press:(NSEvent*)e button:(MouseButton)b {
+    auto* h = host_of(self);
+    if (!h) return;
+    if (press_takes_focus(b)) {
+        NSWindow* w = self.window;
+        if (w && w.firstResponder != self) [w makeFirstResponder:self];
+        h->set_focus_ring(false);
+    }
+    if (h->live()) h->view()->on_mouse_down([self mouse:e button:b]);
 }
-- (void)mouseDown:(NSEvent*)e {
-    [self takeFocus];
-    if (auto* h = host_of(self)) h->set_focus_ring(false);
-    if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Left]);
-}
+- (void)mouseDown:(NSEvent*)e { [self press:e button:MouseButton::Left]; }
 - (void)mouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Left]); }
-- (void)rightMouseDown:(NSEvent*)e {
-    [self takeFocus];
-    if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Right]);
-}
+- (void)rightMouseDown:(NSEvent*)e { [self press:e button:MouseButton::Right]; }
 - (void)rightMouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Right]); }
-- (void)otherMouseDown:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_down([self mouse:e button:MouseButton::Middle]); }
+- (void)otherMouseDown:(NSEvent*)e { [self press:e button:MouseButton::Middle]; }
 - (void)otherMouseUp:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_up([self mouse:e button:MouseButton::Middle]); }
 - (void)scrollWheel:(NSEvent*)e {
     auto* h = host_of(self); if (!h || !h->live()) return;
@@ -344,11 +341,7 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 }
 - (void)keyDown:(NSEvent*)e {
     auto* h = host_of(self);
-    if (h && h->live() && h->view()->on_key_down(map_key(e), mods_of(e))) return;
-    if (h && map_key(e) == kKeyTab && h->options().on_tab) {
-        h->options().on_tab((e.modifierFlags & NSEventModifierFlagShift) != 0);
-        return;
-    }
+    if (h && dispatch_key(*h->view(), h->live(), h->options(), map_key(e), mods_of(e))) return;
     [super keyDown:e];
 }
 // NSDraggingDestination: files from Finder (registered in MacViewHost when accept_files).
@@ -471,7 +464,7 @@ std::map<std::string, std::shared_ptr<Editor>> g_editors;
 // Colours the script in the text view (token byte ranges mapped to UTF-16 indices).
 void highlight_editor(NSTextView* tv) {
     const std::string u = tv.string.UTF8String ?: "";
-    if (u.size() > 256 * 1024) return; // a huge script stays plain (as on Windows)
+    if (u.size() > pui::kEditorHighlightMax) return; // a huge script stays plain (as on Windows)
     std::vector<NSUInteger> at; // UTF-16 index of every UTF-8 byte
     at.reserve(u.size() + 1);
     NSUInteger idx = 0;
@@ -502,18 +495,16 @@ void highlight_editor(NSTextView* tv) {
 
 void update_editor_status(Editor& ed) {
     NSString* str = ed.text.string;
-    const NSUInteger pos = ed.text.selectedRange.location;
-    int line = 1, col = 1;
-    for (NSUInteger i = 0; i < pos && i < str.length; ++i) {
-        if ([str characterAtIndex:i] == '\n') { ++line; col = 1; } else ++col;
-    }
-    ed.status.stringValue = [NSString stringWithFormat:@"Ln %d, Col %d    %@    \u2318S: apply", line, col,
-                             ed.check.empty() ? @"No problems found" : ns(ed.check)];
+    std::u16string u(str.length, u'\0');
+    [str getCharacters:(unichar*)u.data() range:NSMakeRange(0, str.length)];
+    int line, col;
+    pui::line_col_utf16(u, ed.text.selectedRange.location, line, col);
+    const bool plain = [str lengthOfBytesUsingEncoding:NSUTF8StringEncoding] > pui::kEditorHighlightMax;
+    ed.status.stringValue = ns(pui::editor_status(line, col, ed.check, "\xe2\x8c\x98S: apply", plain));
 }
 
 void recheck_editor(Editor& ed) {
-    ed.check.clear();
-    for (auto& p : pui::check_script(ed.text.string.UTF8String ?: "")) ed.check += (ed.check.empty() ? "\xe2\x9a\xa0 " : "; ") + p;
+    ed.check = pui::problems_summary(pui::check_script(ed.text.string.UTF8String ?: ""));
     update_editor_status(ed);
 }
 

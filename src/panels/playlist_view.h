@@ -5,6 +5,7 @@
 #pragma once
 #include "../ui/view.h"
 #include "../fb2k.h"
+#include "../core/list_logic.h"
 #include <memory>
 #include <string>
 #include <vector>
@@ -33,11 +34,10 @@ public:
 private:
     void on_click(int x, int y, bool dbl, bool shift, bool ctrl);
     void on_rclick(int x, int y); // right-click -> foobar context menu for the selection
-    int  item_at(int y);    // active-playlist item index at view-y, or -1
-    int  item_top(int idx); // content-space y of item idx's row (scroll not applied), or -1
+    int  item_at(int y);       // active-playlist item index at view-y, or -1
     int  drop_index_at(int y); // insertion point (0..count) for a drop at view-y
     bool has_stars() const; // the skin has rating-star art (asset.rating_stars): stars are clickable
-    bool on_stars(int x) const;
+    int  star_under(int x) const; // the star (1..5) under view-x when stars are clickable, else 0
     void clamp_scroll();
     void ensure_visible(int idx);
     // Keyboard: focus `idx`, selecting like a click would (shift extends from the anchor, ctrl
@@ -49,8 +49,7 @@ private:
     // Album groups of the active playlist: consecutive items sharing an album key. Rebuilt only
     // when the playlist changes (m_dirty), not per paint / mouse move — formatting every item
     // each time was O(playlist) titleformat runs per event.
-    struct Group { std::vector<t_size> items; };
-    const std::vector<Group>& groups();
+    const GroupedRows& layout();
     struct Events : playlist_callback_single_impl_base {
         explicit Events(PlaylistView* v);
         PlaylistView* m_v;
@@ -69,7 +68,7 @@ private:
 
     SkinEngine* m_engine = nullptr;
     std::unique_ptr<Events> m_events;
-    std::vector<Group> m_groups;
+    GroupedRows m_layout{ 46, 19 }; // header, row height
     bool m_dirty = true;
     int m_scroll = 0;       // vertical scroll offset (px)
     // Each playlist's scroll position is kept (SkinEngine::view_state) and restored when it is
@@ -77,7 +76,6 @@ private:
     bool m_restoreScroll = true;
     int m_savedScroll = -1;
     std::string scroll_state_key() const;
-    int m_content_h = 0;    // total laid-out height (for clamping)
     int m_anchor = -1;      // last clicked item (shift-range anchor)
     int m_hover_row = -1;   // item whose stars the cursor is over (preview)
     int m_hover_stars = 0;  // previewed star count (1..5) for m_hover_row

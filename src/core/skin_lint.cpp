@@ -334,6 +334,18 @@ void line_col(const std::string& text, size_t pos, int& line, int& col) {
     }
 }
 
+std::string problems_summary(const std::vector<std::string>& problems) {
+    std::string s;
+    for (auto& p : problems) s += (s.empty() ? "\xe2\x9a\xa0 " : "; ") + p;
+    return s;
+}
+
+std::string editor_status(int line, int col, const std::string& summary, const std::string& apply_hint, bool plain) {
+    return "Ln " + std::to_string(line) + ", Col " + std::to_string(col) + "    " +
+           (summary.empty() ? "No problems found" : summary) + "    " + apply_hint +
+           (plain ? "    (long script: no colouring)" : "");
+}
+
 std::string format_findings(const std::vector<LintFinding>& findings) {
     std::string s;
     int n[3] = { 0, 0, 0 };

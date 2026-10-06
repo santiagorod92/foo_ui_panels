@@ -96,33 +96,11 @@ void AlbumList::apply_view() {
         if (m_coverflow && !selKey.empty() && m_filter.empty()) { cfKey = selKey; m_cf_user = true; }
     }
 
+    std::vector<AlbumKeys> keys;
+    keys.reserve(m_all.size());
+    for (const Group& g : m_all) keys.push_back({ g.artist.c_str(), g.album.c_str(), g.year, g.added });
     m_groups.clear();
-    for (const Group& g : m_all) {
-        if (!m_filter.empty()) {
-            std::string hay = std::string(g.artist.c_str()) + " " + g.album.c_str();
-            if (!filter_matches(m_filter, hay)) continue;
-        }
-        m_groups.push_back(g);
-    }
-    auto lc = [](const pfc::string8& s) { return lower_str(s.c_str()); };
-    switch (m_sort) {
-    case AlbumSort::Album:
-        std::stable_sort(m_groups.begin(), m_groups.end(), [&](const Group& a, const Group& b) { return lc(a.album) < lc(b.album); });
-        break;
-    case AlbumSort::Year: // newest first; unknown years last
-        std::stable_sort(m_groups.begin(), m_groups.end(), [](const Group& a, const Group& b) {
-            if (a.year.empty() != b.year.empty()) return b.year.empty();
-            return a.year > b.year;
-        });
-        break;
-    case AlbumSort::Added: // most recently added first; unknown last
-        std::stable_sort(m_groups.begin(), m_groups.end(), [](const Group& a, const Group& b) {
-            if (a.added.empty() != b.added.empty()) return b.added.empty();
-            return a.added > b.added;
-        });
-        break;
-    default: break; // m_all is already in artist|album order
-    }
+    for (size_t i : album_view(keys, m_sort, m_filter)) m_groups.push_back(m_all[i]);
 
     m_hover = -1; m_selected = -1;
     int cf = -1;
@@ -162,11 +140,7 @@ void AlbumList::set_sort(AlbumSort s) {
 void AlbumList::ensure_visible(int idx) {
     if (m_coverflow || idx < 0 || !host()) return;
     const gfx::Rect b = host()->bounds();
-    int cols, cellW, cellH, gutter, margin;
-    layout_metrics(b.w, cols, cellW, cellH, gutter, margin);
-    const int top = margin + (idx / cols) * (cellH + gutter), bottom = top + cellH;
-    if (top < m_scroll) m_scroll = std::max(0, top - margin);
-    else if (bottom > m_scroll + b.h) m_scroll = bottom - b.h + margin;
+    m_scroll = grid(b.w).reveal(m_scroll, idx, b.h);
 }
 
 // Albums foo_navidrome publishes (none of them are in the Media Library until played/queued).
@@ -265,13 +239,10 @@ AlbumList::CaseArt AlbumList::case_art() const {
     return a;
 }
 
-void AlbumList::layout_metrics(int clientW, int& cols, int& cellW, int& cellH, int& gutter, int& margin) const {
-    // Tight tiles, about 100px wide (four across in a ~430px panel).
-    gutter = 5; margin = 6;
-    cols = std::max(1, std::min(8, (clientW - margin * 2 + gutter) / (100 + gutter)));
-    cellW = (clientW - margin * 2 - (cols - 1) * gutter) / cols;
+// Tight tiles, about 100px wide (four across in a ~430px panel).
+GridLayout AlbumList::grid(int clientW) const {
     const CaseArt ca = case_art();
-    cellH = (cellW - 10) * ca.ih / ca.iw + 10 + 32; // case (or square cover) + label lines
+    return album_grid(clientW, ca.iw, ca.ih);
 }
 
 int AlbumList::item_at(int x, int y) const {
@@ -279,17 +250,7 @@ int AlbumList::item_at(int x, int y) const {
         for (auto it = m_cf_hits.rbegin(); it != m_cf_hits.rend(); ++it) if (it->second.contains(x, y)) return it->first;
         return -1;
     }
-    int cols, cellW, cellH, gutter, margin;
-    layout_metrics(host()->bounds().w, cols, cellW, cellH, gutter, margin);
-    int gy = y + m_scroll - margin;
-    if (x < margin || gy < 0) return -1;
-    int col = (x - margin) / (cellW + gutter);
-    int row = gy / (cellH + gutter);
-    if (col >= cols) return -1;
-    if ((x - margin) % (cellW + gutter) > cellW) return -1; // in the gutter
-    if (gy % (cellH + gutter) > cellH) return -1;
-    int idx = row * cols + col;
-    return (idx >= 0 && idx < (int)m_groups.size()) ? idx : -1;
+    return grid(host()->bounds().w).item_at(x, y + m_scroll, (int)m_groups.size());
 }
 
 gfx::Color AlbumList::color_of(const char* role, gfx::Color def) const {
@@ -314,8 +275,8 @@ void AlbumList::paint(gfx::Canvas& cv) {
     static const gfx::FontSpec fTitle{ "Segoe UI", 11, false, true };
     static const gfx::FontSpec fArtist{ "Segoe UI", 10, false };
 
-    int cols, cellW, cellH, gutter, margin;
-    layout_metrics(W, cols, cellW, cellH, gutter, margin);
+    const GridLayout gl = grid(W);
+    const int cellW = gl.cellW, cellH = gl.cellH;
     const std::string nocover = m_engine ? m_engine->asset("nocover") : std::string();
     const CaseArt ca = case_art();
 
@@ -334,8 +295,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
     const bool cf = m_coverflow && !m_groups.empty();
     if (cf) paint_coverflow(cv, W, H);
     for (size_t i = 0; !cf && i < m_groups.size(); ++i) {
-        int col = (int)(i % cols), row = (int)(i / cols);
-        int x = margin + col * (cellW + gutter), y = margin + row * (cellH + gutter) - m_scroll;
+        const int x = gl.cell_x((int)i), y = gl.cell_y((int)i) - m_scroll;
         if (y + cellH < 0 || y > H) continue;
 
         const auto& g = m_groups[i];
@@ -379,8 +339,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
         cv.draw_text(pfc::stringToUpper(g.artist).get_ptr(),
                      gfx::Rect::ltrb(x + 3, ay + art + 17, x + cellW - 3, ay + art + 30), kCaption, color_of("text_dim", gfx::Color(150, 160, 185)));
     }
-    int rows = ((int)m_groups.size() + cols - 1) / cols;
-    m_content_h = margin * 2 + rows * (cellH + gutter);
+    m_content_h = gl.content_height((int)m_groups.size());
     paint_filter_bar(cv, W);
 }
 
@@ -429,20 +388,15 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
     m_cf_target = std::max(0, std::min(n - 1, m_cf_target));
     const float pos = m_cf_pos;
     const int c = (int)std::lround(pos), range = 5;
-    const float S = std::min(H * 0.48f, W * 0.32f);
-    const float cx = W * 0.5f, yMid = H * 0.38f;
-    const float sideOff = S * 0.68f, spacing = S * 0.20f;
+    const CoverFlow flow = CoverFlow::fit(W, H);
+    const float yMid = flow.yMid;
     m_cf_hits.clear();
 
     auto draw_one = [&](int idx) {
         if (idx < 0 || idx >= n) return;
         const Group& g = m_groups[idx];
-        const float d = idx - pos, ad = std::fabs(d), t = std::min(ad, 1.0f), sign = d < 0 ? -1.0f : 1.0f;
-        const float xc = cx + sign * (sideOff * t + spacing * std::max(ad - 1.0f, 0.0f));
-        const float w = S * (1.0f - 0.62f * t);
-        const float hOuter = S * (1.0f - 0.08f * t), hInner = S * (1.0f - 0.30f * t);
-        const float x0 = xc - w / 2, x1 = xc + w / 2;
-        const float h0 = d < 0 ? hOuter : hInner, h1 = d < 0 ? hInner : hOuter;
+        const FlowSlot sl = flow.slot(idx - pos);
+        const float x0 = sl.x0, x1 = sl.x1, h0 = sl.h0, h1 = sl.h1;
 
         gfx::ImagePtr im;
         if (g.remote) {
@@ -564,18 +518,13 @@ void AlbumList::on_destroy() {
 
 void AlbumList::on_timer(int) {
     if (!m_coverflow) return;
-    float diff = (float)m_cf_target - m_cf_pos;
-    if (std::fabs(diff) < 0.004f) { m_cf_pos = (float)m_cf_target; host()->kill_timer(1); }
-    else m_cf_pos += diff * 0.22f;
+    if (coverflow_step(m_cf_pos, m_cf_target)) host()->kill_timer(1);
     invalidate();
 }
 
 void AlbumList::on_wheel(int, int, float notches) {
     if (m_coverflow) { set_target(m_cf_target - (int)notches); return; }
-    m_scroll -= (int)(notches * 60);
-    if (m_scroll < 0) m_scroll = 0;
-    int maxs = m_content_h - host()->bounds().h; if (maxs < 0) maxs = 0;
-    if (m_scroll > maxs) m_scroll = maxs;
+    m_scroll = clamp_scroll(m_scroll - (int)(notches * 60), m_content_h, host()->bounds().h);
     invalidate();
 }
 
@@ -619,24 +568,11 @@ bool AlbumList::on_key_down(int key, unsigned mods) {
     if (key == ui::kKeyF5) { rebuild(); invalidate(); return true; }
     if (!m_coverflow && !m_groups.empty()) {
         // Grid navigation: arrows by tile/row, Page Up/Down by a screenful, Home/End.
-        int cols, cellW, cellH, gutter, margin;
         const gfx::Rect b = host()->bounds();
-        layout_metrics(b.w, cols, cellW, cellH, gutter, margin);
-        const int page = cols * std::max(1, b.h / (cellH + gutter));
-        const int n = (int)m_groups.size(), cur = m_selected < 0 ? 0 : m_selected;
-        int next = -1;
-        switch (key) {
-        case ui::kKeyLeft: next = cur - 1; break;
-        case ui::kKeyRight: next = m_selected < 0 ? 0 : cur + 1; break;
-        case ui::kKeyUp: next = cur - cols; break;
-        case ui::kKeyDown: next = m_selected < 0 ? 0 : cur + cols; break;
-        case ui::kKeyPageUp: next = cur - page; break;
-        case ui::kKeyPageDown: next = cur + page; break;
-        case ui::kKeyHome: next = 0; break;
-        case ui::kKeyEnd: next = n - 1; break;
-        default: return false;
-        }
-        m_selected = std::clamp(next, 0, n - 1);
+        const GridLayout gl = grid(b.w);
+        const int next = grid_nav(key, m_selected, (int)m_groups.size(), gl.cols, gl.page(b.h));
+        if (next < 0) return false;
+        m_selected = next;
         ensure_visible(m_selected);
         invalidate();
         return true;

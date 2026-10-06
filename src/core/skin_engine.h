@@ -12,6 +12,7 @@
 #include "../fb2k.h"
 #include "../gfx/canvas.h"
 #include "../ui/view.h"
+#include "builtin_skin.h"
 #include "button.h"
 #include "pvars.h"
 #include "script_runtime.h"
@@ -35,8 +36,6 @@ namespace pui {
 PvarMap load_all_pvars();
 void save_all_pvars(const PvarMap& pvars);
 
-// Built-in fallback skin script (no main script found in the skin folder).
-const char* builtin_test_skin();
 
 
 class PopupView;

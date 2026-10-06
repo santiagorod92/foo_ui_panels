@@ -1,0 +1,4 @@
+// A POPUP: window's script.
+$drawrect(0,0,%_width%,%_height%,brushcolor-24-24-28 pencolor-null)
+$font(Segoe UI,10,,240-240-240)
+$alignabs(8,8,$sub(%_width%,16),20,left,top)Popup

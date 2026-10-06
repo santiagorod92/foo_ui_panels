@@ -193,7 +193,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - GDI+-style outlines (`$gp_set_pen` + `$gp_draw_rectangle`) next to the existing brush fills.
 - **macOS support**: the same engine and panels run on macOS (Cocoa + CoreGraphics/CoreText),
   shipped in the same `.fb2k-component` as the Windows build, with the same Preferences page
-  (General, Script, Variables and Overrides tabs) and full-resolution Retina rendering.
+  (General, Script, Variables and Overrides tabs, same wording and choices — including "the
+  component's own folder" as a skin) and full-resolution Retina rendering.
   Panels that host foobar2000's own UI elements only work if a Mac element of the same name
   exists.
 
@@ -248,8 +249,14 @@ The script functions the engine implements are listed in
 - `make test` runs the unit tests (`tests/`, host compiler, under ASan/UBSan — also in CI). They
   cover the parts of the engine that don't need foobar2000: the script functions themselves
   (against a recording canvas), script/config parsing, `$eval`, menu action matching, LRC/lrclib
-  parsing, playlist reordering, the skin linter. Add a case when you touch those. A new script
-  function is a row in the table in `src/core/script_runtime.cpp`; run `make docs` after.
+  parsing, playlist reordering, the native panels' layout/scrolling/keyboard logic
+  (`src/core/list_logic`), the Preferences model, the skin linter. Add a case when you touch
+  those. Whole scripts are covered by *golden* render tests: the welcome screen and
+  `tests/skins/synthetic` (a test skin that calls every script function and places every panel
+  kind) are run and each canvas call compared with `tests/golden/*.txt` — when a change in what
+  they draw is intended, `UPDATE_GOLDEN=1 make test` regenerates them; review the diff. A new
+  script function is a row in the table in `src/core/script_runtime.cpp` plus a call in
+  `tests/skins/synthetic/synthetic.txt` (a test checks); run `make docs` after.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, …): they
   drive the automated releases (see [Releases](#releases)).
 - Update this README when you add or change a feature (e.g. *What's implemented*, *Roadmap*),

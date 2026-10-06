@@ -54,7 +54,7 @@ check-portable:
 
 # Unit tests for the SDK-free parts of the engine, built with the host compiler. The include path
 # deliberately has no foobar2000 SDK: a tested source that grows an SDK dependency fails here.
-TEST_SRC = $(wildcard tests/*.cpp) src/core/script_util.cpp src/core/lyrics_parse.cpp src/core/skin_config.cpp src/core/ui_logic.cpp src/core/script_runtime.cpp src/core/skin_lint.cpp src/core/prefs_model.cpp
+TEST_SRC = $(wildcard tests/*.cpp) src/core/script_util.cpp src/core/lyrics_parse.cpp src/core/skin_config.cpp src/core/ui_logic.cpp src/core/script_runtime.cpp src/core/skin_lint.cpp src/core/prefs_model.cpp src/core/list_logic.cpp src/core/builtin_skin.cpp
 TEST_BIN = build/tests/run_tests
 test:
 	@mkdir -p $(dir $(TEST_BIN))

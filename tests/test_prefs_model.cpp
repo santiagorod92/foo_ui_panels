@@ -125,3 +125,34 @@ TEST("prefs: scan_pvar_names finds functions and button actions") {
     CHECK_EQ(n[0], std::string("a"));
     CHECK_EQ(n[3], std::string("d"));
 }
+
+TEST("prefs: picker entries and selection by index") {
+    Skins s;
+    FakeBackend b; b.root = s.dir;
+    PrefsModel m(b);
+    m.load();
+    const auto own = m.skin_labels();
+    CHECK(own == std::vector<std::string>({ prefs_text::kOwnFolder })); // just the component's own folder
+    CHECK_EQ(m.skin_index(), 0);
+    m.set_root(s.dir + "/lib");
+    CHECK(m.skin_labels() == std::vector<std::string>({ prefs_text::kOwnFolder, "alpha", "beta" }));
+    CHECK_EQ(m.skin_index(), 1);
+    m.set_skin_index(2);
+    CHECK_EQ(m.pending().active, std::string("beta"));
+    CHECK(m.main_labels() == std::vector<std::string>({ prefs_text::kAutomatic, "one.txt", "two.txt" }));
+    CHECK_EQ(m.main_index(), 0);
+    m.set_main_index(2);
+    CHECK_EQ(m.pending().main, std::string("two.txt"));
+    CHECK_EQ(m.main_index(), 2);
+    m.set_main_index(99);                                  // out of range: automatic
+    CHECK_EQ(m.pending().main, std::string());
+    m.set_skin_index(0);                                   // the component's own folder
+    CHECK_EQ(m.pending().active, std::string());
+    CHECK_EQ(m.skin_index(), 0);
+    CHECK(m.root_note().find(s.dir + "/own") != std::string::npos);
+
+    auto z = PrefsModel::zoom_labels(prefs_text::kZoomAuto100);
+    CHECK_EQ(z.size(), PrefsModel::zoom_choices().size() + 1);
+    CHECK_EQ(z[0], std::string(prefs_text::kZoomAuto100));
+    CHECK_EQ(z[3], std::string("100%"));
+}

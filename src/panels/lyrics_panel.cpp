@@ -2,6 +2,7 @@
 #include "../core/skin_engine.h"
 #include "../core/image_cache.h"
 #include "../core/fs_util.h"
+#include "../core/list_logic.h"
 #include "../core/lyrics_parse.h"
 #include <algorithm>
 #include <cmath>
@@ -364,7 +365,7 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
         } else if (m_lyrics.synced && np.is_valid()) {
             const int ms = s.offsetMs + track_offset(m_idsKey);
             pos = playback_control::get()->playback_get_position() + ms / 1000.0;
-            for (size_t i = 0; i < n; ++i) if (m_lyrics.lines[i].t <= pos) cur = (int)i; else break;
+            cur = line_at(m_lyrics.lines, pos);
         }
         struct Placed { int y, h; };
         std::vector<Placed> pl(n);
@@ -383,10 +384,7 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
         if (follow) {
             if (cur >= 0) target = pl[cur].y + pl[cur].h / 2.0 - H / 2.0 + topPad;
             else target = 0;
-            if (tick_ms() >= m_holdUntil) {
-                double d = target - m_scroll;
-                if (std::abs(d) < 1.0) m_scroll = target; else { m_scroll += d * 0.2; settled = false; }
-            }
+            if (tick_ms() >= m_holdUntil) m_scroll = ease_toward(m_scroll, target, 0.2, 1.0, settled);
         } else {
             m_scroll = std::max(0.0, std::min(m_scroll, (double)std::max(0, total + topPad - H)));
         }

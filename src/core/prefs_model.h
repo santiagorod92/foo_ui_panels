@@ -39,6 +39,37 @@ struct PrefsBackend {
     virtual std::string cached_preview(const std::string& skinDir) { (void)skinDir; return {}; }
 };
 
+// What the pages say. Both platforms render these, so the Windows and macOS pages use the same
+// wording; only how controls are laid out (and the macOS page applying as you go) differs.
+namespace prefs_text {
+inline constexpr const char* kTabs[] = { "General", "Script", "Variables", "Overrides" };
+// General
+inline constexpr const char* kRoot = "Skins root folder:";
+inline constexpr const char* kSkin = "Active skin:";
+inline constexpr const char* kMain = "Main script:";
+inline constexpr const char* kZoom = "Zoom:";
+inline constexpr const char* kZoomAutoScaled = "Automatic (display scaling)"; // Windows: follows the system scale
+inline constexpr const char* kZoomAuto100 = "Automatic (100%)";               // macOS: Retina is the canvas's job
+inline constexpr const char* kOnTop = "Keep the player window on top of other windows";
+inline constexpr const char* kOwnFolder = "(the component's own folder)";
+inline constexpr const char* kAutomatic = "(automatic)";
+inline constexpr const char* kNoPreview = "No preview yet: a skin gets one the first time it is shown.";
+// Script
+inline constexpr const char* kScript = "Active skin's main script:";
+// Variables
+inline constexpr const char* kVarsNote = "Persistent variables ($getpvar/$setpvar) the skin uses. Double-click a value to edit it.";
+inline constexpr const char* kVarsFind = "Find the skin's variables";
+inline constexpr const char* kVariable = "Variable";
+inline constexpr const char* kValue = "Value";
+// Overrides
+inline constexpr const char* kOverridesNote = "Fallbacks used when the active skin doesn't set its own font / accent colour. "
+                                              "Leave blank to defer to the skin.";
+inline constexpr const char* kFontFace = "Font face:";
+inline constexpr const char* kFontSize = "Size:";
+inline constexpr const char* kAccent = "Accent colour:";
+inline constexpr const char* kClearOverrides = "Clear overrides";
+} // namespace prefs_text
+
 class PrefsModel {
 public:
     // Reserved pvars (hidden from the variables list): the overrides.
@@ -73,6 +104,17 @@ public:
     std::vector<std::string> main_choices() const;     // the skin folder's *.txt
     std::string main_script(std::string* why = nullptr) const; // the path it resolves to, "" = none
     std::string skin_warning() const;                  // "" when the choice is unambiguous
+    // Under the root field: what the folder is for, and where the skin lives without one.
+    std::string root_note() const;
+
+    // The pickers' entries and selection — index 0 is "the component's own folder" /
+    // "automatic", then skins() / main_choices().
+    std::vector<std::string> skin_labels() const;
+    int skin_index() const;
+    void set_skin_index(int i);
+    std::vector<std::string> main_labels() const;
+    int main_index() const;
+    void set_main_index(int i);
     // An image of the skin for the picker: its own (`preview` in foo_ui_panels.ini, else
     // preview.* / screenshot.* in the folder), else the one the engine saved when it showed it.
     std::string preview_image() const;
@@ -85,6 +127,8 @@ public:
 
     // --- window ---------------------------------------------------------------------------
     static const std::vector<int>& zoom_choices(); // index 0 of a picker = automatic
+    // The zoom picker's entries: `automatic` (prefs_text::kZoomAuto…), then "75%" …
+    static std::vector<std::string> zoom_labels(const std::string& automatic);
     int zoom_index() const;                        // nearest choice at or below the setting
     void set_zoom_index(int i);
     void set_on_top(bool on) { m_now.onTop = on; }
