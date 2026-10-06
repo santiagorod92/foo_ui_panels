@@ -16,6 +16,7 @@ public:
     void paint(gfx::Canvas& cv) override;
     void on_resize(int, int) override { invalidate(); }
     void on_timer(int) override;
+    void on_mouse_up(const ui::MouseEvent& e) override; // right-click: the cover menu
 
 private:
     gfx::ImagePtr current_image() const;

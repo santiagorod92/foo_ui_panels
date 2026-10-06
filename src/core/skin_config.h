@@ -24,6 +24,8 @@ public:
     std::vector<int> nums(const std::string& key) const;
     // Every key starting with `prefix`, with the prefix removed ("panel.remap." -> {name: value}).
     std::map<std::string, std::string> with_prefix(const std::string& prefix) const;
+    // Sets one key as if the file had it (tests, the skin linter).
+    void set(const std::string& key, const std::string& value) { m_values[key] = value; }
 
 private:
     std::map<std::string, std::string> m_values;

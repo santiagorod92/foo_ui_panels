@@ -209,6 +209,53 @@ ImagePtr decode_image_file(const std::string& utf8_path) {
     return from_source(src);
 }
 
+ImagePtr resample_image(const Image& img, int pw, int ph) {
+    auto* mi = dynamic_cast<const MacImage*>(&img);
+    if (!mi || !mi->image() || pw <= 0 || ph <= 0) return nullptr;
+    CGContextRef ctx = CGBitmapContextCreate(nullptr, (size_t)pw, (size_t)ph, 8, 0, srgb(),
+                                             kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    if (!ctx) return nullptr;
+    CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
+    CGContextDrawImage(ctx, CGRectMake(0, 0, pw, ph), mi->image());
+    CGImageRef out = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    return out ? std::make_shared<MacImage>(out) : nullptr;
+}
+
+ImagePtr image_from_cgimage(CGImageRef img, double scale) {
+    return img ? std::make_shared<MacImage>(img, scale) : nullptr;
+}
+
+bool encode_png_file(const Image& img, const std::string& utf8_path, int maxWidth) {
+    auto* mi = dynamic_cast<const MacImage*>(&img);
+    if (!mi || !mi->image()) return false;
+    CGImageRef src = mi->image();
+    const size_t sw = CGImageGetWidth(src), sh = CGImageGetHeight(src);
+    if (!sw || !sh) return false;
+    const size_t tw = std::min(sw, (size_t)std::max(1, maxWidth)), th = std::max<size_t>(1, sh * tw / sw);
+    CGContextRef ctx = CGBitmapContextCreate(nullptr, tw, th, 8, 0, srgb(),
+                                             kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    if (!ctx) return false;
+    CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
+    CGContextDrawImage(ctx, CGRectMake(0, 0, tw, th), src);
+    CGImageRef thumb = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    if (!thumb) return false;
+    bool ok = false;
+    CFURLRef url = CFURLCreateFromFileSystemRepresentation(nullptr, (const UInt8*)utf8_path.c_str(),
+                                                           (CFIndex)utf8_path.size(), false);
+    if (url) {
+        if (CGImageDestinationRef dst = CGImageDestinationCreateWithURL(url, CFSTR("public.png"), 1, nullptr)) {
+            CGImageDestinationAddImage(dst, thumb, nullptr);
+            ok = CGImageDestinationFinalize(dst);
+            CFRelease(dst);
+        }
+        CFRelease(url);
+    }
+    CGImageRelease(thumb);
+    return ok;
+}
+
 ImagePtr decode_image_memory(const void* data, size_t size) {
     CFDataRef d = CFDataCreate(nullptr, (const UInt8*)data, (CFIndex)size);
     if (!d) return nullptr;

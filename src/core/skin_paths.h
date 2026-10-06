@@ -20,6 +20,14 @@ std::string resolve_skin_dir();
 // Same, for not-yet-saved root/active values (the Preferences page's pending edits).
 std::string resolve_skin_dir_for(const std::string& root, const std::string& active);
 
+// Where the engine keeps the picture of a skin it showed (Preferences' skin picker uses it when
+// the skin has no preview of its own): a PNG under the profile folder. "" if unavailable.
+std::string skin_preview_cache_path(const std::string& skinDir);
+
+// The Preferences pages' storage (prefs_store.cpp).
+struct PrefsBackend;
+PrefsBackend& prefs_backend();
+
 // Folder the component binary lives in (UTF-8, no trailing separator). Platform-supplied.
 std::string component_dir();
 

@@ -22,6 +22,7 @@ public:
     int width() const override { return m_w; }
     int height() const override { return m_h; }
     int dpi() const override { return 96; } // the skin's design size: 1pt font = 96/72 px, like Windows at 100%
+    double device_scale() const override { return m_scale; }
 
     void fill_rect(const Rect& r, Color c) override;
     void fill_rect_alpha(const Rect& r, Color c, int alpha) override;
@@ -50,6 +51,9 @@ private:
     CTFontRef m_font = nullptr;   // current font (owned)
     bool m_underline = false;
 };
+
+// An Image over a CGImage (takes ownership), `scale` pixels per unit.
+ImagePtr image_from_cgimage(CGImageRef img, double scale = 1.0);
 
 // Draw a CGImage into `dst` of a top-left-origin context (optionally mirrored vertically).
 void draw_cgimage(CGContextRef ctx, CGImageRef img, CGRect dst, bool flip_v);

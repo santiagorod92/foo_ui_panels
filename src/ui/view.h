@@ -75,7 +75,18 @@ struct ViewOptions {
     // Files dragged from Explorer/Finder can be dropped on this view (View::on_drop_files).
     // Elsewhere in the window they go to the main window, which adds them to the active playlist.
     bool accept_files = false;
+    // Accessibility: what a screen reader calls this panel ("Playlist", "Album browser"…).
+    std::string accessible_name;
+    // Tab / Shift+Tab move the keyboard focus on (back) when the view doesn't use the key itself.
+    std::function<void(bool back)> on_tab;
 };
+
+// The keyboard-focus marker a host draws over a view that got the focus from the keyboard.
+inline void draw_focus_ring(gfx::Canvas& cv) {
+    const gfx::Color c(0, 120, 215);
+    cv.frame_rect(gfx::Rect{ 0, 0, cv.width(), cv.height() }, c);
+    cv.frame_rect(gfx::Rect{ 1, 1, cv.width() - 2, cv.height() - 2 }, c);
+}
 
 class ViewHost {
 public:
@@ -91,6 +102,9 @@ public:
     virtual void capture_mouse(bool capture) = 0;
     virtual void focus() = 0;
     virtual void set_cursor(Cursor c) = 0; // the pointer shape over this view from now on
+    // Show the focus ring (draw_focus_ring) while this view keeps the focus: set when the focus
+    // arrives from the keyboard; a click or losing the focus clears it.
+    virtual void set_focus_ring(bool on) = 0;
     // Tooltip shown while the mouse rests over this view (UTF-8; empty = none). Views update it
     // as the mouse moves between their buttons; setting the same text again is a no-op.
     virtual void set_tooltip(const std::string& utf8) = 0;
@@ -160,6 +174,9 @@ public:
     // platform's own unit (a device pixel on Windows, a point on macOS).
     virtual void apply_zoom() = 0;
     virtual double zoom() const = 0; // the scale in effect (1.0 = 100%)
+    // What the window shows right now — the canvas with every hosted panel on it — e.g. for the
+    // skin's preview in Preferences. nullptr if the platform can't.
+    virtual gfx::ImagePtr capture() { return nullptr; }
 };
 
 // A foreign (non-View) panel embedded in the root window — e.g. a hosted Default UI element.
@@ -191,6 +208,15 @@ void track_context_menu(ViewHost& anchor, int x, int y, const metadb_handle_list
 // Colour picker; true if the user confirmed a colour (written to `c`).
 bool choose_color(ViewHost* owner, gfx::Color& c);
 void message_box(ViewHost* owner, const std::string& title, const std::string& text);
+// Folder picker over the main window, starting at `start`; "" if cancelled.
+std::string choose_folder(MainWindow& root, const std::string& title, const std::string& start);
+// Opens a web address in the default browser.
+void open_url(const std::string& url);
+// Opens a file (UTF-8 native path) in the application the system associates with it.
+void open_file(const std::string& path);
+// Shows `path` in the file manager (Explorer / Finder): a file selected in its folder, a folder
+// opened.
+void reveal_in_file_manager(const std::string& path);
 // Multi-line text editor window (panel script "Edit code..."). apply() gets the edited text and
 // returns false to keep the window open (e.g. the save failed). One window per `key`.
 void open_text_editor(MainWindow& root, const std::string& key, const std::string& title,

@@ -84,6 +84,8 @@ public:
     virtual int height() const = 0;
     // Dots per inch used to turn point font sizes into pixels (96 = the skin's design size).
     virtual int dpi() const = 0;
+    // Device pixels per canvas unit (the zoom, times the Retina factor on macOS).
+    virtual double device_scale() const { return 1.0; }
 
     // --- shapes ---
     virtual void fill_rect(const Rect& r, Color c) = 0;
@@ -123,5 +125,10 @@ public:
 ImagePtr decode_image_file(const std::string& utf8_path);            // nullptr on failure
 ImagePtr decode_image_memory(const void* data, size_t size);         // jpeg/png/... bytes
 void platform_images_shutdown();                                     // release decoder state
+// A copy of `img` resampled to pw x ph pixels (high quality), drawn 1:1 from then on — what the
+// image cache keeps of a big image drawn scaled every frame (a wallpaper). nullptr on failure.
+ImagePtr resample_image(const Image& img, int pw, int ph);
+// Writes `img` as a PNG, scaled down to at most `maxWidth` px wide (aspect kept). False on failure.
+bool encode_png_file(const Image& img, const std::string& utf8_path, int maxWidth);
 
 } // namespace pui::gfx

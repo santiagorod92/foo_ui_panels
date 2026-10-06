@@ -13,6 +13,9 @@
 #include "../gfx/canvas.h"
 #include "../ui/view.h"
 #include "button.h"
+#include "pvars.h"
+#include "script_runtime.h"
+#include "script_util.h"
 #include "skin_config.h"
 #include <vector>
 #include <filesystem>
@@ -27,18 +30,8 @@ namespace pui {
 // The full persisted pvar store (shared across all skins/panels — one process-wide cfg blob).
 // Exposed so the Preferences page's Variables/Overrides tabs can edit it directly without
 // needing a live SkinEngine instance (the page runs standalone, before/without a canvas).
-// Reserved keys prefixed "_prefs_" (font/accent overrides) are consulted by SkinHook's own
+// Reserved keys prefixed "_prefs_" (font/accent overrides) are consulted by the runtime's own
 // font selection and SkinEngine::theme_color() as a fallback when a skin doesn't set its own.
-// Panels UI matched pvar names without regard to case: fooAvA's settings popup writes
-// PVAR:SET:hidetitlebar while its master script reads $getpvar(Hidetitlebar), and the toggle
-// only works if those are the same variable.
-struct PvarNameLess {
-    bool operator()(const std::string& a, const std::string& b) const {
-        return stricmp_utf8(a.c_str(), b.c_str()) < 0;
-    }
-};
-using PvarMap = std::map<std::string, std::string, PvarNameLess>;
-
 PvarMap load_all_pvars();
 void save_all_pvars(const PvarMap& pvars);
 
@@ -57,7 +50,7 @@ public:
     // static-lifetime member, constructed before the core's services exist).
     void set_main_window(ui::MainWindow* w);
     ui::MainWindow* main_window() const { return m_main; }
-    void set_base_dir(const std::string& dir) { m_base = dir; } // for resolving image paths
+    void set_base_dir(const std::string& dir) { m_st.base = dir; } // for resolving image paths
     bool load(const char* script); // compiles the master script; a failure keeps the previous one
 
     // Loads the skin in `dir`: its foo_ui_panels.ini (SkinConfig) and main script (see
@@ -68,7 +61,7 @@ public:
     // itself to once a second): if the main script, foo_ui_panels.ini or a panel script in use
     // changed on disk, it is reloaded and everything repaints.
     void check_skin_changes();
-    const SkinConfig& config() const { return m_cfg; }
+    const SkinConfig& config() const { return m_st.cfg; }
 
     // Run `script` against the draw engine on `cv` (used by native panels like TrackDisplay).
     // If `track` is valid, built-in fields (%title% etc.) resolve from it.
@@ -127,6 +120,11 @@ public:
     // Runs a `;`-separated action list (each one as a button would).
     bool run_actions(const std::string& actions);
 
+    // Keyboard focus to the next (back: previous) panel that takes keys — playlist, album browser,
+    // playlist switcher, search, lyrics — in reading order (top to bottom, left to right), after
+    // the panel `from` ("" = from the canvas). Tab / Shift+Tab.
+    void focus_next_panel(const std::string& from, bool back);
+
     // Hit-test the buttons recorded in the last render and run the clicked one's action.
     bool handle_click(int x, int y);
 
@@ -168,7 +166,7 @@ public:
     // its settings button at 1Hz until first.boot is set).
     void complete_onboarding();
 
-    const std::string& base_dir() const { return m_base; }
+    const std::string& base_dir() const { return m_st.base; }
     // Theme number: the pvar the config names `theme.index_pvar` (fooAvA: colour.b, 1..4), else
     // `theme.index_default` (1). Substituted for {theme} in asset paths.
     int theme_index() const;
@@ -183,7 +181,7 @@ public:
     // A $panel() the config renames/retypes (`panel.remap.<name> = <new name>|<new type>`).
     Placement remap_panel(const Placement& p) const;
     bool is_lyrics_panel(const std::string& name) const; // a hosted native Lyric Show panel
-    std::string get_pvar(const std::string& k) const { auto it = m_pvars.find(k); return it == m_pvars.end() ? std::string() : it->second; }
+    std::string get_pvar(const std::string& k) const { auto it = m_st.pvars.find(k); return it == m_st.pvars.end() ? std::string() : it->second; }
 
     // Shared canvas wallpaper — lets native panels draw the SAME background the main canvas
     // draws, cropped to their own position within the window. Which pvars hold it is the
@@ -209,6 +207,15 @@ public:
     void store_panel_frame(const std::string& name, gfx::ImagePtr frame, const gfx::Rect& bounds);
     gfx::ImagePtr backdrop_for(const gfx::Rect& r, int& originX, int& originY) const;
 
+    // A panel's own view state (a playlist's scroll position, the album browser's album...):
+    // reserved pvars "_view.<key>", kept in memory and saved with the pvars when foobar2000
+    // closes — so a view comes back as it was, without a config write per scroll step.
+    std::string view_state(const std::string& key) { return pvar_str("_view." + key); }
+    void set_view_state(const std::string& key, const std::string& value) {
+        if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
+        m_st.pvars["_view." + key] = value;
+    }
+
     // Read a persisted setup variable as int (loads pvars on first use).
     int pvar_int(const std::string& key, int def);
     std::string pvar_str(const std::string& key); // "" if unset
@@ -220,6 +227,26 @@ public:
     std::string read_panel_script(const std::string& name);
     std::string read_panel_script_raw(const std::string& name); // as on disk, no init prefix
     bool save_panel_script(const std::string& name, const std::string& text);
+
+    // Script problems the skin itself shows (when View > Panels UI > Show script problems is on):
+    // a script that doesn't compile or is missing marks its panel; functions nothing knows are
+    // listed with those but don't mark it on their own (old skins call dead plugins' functions
+    // in branches that never run). Keyed by the script's label (its path in the skin folder, e.g.
+    // "panels/Display.txt"); also printed to the console once. A script's list is rebuilt
+    // whenever it is (re)read.
+    struct ScriptProblem { std::string msg; bool serious; };
+    const std::vector<ScriptProblem>& script_problems(const std::string& label) const;
+    void add_script_problem(const std::string& label, const std::string& msg, bool serious = true);
+    std::string panel_script_label(const std::string& name) const { return script_label(panels_dir() + "/" + name + ".txt"); }
+    std::string main_script_label() const { return m_mainPath.empty() ? std::string() : script_label(m_mainPath); }
+    // Draws the "!" marker in a corner of a w x h panel whose script `label` has problems (top
+    // right; bottom right for the master canvas, whose top right holds the window buttons);
+    // returns where (for clicks and the tooltip), an empty rect when there's none.
+    gfx::Rect draw_problem_marker(gfx::Canvas& cv, int w, int h, const std::string& label, bool bottom = false);
+    // The marker's tooltip: the problems, and what a click does.
+    std::string problem_tooltip(const std::string& label) const;
+    // The main script in the code editor (the master canvas's marker opens it).
+    void open_main_script_editor();
 
     // Drops every hosted panel and stops the notifications (component shutdown, before the main
     // window goes away).
@@ -233,31 +260,32 @@ private:
     void diagnose_script(const std::string& where, const std::string& text);
     void report_once(const std::string& msg);
     std::set<std::string> m_reported;
-    std::set<std::string> m_imagesChecked; // skin image paths already checked for existence
+    std::map<std::string, std::vector<ScriptProblem>> m_problems; // see script_problems()
+    gfx::Rect m_problemMarker; // the master canvas's, from the last render
 
     // Hot reload: last seen modification time per skin file (main script, config, panel scripts).
     using FileTimes = std::map<std::string, std::filesystem::file_time_type>;
     FileTimes scan_skin_files() const;
     bool load_main_script(); // (re)reads m_mainPath; reports + keeps the old script on failure
-    std::string panels_dir() const { return m_base + "/" + m_cfg.str("panels", "panels"); }
+    std::string panels_dir() const { return m_st.base + "/" + m_st.cfg.str("panels", "panels"); }
     std::string script_label(const std::string& path) const; // path relative to the skin folder
     void seed_pvars(); // the config's `pvar.once.*`
-    SkinConfig m_cfg;
     std::string m_mainPath; // "" = built-in test skin
     FileTimes m_fileTimes;
     unsigned long long m_nextScan = 0;
     std::string m_popupFile; // panels/<this>.txt is the open popup's script
+    unsigned long long m_previewAt = 0, m_previewBy = 0; // when to save the skin's preview (0 = done), see save_preview()
+    void save_preview();
 
     void load_pvars();
-    // Hides any top-level panel not named in this frame's m_placements — panels persist across
+    // Hides any top-level panel not named in this frame's m_st.placements — panels persist across
     // frames (keyed by name), so a layout switch that stops requesting one (e.g. MiniMode,
     // one-panel vs two-panel) leaves it visible/stale unless told to hide explicitly.
     void hide_unrequested_panels();
     void dispatch_placement(const Placement& p, int offsetX, int offsetY); // shared by render()/host_child_panel
 
     // One hosted panel: a native view in a platform host, or an embedded foreign element.
-    enum class Kind { TrackDisplay, Seekbar, Volume, Playlist, Spectrum, PeakMeter, AlbumArt, AlbumList,
-                      Lyrics, QuickSearch, LibraryTree, Embedded };
+    using Kind = PanelKind;
     struct Slot {
         Kind kind = Kind::Embedded;
         std::unique_ptr<ui::View> view;               // destroyed after the host (declared first)
@@ -270,20 +298,15 @@ private:
 
     bool m_pvars_loaded = false;
     ui::MainWindow* m_main = nullptr;
-    std::string m_base;
     service_ptr_t<titleformat_object> m_script;
-    PvarMap m_pvars;
-    // Panels UI's $puts/$get scratch pool (per-run, not persisted) and the cache of compiled
-    // argument snippets we re-run to resolve them (skin: "$get(fontAVAsize_3)").
-    std::map<std::string, std::string> m_tfvars;
+    // What the scripts read and write (pvars, $puts pool, placements, buttons, config, skin
+    // folder) — see script_runtime.h.
+    ScriptState m_st;
+    // Compiled argument snippets re-run to resolve them (skin: "$get(fontAVAsize_3)").
     std::map<std::string, service_ptr_t<titleformat_object>> m_evalcache;
     gfx::ImagePtr m_snapshot; // last master canvas frame
     struct PanelFrame { gfx::ImagePtr img; gfx::Rect bounds; };
     std::map<std::string, PanelFrame> m_frames; mutable std::mutex m_framesMx;
-    std::vector<Placement> m_placements;
-    std::vector<Button> m_buttons;
-    std::vector<Button>* m_capture = nullptr; // when set, buttons record here (panel-local)
-    std::vector<Placement>* m_capturePlacements = nullptr; // when set, $panel() records here
     int m_hoverX = -1, m_hoverY = -1; // canvas-space mouse pos, for top-level button hover
     std::map<std::string, service_ptr_t<titleformat_object>> m_subcache; // $button2 draw commands
     std::map<std::string, Slot> m_panels;

@@ -1,4 +1,4 @@
-.PHONY: help build deploy launch run kill clean check-portable test mac-build mac-vm mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config
+.PHONY: help build deploy launch run kill clean check-portable test skin-lint docs mac-build mac-vm mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config
 
 help:
 	@echo "foo_ui_panels — make targets"
@@ -11,6 +11,8 @@ help:
 	@echo "  clean     remove build/ and build-mac/"
 	@echo "  check-portable  compile the platform-free sources (core/panels) for a non-Windows host"
 	@echo "  test            build + run the host-side unit tests (tests/, ASan/UBSan)"
+	@echo "  skin-lint       build build/tools/skin_lint; LINT_DIR=<folder> also runs it on that skin"
+	@echo "  docs            regenerate docs/SCRIPT_FUNCTIONS.md from the engine's function table"
 	@echo "  mac-build       build the macOS bundle (build-mac/foo_ui_panels.component, universal)"
 	@echo ""
 	@echo "  macOS VM (sibling ../macos-devbox, mvm — one-time setup in its README):"
@@ -52,13 +54,26 @@ check-portable:
 
 # Unit tests for the SDK-free parts of the engine, built with the host compiler. The include path
 # deliberately has no foobar2000 SDK: a tested source that grows an SDK dependency fails here.
-TEST_SRC = $(wildcard tests/*.cpp) src/core/script_util.cpp src/core/lyrics_parse.cpp src/core/skin_config.cpp src/core/ui_logic.cpp
+TEST_SRC = $(wildcard tests/*.cpp) src/core/script_util.cpp src/core/lyrics_parse.cpp src/core/skin_config.cpp src/core/ui_logic.cpp src/core/script_runtime.cpp src/core/skin_lint.cpp src/core/prefs_model.cpp
 TEST_BIN = build/tests/run_tests
 test:
 	@mkdir -p $(dir $(TEST_BIN))
 	$(CXX_HOST) -std=c++20 -g -O1 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer \
 	  -Isrc $(TEST_SRC) -o $(TEST_BIN)
 	./$(TEST_BIN)
+
+# The offline skin checker: the SDK-free engine parts plus a main(). Same sources as the tests.
+LINT_SRC = tools/skin_lint.cpp src/core/script_runtime.cpp src/core/script_util.cpp src/core/skin_config.cpp src/core/skin_lint.cpp
+LINT_BIN = build/tools/skin_lint
+$(LINT_BIN): $(LINT_SRC) $(wildcard src/core/*.h)
+	@mkdir -p $(dir $(LINT_BIN))
+	$(CXX_HOST) -std=c++20 -O1 -Wall -Wextra -Isrc $(LINT_SRC) -o $(LINT_BIN)
+skin-lint: $(LINT_BIN)
+	@if [ -n "$(LINT_DIR)" ]; then ./$(LINT_BIN) "$(LINT_DIR)"; fi
+
+docs: $(LINT_BIN)
+	@mkdir -p docs
+	./$(LINT_BIN) --functions-md > docs/SCRIPT_FUNCTIONS.md
 
 mac-build:
 	./scripts/mac-build.sh

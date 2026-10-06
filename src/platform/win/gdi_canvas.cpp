@@ -60,8 +60,32 @@ public:
         return Color(c.GetR(), c.GetG(), c.GetB());
     }
     Gdiplus::Bitmap* bitmap() const { return m_bmp.get(); }
+    ~GdipImage() override { if (m_dib) DeleteObject(m_dib); }
+    // The pixels as a premultiplied top-down DIB, made on first use — what a 1:1 draw blends with
+    // GDI's AlphaBlend instead of GDI+ (whose per-draw colour matrix for a constant alpha is slow).
+    HBITMAP dib() const {
+        std::call_once(m_dibOnce, [this] {
+            const UINT w = m_bmp->GetWidth(), h = m_bmp->GetHeight();
+            BITMAPINFO bi = {}; bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+            bi.bmiHeader.biWidth = (LONG)w; bi.bmiHeader.biHeight = -(LONG)h; bi.bmiHeader.biPlanes = 1;
+            bi.bmiHeader.biBitCount = 32; bi.bmiHeader.biCompression = BI_RGB;
+            void* bits = nullptr;
+            HBITMAP dib = CreateDIBSection(nullptr, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+            if (!dib) return;
+            Gdiplus::BitmapData bd = {};
+            bd.Width = w; bd.Height = h; bd.Stride = (INT)w * 4; bd.PixelFormat = PixelFormat32bppPARGB; bd.Scan0 = bits;
+            Gdiplus::Rect all(0, 0, (INT)w, (INT)h);
+            if (m_bmp->LockBits(&all, Gdiplus::ImageLockModeRead | Gdiplus::ImageLockModeUserInputBuf,
+                                PixelFormat32bppPARGB, &bd) != Gdiplus::Ok) { DeleteObject(dib); return; }
+            m_bmp->UnlockBits(&bd);
+            m_dib = dib;
+        });
+        return m_dib;
+    }
 private:
     std::unique_ptr<Gdiplus::Bitmap> m_bmp;
+    mutable std::once_flag m_dibOnce;
+    mutable HBITMAP m_dib = nullptr;
 };
 
 // A copy of canvas pixels (top-down 32bpp DIB). Drawn with StretchDIBits, which reads the bits
@@ -124,6 +148,48 @@ bool same_face(const wchar_t* got, const std::wstring& want) {
 }
 
 } // namespace
+
+ImagePtr resample_image(const Image& img, int pw, int ph) {
+    ensure_gdiplus();
+    Gdiplus::Bitmap* src = nullptr;
+    if (auto* g = dynamic_cast<const GdipImage*>(&img)) src = g->bitmap();
+    if (!src || pw <= 0 || ph <= 0) return nullptr;
+    auto out = std::make_unique<Gdiplus::Bitmap>(pw, ph, PixelFormat32bppPARGB); // GDI+'s fastest to draw
+    if (out->GetLastStatus() != Gdiplus::Ok) return nullptr;
+    {
+        Gdiplus::Graphics g(out.get());
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
+        Gdiplus::ImageAttributes ia;
+        ia.SetWrapMode(Gdiplus::WrapModeTileFlipXY); // no darkened edges from sampling outside
+        g.DrawImage(src, Gdiplus::Rect(0, 0, pw, ph), 0, 0, (INT)src->GetWidth(), (INT)src->GetHeight(),
+                    Gdiplus::UnitPixel, &ia);
+    }
+    return std::make_shared<GdipImage>(std::move(out));
+}
+
+bool encode_png_file(const Image& img, const std::string& utf8_path, int maxWidth) {
+    ensure_gdiplus();
+    std::unique_ptr<Gdiplus::Bitmap> tmp;
+    Gdiplus::Bitmap* src = nullptr;
+    if (auto* g = dynamic_cast<const GdipImage*>(&img)) src = g->bitmap();
+    else if (auto* d = dynamic_cast<const DibImage*>(&img)) {
+        tmp = std::make_unique<Gdiplus::Bitmap>(d->pixel_width(), d->pixel_height(), d->pixel_width() * 4,
+                                                PixelFormat32bppRGB, (BYTE*)d->bits());
+        src = tmp.get();
+    }
+    if (!src || src->GetWidth() == 0 || src->GetHeight() == 0) return false;
+    const int sw = (int)src->GetWidth(), sh = (int)src->GetHeight();
+    const int tw = std::min(sw, std::max(1, maxWidth)), th = std::max(1, sh * tw / sw);
+    Gdiplus::Bitmap out(tw, th, PixelFormat32bppRGB);
+    {
+        Gdiplus::Graphics g(&out);
+        g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
+        g.DrawImage(src, Gdiplus::Rect(0, 0, tw, th), 0, 0, sw, sh, Gdiplus::UnitPixel);
+    }
+    static const CLSID kPng = { 0x557cf406, 0x1a04, 0x11d3, { 0x9a, 0x73, 0x00, 0x00, 0xf8, 0x1e, 0xf3, 0x2e } };
+    return out.Save(widen(utf8_path).c_str(), &kPng, nullptr) == Gdiplus::Ok;
+}
 
 // --- decoding (gfx::decode_image_*) -----------------------------------------
 ImagePtr decode_image_file(const std::string& utf8_path) {
@@ -342,6 +408,26 @@ void GdiCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcI
     Gdiplus::Bitmap* bmp = nullptr;
     if (auto* g = dynamic_cast<const GdipImage*>(&img)) {
         bmp = g->bitmap();
+        // Drawn 1:1 in device pixels, unflipped, whole: GDI's AlphaBlend (see GdipImage::dib).
+        const int iw = img.width(), ih = img.height();
+        const long dx = std::lround(dst.x * m_scale), dy = std::lround(dst.y * m_scale);
+        if (!flip_v && src.x == 0 && src.y == 0 && (int)src.w == iw && (int)src.h == ih &&
+            std::lround(dst.w * m_scale) == iw && std::lround(dst.h * m_scale) == ih) {
+            if (HBITMAP dib = g->dib()) {
+                HDC mem = CreateCompatibleDC(m_dc);
+                HGDIOBJ old = SelectObject(mem, dib);
+                if (m_scale != 1.0) ModifyWorldTransform(m_dc, nullptr, MWT_IDENTITY);
+                BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)alpha, AC_SRC_ALPHA };
+                AlphaBlend(m_dc, (int)dx, (int)dy, iw, ih, mem, 0, 0, iw, ih, bf);
+                if (m_scale != 1.0) {
+                    XFORM x = { (FLOAT)m_scale, 0, 0, (FLOAT)m_scale, 0, 0 };
+                    SetWorldTransform(m_dc, &x);
+                }
+                SelectObject(mem, old);
+                DeleteDC(mem);
+                return;
+            }
+        }
     } else if (auto* d = dynamic_cast<const DibImage*>(&img)) {
         // Snapshots are cropped in skin units but hold device pixels: scale the crop.
         const double ds = d->scale();

@@ -1,6 +1,7 @@
 #include "track_display.h"
 #include "../core/skin_engine.h"
 #include "lyrics_panel.h"
+#include "cover_menu.h"
 
 namespace pui {
 
@@ -24,7 +25,13 @@ void TrackDisplay::on_timer(int) {
 }
 
 void TrackDisplay::set_script(const char* spec) {
-    titleformat_compiler::get()->compile_safe(m_script, spec && *spec ? spec : kDefaultScript);
+    const char* text = spec && *spec ? spec : kDefaultScript;
+    if (!titleformat_compiler::get()->compile(m_script, text)) {
+        if (m_engine && spec && *spec)
+            m_engine->add_script_problem(m_engine->panel_script_label(m_name),
+                                         "Doesn't compile (unbalanced parentheses or quotes?)");
+        titleformat_compiler::get()->compile_safe(m_script, text);
+    }
 }
 
 void TrackDisplay::paint(gfx::Canvas& cv) {
@@ -41,6 +48,7 @@ void TrackDisplay::paint(gfx::Canvas& cv) {
                                         m_hoverX, m_hoverY, &m_childPlacements);
     // Keep the frame: panels stacked on top of us (the spectrum strips) show it through.
     if (m_engine) m_engine->store_panel_frame(m_name, cv.snapshot(gfx::Rect{ 0, 0, W, H }), host()->bounds());
+    m_problemMarker = m_engine ? m_engine->draw_problem_marker(cv, W, H, m_engine->panel_script_label(m_name)) : gfx::Rect{};
     host_children();
 }
 
@@ -100,8 +108,12 @@ void TrackDisplay::on_rclick(int x, int y) {
             return;
         }
     ui::Menu m;
-    ui::MenuItem edit; edit.label = "Edit code..."; edit.id = 1; m.push_back(edit);
-    if (ui::popup_menu(host(), x, y, m) == 1) open_code_editor();
+    enum { kEdit = 1, kCover = 100 };
+    if (add_cover_menu_items(m, kCover)) m.push_back(ui::MenuItem::sep()); // the skin draws its cover here
+    ui::MenuItem edit; edit.label = "Edit code..."; edit.id = kEdit; m.push_back(edit);
+    const int id = ui::popup_menu(host(), x, y, m);
+    if (id == kEdit) open_code_editor();
+    else run_cover_menu_item(m_engine, id, kCover);
 }
 
 void TrackDisplay::on_mouse_down(const ui::MouseEvent& e) {
@@ -114,7 +126,9 @@ void TrackDisplay::on_mouse_up(const ui::MouseEvent& e) {
 
 void TrackDisplay::on_mouse_move(int x, int y, unsigned, bool) {
     if (update_hover(x, y)) invalidate();
-    host()->set_tooltip(tooltip_at(m_buttons, x, y));
+    host()->set_tooltip(m_problemMarker.contains(x, y) && m_engine
+                            ? m_engine->problem_tooltip(m_engine->panel_script_label(m_name))
+                            : tooltip_at(m_buttons, x, y));
 }
 
 void TrackDisplay::on_mouse_leave() {
@@ -137,6 +151,7 @@ void TrackDisplay::on_destroy() {
 
 void TrackDisplay::on_click(int x, int y) {
     if (!m_engine) return;
+    if (m_problemMarker.contains(x, y)) { open_code_editor(); return; }
     for (const auto& b : m_buttons) {
         if (button_hit(b, x, y)) {
             m_engine->run_button_action(b.action); // repaints all panels on a pvar change

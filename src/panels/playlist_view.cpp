@@ -47,6 +47,15 @@ PlaylistView::Events::Events(PlaylistView* v)
                                          flag_on_item_ensure_visible),
       m_v(v) {}
 
+// Per playlist, by name (indices shift as playlists are added and removed).
+std::string PlaylistView::scroll_state_key() const {
+    auto pm = playlist_manager::get();
+    pfc::string8 name;
+    const t_size i = pm->get_active_playlist();
+    if (i != pfc_infinite) pm->playlist_get_name(i, name);
+    return std::string("playlist.scroll.") + name.c_str();
+}
+
 void PlaylistView::on_attached() {
     if (!m_events) m_events = std::make_unique<Events>(this);
 }
@@ -111,6 +120,10 @@ void PlaylistView::paint(gfx::Canvas& cv) {
     auto pm = playlist_manager::get();
     metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
 
+    if (m_restoreScroll && m_engine) { // this playlist's last position (clamped below)
+        m_restoreScroll = false;
+        m_scroll = m_savedScroll = atoi(m_engine->view_state(scroll_state_key()).c_str());
+    }
     int y = -m_scroll;
     for (const auto& g : groups) {
         if (g.items.empty()) continue;
@@ -179,6 +192,13 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         }
     }
     m_content_h = y + m_scroll;
+    const int before = m_scroll;
+    clamp_scroll();
+    if (m_scroll != before) invalidate(); // the restored position was past the end
+    if (m_engine && m_scroll != m_savedScroll) {
+        m_savedScroll = m_scroll;
+        m_engine->set_view_state(scroll_state_key(), std::to_string(m_scroll));
+    }
 
     // Drag-to-reorder insertion point: a bar between rows, in the highlight colour.
     if (m_dragging && m_drop_idx >= 0) {

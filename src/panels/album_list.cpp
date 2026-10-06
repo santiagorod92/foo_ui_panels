@@ -90,7 +90,11 @@ void AlbumList::rebuild() {
 void AlbumList::apply_view() {
     if (!m_sortLoaded && m_engine) { m_sortLoaded = true; m_sort = album_sort_from(m_engine->get_pvar(kSortPvar)); }
     auto key_at = [&](int i) { return (i >= 0 && i < (int)m_groups.size()) ? std::string(m_groups[i].key.c_str()) : std::string(); };
-    const std::string selKey = key_at(m_selected), cfKey = key_at(m_cf_target);
+    std::string selKey = key_at(m_selected), cfKey = key_at(m_cf_target);
+    if (m_restoreSel && selKey.empty() && m_engine) { // the album from last time
+        selKey = m_engine->view_state(view_key());
+        if (m_coverflow && !selKey.empty() && m_filter.empty()) { cfKey = selKey; m_cf_user = true; }
+    }
 
     m_groups.clear();
     for (const Group& g : m_all) {
@@ -130,6 +134,10 @@ void AlbumList::apply_view() {
     if (m_coverflow) {
         if (cf < 0) cf = m_cf_user || !m_filter.empty() ? 0 : group_index_for_now_playing();
         m_cf_target = cf; m_cf_pos = (float)cf; m_cf_init = true;
+    }
+    if (m_restoreSel && m_selected >= 0) {
+        m_restoreSel = false; // found it (else keep looking: Navidrome albums arrive later)
+        if (!m_coverflow) ensure_visible(m_selected);
     }
     invalidate();
 }
@@ -290,6 +298,11 @@ gfx::Color AlbumList::color_of(const char* role, gfx::Color def) const {
 
 void AlbumList::paint(gfx::Canvas& cv) {
     ensure_built();
+    if (m_engine && m_selected >= 0 && m_selected < (int)m_groups.size()) {
+        m_restoreSel = false; // something is selected now: that's what to remember
+        const std::string k = m_groups[(size_t)m_selected].key.c_str();
+        if (k != m_savedSel) { m_savedSel = k; m_engine->set_view_state(view_key(), k); }
+    }
     const int W = cv.width(), H = cv.height();
     // No backdrop at all behind us? Start from black (the gradient below covers it anyway).
     bool drewbg = m_engine && m_engine->draw_canvas_background(cv, *host());

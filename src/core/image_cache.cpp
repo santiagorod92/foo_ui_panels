@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <functional>
 #include <map>
+#include <tuple>
 #include <set>
 #include <unordered_map>
 #include <vector>
@@ -175,6 +176,8 @@ bool wild_match(const char* pat, const char* s) {
     return !*pat;
 }
 
+} // namespace
+
 // Resolve a wildcard in the file-name part (e.g. C:/Album/*folder*.jpg -> C:/Album/Folder.jpg).
 std::string resolve_wildcard(const std::string& p) {
     if (p.find('*') == std::string::npos && p.find('?') == std::string::npos) return p;
@@ -191,6 +194,8 @@ std::string resolve_wildcard(const std::string& p) {
     }
     return p;
 }
+
+namespace {
 
 // Keyed by the path as given, so a cached wildcard path ("<track dir>/*folder*.*", in every
 // panel script) costs a lookup per paint instead of a directory scan.
@@ -212,12 +217,57 @@ gfx::ImagePtr load_from_memory(const std::string& key, const void* data, size_t 
     return cache_put(key, img, kMissTtl);
 }
 
-void blit(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int w, int h, int alpha, int rotateflip) {
-    if (w <= 0) w = img.width();
-    if (h <= 0) h = img.height();
+// Scaled copies of big images drawn at another size than their own, at the device size they're
+// drawn at: a skin repaints its wallpaper and CD case every frame, and high-quality scaling of a
+// ~1000 px image each time cost far more than the rest of the frame. Keyed by the source image
+// (kept alive only by the decoded cache: a dropped or replaced source drops its copies) and the
+// size; LRU-bounded like the decoded cache.
+struct ScaledKey {
+    const gfx::Image* src; int w, h;
+    bool operator<(const ScaledKey& o) const { return std::tie(src, w, h) < std::tie(o.src, o.w, o.h); }
+};
+struct Scaled { std::weak_ptr<gfx::Image> src; gfx::ImagePtr img; uint64_t used = 0; };
+std::map<ScaledKey, Scaled> g_scaled;
+size_t g_scaledBytes = 0;
+constexpr size_t kScaledBudget = 96u << 20;
+constexpr int kScaledMinArea = 128 * 128; // smaller images scale cheaply enough
+
+gfx::ImagePtr scaled_copy(const gfx::ImagePtr& img, int pw, int ph) {
+    const ScaledKey key{ img.get(), pw, ph };
+    auto it = g_scaled.find(key);
+    if (it != g_scaled.end()) {
+        if (it->second.src.lock() == img) { it->second.used = ++g_clock; return it->second.img; }
+        g_scaledBytes -= image_bytes(it->second.img); // an old image at a reused address
+        g_scaled.erase(it);
+    }
+    gfx::ImagePtr out = gfx::resample_image(*img, pw, ph);
+    if (!out) return nullptr;
+    g_scaledBytes += image_bytes(out);
+    g_scaled[key] = Scaled{ img, out, ++g_clock };
+    while (g_scaledBytes > kScaledBudget && g_scaled.size() > 1) { // drop the least recently used
+        auto victim = g_scaled.begin();
+        for (auto i = g_scaled.begin(); i != g_scaled.end(); ++i) if (i->second.used < victim->second.used) victim = i;
+        g_scaledBytes -= image_bytes(victim->second.img);
+        g_scaled.erase(victim);
+    }
+    return out;
+}
+
+void blit(gfx::Canvas& cv, const gfx::ImagePtr& img, int x, int y, int w, int h, int alpha, int rotateflip) {
+    if (w <= 0) w = img->width();
+    if (h <= 0) h = img->height();
+    const gfx::RectF dst{ (float)x, (float)y, (float)w, (float)h };
     // RotateFlipType 6 == Rotate180FlipX == vertical mirror (used for reflections).
-    cv.draw_image(img, gfx::RectF{ (float)x, (float)y, (float)w, (float)h }, gfx::RectF{},
-                  alpha, rotateflip == 6);
+    const bool flip = rotateflip == 6;
+    const double s = cv.device_scale();
+    const int pw = (int)std::lround(w * s), ph = (int)std::lround(h * s);
+    if ((pw != img->width() || ph != img->height()) && pw * ph >= kScaledMinArea && pw <= 8192 && ph <= 8192) {
+        if (gfx::ImagePtr sc = scaled_copy(img, pw, ph)) {
+            cv.draw_image(*sc, dst, gfx::RectF{}, alpha, flip, gfx::Interp::Bilinear);
+            return;
+        }
+    }
+    cv.draw_image(*img, dst, gfx::RectF{}, alpha, flip);
 }
 
 // Front cover for `track`: `path` on disk if it loads, else the album-art pipeline. The
@@ -251,7 +301,7 @@ gfx::ImagePtr load_image(const std::string& path) { return load(path); }
 bool draw_image(gfx::Canvas& cv, const std::string& path, int x, int y, int w, int h, int alpha, int rotateflip) {
     gfx::ImagePtr img = load(path);
     if (!img) return false;
-    blit(cv, *img, x, y, w, h, alpha, rotateflip);
+    blit(cv, img, x, y, w, h, alpha, rotateflip);
     return true;
 }
 
@@ -275,7 +325,7 @@ bool draw_image_data(gfx::Canvas& cv, const std::string& key, const void* data, 
                      int x, int y, int w, int h) {
     gfx::ImagePtr img = load_from_memory("\x02" + key, data, size);
     if (!img) return false;
-    blit(cv, *img, x, y, w, h, 255, 0);
+    blit(cv, img, x, y, w, h, 255, 0);
     return true;
 }
 
@@ -283,7 +333,7 @@ bool draw_cover_art(gfx::Canvas& cv, const std::string& path, const metadb_handl
                     int x, int y, int w, int h, int alpha, int rotateflip) {
     gfx::ImagePtr img = resolve_cover(path, track);
     if (!img) return false;
-    blit(cv, *img, x, y, w, h, alpha, rotateflip);
+    blit(cv, img, x, y, w, h, alpha, rotateflip);
     return true;
 }
 
@@ -356,6 +406,7 @@ void images_shutdown() {
     if (g_npRegistered) { now_playing_album_art_notify_manager::get()->remove(&g_npNotify); g_npRegistered = false; }
     g_npData.release();
     g_cache.clear(); g_bytes = 0;
+    g_scaled.clear(); g_scaledBytes = 0;
     gfx::platform_images_shutdown();
 }
 

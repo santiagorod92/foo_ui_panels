@@ -56,10 +56,31 @@ One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and m
    each) and pick it, the active skin and its main script in **Preferences › Display › Panels UI
    (reborn)**. Changes there apply immediately.
 
-The component ships no skin of its own. fooAvA is distributed by its author (link above); the
-scripts in [`tools/`](tools/) recover its images and scripts from the original installer
-(`recover_fooava_images.py`) and convert its Panels UI configuration into the scripts this
-component loads (`extract_fooava.py`, which also writes fooAvA's `foo_ui_panels.ini`).
+The component ships no skin of its own: until it finds one it shows a welcome screen with a
+**Choose a skin folder…** button (pick the skin's folder, or a folder with one skin per
+subfolder), a shortcut to its Preferences page and a link to the guide below.
+
+### Setting up fooAvA
+
+fooAvA is distributed by its author (link above) as a Windows installer for the old Panels UI.
+The scripts in [`tools/`](tools/) (Python 3, no extra packages) turn it into a skin folder:
+
+1. Download fooAvA 1.05 from the author's DeviantArt page — `fooava_1_05_by_dawxxx666_*.exe`.
+   You don't need to run it (it targets foobar2000 0.9).
+2. Unpack it into a working folder, every file included:
+   `python3 tools/recover_fooava_images.py fooava_1_05_by_dawxxx666_*.exe fooava-files --all`
+3. Make the skin folder (say `fooava/`) and copy the unpacked `images/` folder into it.
+4. Convert the Panels UI configuration — the skin's layout and its panel scripts — into scripts
+   this component runs: `python3 tools/extract_fooava.py <the configuration file> fooava/fooava.txt`.
+   This also writes `fooava/panels/*.txt` and fooAvA's `foo_ui_panels.ini`. Convert each popup
+   window (`FOOAvA_settings.ava`, `FOOAvA Playlist.ava`, `FOOAvA_about.ava`) the same way, into
+   `fooava/panels/<its name>.txt`.
+5. Check it: `make skin-lint LINT_DIR=fooava` (from a source checkout) lists anything missing.
+6. Point the component at it: the welcome screen's **Choose a skin folder…**, or Preferences.
+   On macOS copy the folder to `~/Library/foobar2000-v2/foo_ui_panels/` or choose it there too.
+
+fooAvA's fonts (Calibri, Swis721 Cn BT) are optional: without them it uses the stand-ins its
+`foo_ui_panels.ini` names. Cover flow needed the long-gone foo_chronflow; the native one replaces it.
 
 ### Skin configuration
 
@@ -69,6 +90,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 
 | Key | Meaning (default) |
 |---|---|
+| `preview` | Image shown for the skin in Preferences (default: `preview.png`/`.jpg` or `screenshot.png`/`.jpg`, else a capture of the running skin). |
 | `script` | Main script file. Default: the only `.txt` in the folder's top level. The Preferences page can override it. |
 | `panels` | Folder of the per-panel scripts (`panels`). |
 | `images` | Folder the native panels' art below is relative to (the skin folder). |
@@ -120,12 +142,19 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   starts (Backspace undoes the last one and jumps back a little, Esc cancels). Then right-click
   to save it as a `.lrc` next to the track (local files) or in the lyrics cache. Lyrics in the
   file's own tags still come first on later plays.
-- Right-click **Edit code…** on a panel, with **Apply** to reload its script live — or edit
-  the skin's scripts or `foo_ui_panels.ini` in any editor: saved changes are picked up within a
-  second.
+- Right-click **Edit code…** on a panel to edit its script, applied live with **Apply** or
+  Ctrl+S (⌘S on macOS): the syntax is coloured, a status line shows the cursor position and a
+  quick check (unknown functions, missing arguments, unbalanced parentheses), and **Revert** goes
+  back to the script as it was when opened. Or edit the skin's scripts or `foo_ui_panels.ini` in
+  any editor: saved changes are picked up within a second.
 - Skin diagnostics in **View › Console**: functions the skin uses that aren't supported (yet),
   missing skin images, and panels no installed element can host.
-- The player window reopens where you left it, at the same size.
+- Script problems on the skin itself: a panel whose script is missing or doesn't compile gets a
+  small red **!** in its corner — hover for the details, click to edit the code (the main
+  script's shows at the bottom right of the window). **View › Panels UI › Show script problems**
+  turns the markers off.
+- The player window reopens where you left it, at the same size — and so do its views: each
+  playlist's scroll position and the album last picked in the album browser / cover flow.
 - **Zoom**: the whole skin scales with the display (automatic: Windows display scaling; old
   skins were drawn for 96 dpi and look tiny on a high-DPI screen otherwise), or by hand from
   **View › Panels UI › Zoom in / Zoom out / Reset zoom** or the Preferences page — 75% to 300%,
@@ -134,15 +163,28 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   Shortcuts): **Mini mode** (the skin's compact player, for skins that declare one —
   `mini.size`), zoom, **Reload skin**, **Skin ›** (switch between the skins in your skins
   folder, applied right away) and **Skin commands ›** (the skin's own `command.<label>` actions).
+- Keyboard and screen readers: **Tab** / **Shift+Tab** move between the panels that take keys
+  (playlist, album browser, playlist switcher, search, lyrics), the focused one outlined; each
+  panel has a name screen readers announce ("Playlist", "Album browser"…).
+- The system's media controls (Windows' media overlay / SMTC, macOS Now Playing) are run by
+  foobar2000 itself for whichever UI owns the main window; Panels UI hands the core its window
+  the same way the Default UI does, so nothing extra is needed.
 - foobar2000's **View › Always on Top** (Alt+A) keeps the Panels UI window on top; also on the
   Preferences page.
 - Skins can use these from their own buttons too: `ONTOP:TOGGLE`, `ZOOM:IN`/`ZOOM:OUT`/
-  `ZOOM:RESET`, `MINIMODE:TOGGLE`, and `PVAR:TOGGLE:<variable>` (flips a 0/1 variable).
-- Switching skin or main script in Preferences applies immediately (no restart).
+  `ZOOM:RESET`, `MINIMODE:TOGGLE`, `PVAR:TOGGLE:<variable>` (flips a 0/1 variable),
+  `PREFERENCES` (this component's Preferences page), `URL:<address>` and `SKIN:CHOOSE_FOLDER`.
+- Switching skin or main script in Preferences applies immediately (no restart). The skin picker
+  shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /
+  `screenshot.png` in its folder), else a picture the component takes of it the first time it is
+  shown (kept in the profile's `foo_ui_panels-previews` folder).
 - Album browser / cover flow: type to search by artist or album (Backspace edits, Esc clears),
   right-click empty space to sort by artist, album, year or recently added (remembered), arrow
   keys / Page Up/Down / Home/End move through the grid.
 - The Album Art panel cross-fades to the new cover on a track change.
+- Right-click the now-playing cover (the Album Art panel, or the panel a skin draws its cover
+  in): **View cover** at full size, **Open cover file**, **Show in folder**, or **Search for the
+  cover online**.
 - Button tooltips and the skin's own window title (`$settitle`, e.g. "artist - title" while
   playing).
 - The skin's tray icon (`$settray`): on Windows a notification-area icon — click to show/hide the
@@ -150,8 +192,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   sends the player to the tray; on macOS the same menu from a menu-bar icon.
 - GDI+-style outlines (`$gp_set_pen` + `$gp_draw_rectangle`) next to the existing brush fills.
 - **macOS support**: the same engine and panels run on macOS (Cocoa + CoreGraphics/CoreText),
-  shipped in the same `.fb2k-component` as the Windows build, with its own Preferences page
-  (skin folder, active skin, main script, accent colour) and full-resolution Retina rendering.
+  shipped in the same `.fb2k-component` as the Windows build, with the same Preferences page
+  (General, Script, Variables and Overrides tabs) and full-resolution Retina rendering.
   Panels that host foobar2000's own UI elements only work if a Mac element of the same name
   exists.
 
@@ -172,7 +214,7 @@ own):
 
 ## Roadmap
 
-- A step-by-step guide for setting up fooAvA from its original download.
+- More Panels UI skins from the 0.9.x days (only fooAvA has been tried so far — see Contributing).
 
 ## Contributing
 
@@ -189,7 +231,11 @@ wrong, a function isn't supported, or a panel is missing, just
 - the script of the affected panel (right-click › **Edit code…**) or the titleformat function
   that fails;
 - the `Panels UI:` lines from **View › Console** — they list what the skin uses that isn't
-  supported.
+  supported — or, with a source checkout, the output of `make skin-lint LINT_DIR=<skin folder>`,
+  which checks a skin folder without foobar2000 (functions, images, panel scripts, `asset.*` art).
+
+The script functions the engine implements are listed in
+[docs/SCRIPT_FUNCTIONS.md](docs/SCRIPT_FUNCTIONS.md).
 
 **Pull requests.** Fixes and new features are welcome. A few conventions keep things smooth:
 
@@ -200,8 +246,10 @@ wrong, a function isn't supported, or a panel is missing, just
 - Both builds should pass: `./build.sh` (Windows) and `./scripts/mac-build.sh` (macOS) — CI
   checks both on every PR.
 - `make test` runs the unit tests (`tests/`, host compiler, under ASan/UBSan — also in CI). They
-  cover the parts of the engine that don't need foobar2000: script/config parsing, `$eval`, menu
-  action matching, LRC/lrclib parsing, playlist reordering. Add a case when you touch those.
+  cover the parts of the engine that don't need foobar2000: the script functions themselves
+  (against a recording canvas), script/config parsing, `$eval`, menu action matching, LRC/lrclib
+  parsing, playlist reordering, the skin linter. Add a case when you touch those. A new script
+  function is a row in the table in `src/core/script_runtime.cpp`; run `make docs` after.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, …): they
   drive the automated releases (see [Releases](#releases)).
 - Update this README when you add or change a feature (e.g. *What's implemented*, *Roadmap*),

@@ -42,7 +42,7 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   a normal file-tag write fails, no real file backs it), that component exposes a small
   `service_base` interface; we vendor a GUID-matched copy of just the contract header
   (`src/core/navidrome_rating_api.h`) and find it via `service_enum_t` at runtime — no build coupling,
-  no-op if the other component isn't installed. See `skin_engine.cpp`'s `set_rating()`. Pattern +
+  no-op if the other component isn't installed. See `skin_actions.cpp`'s `set_rating()`. Pattern +
   full consumer list documented in `foo_navidrome`'s own CLAUDE.md ("Cross-compatibility with
   other same-author components") — add a symmetric note there for any new interface.
 
@@ -69,15 +69,24 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - `src/ui/view.h` — `ui::View` (panel logic: paint/input/timers), `ui::ViewHost` (platform child
   window), `ui::MainWindow` (what scripts do to the window), text field, menus, track context
   menu, colour picker, editor window, embedded foreign UI element.
-- `src/core/skin_engine.{h,cpp}` — the interpreter: titleformat hook, draw funcs, panel
-  registry/dispatch, button actions, pvars, theme colour. Core architecture — read this first.
+- `src/core/script_runtime.{h,cpp}` — the `$functions` (SDK-free): ONE table (`script_functions()`)
+  drives dispatch, skin diagnostics and the generated `docs/SCRIPT_FUNCTIONS.md` (`make docs`; a
+  test fails if stale). Needs from fb2k/platform go through `ScriptEnv`; engine state is
+  `ScriptState`. New function = table row + `f_<name>` + test (`tests/recording_canvas.h`).
+- `src/core/skin_engine.{h,cpp}` — `SkinEngine`: panel registry/dispatch, mini mode, theme/assets,
+  shared frames. Split by concern: `skin_hook.cpp` (titleformat hook = `ScriptEnv` impl, render,
+  draw_script, diagnostics), `skin_actions.cpp` (button actions, clicks, rating, tray),
+  `skin_files.cpp` (load, hot reload, panel scripts, pvar storage). Read the header first.
+- `src/core/skin_lint.{h,cpp}` + `tools/skin_lint.cpp` — offline skin check (`make skin-lint
+  LINT_DIR=<skin>`), SDK-free.
 - `src/core/image_cache.{h,cpp}` — image cache, wildcard cover paths, album-art pipeline.
 - `src/core/skin_config.{h,cpp}` — per-skin `foo_ui_panels.ini` + main-script resolution.
 - `src/core/skin_paths.{h,cpp}` — skin folder settings/resolution (`component_dir()` is platform);
   also the persisted main-script override (keeps `skin_config.cpp` SDK-free).
 - SDK-free, unit-tested (`tests/`, `make test`): `script_util` (script/ini parsing, `$eval`,
   menu-action matching), `lyrics_parse` (LRC, lrclib JSON), `playlist_ops.h`, `meter_math.h`,
-  `skin_config`, `ui_logic` (zoom steps/mapping, mini-mode plan, skin-command parsing, album search/sort).
+  `skin_config`, `ui_logic` (zoom steps/mapping, mini-mode plan, skin-command parsing, album search/sort),
+  `script_runtime` (+ `pvars.h`), `skin_lint`. Panel type → kind is `panel_kind()` (script_util).
   `make test` compiles them WITHOUT the SDK include path — never `#include "../fb2k.h"` there;
   new pure logic goes in one of these (or a new SDK-free file added to `TEST_SRC`) with a test.
 - `src/core/ui_settings.{h,cpp}` — zoom setting + always-on-top (the core's standard config
@@ -95,16 +104,25 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   (settings popup), `album_list` ("Graphical Browser"/"Album list"/"Chronflow" — no stock DUI
   element; Media Library + Navidrome albums, grid or cover flow), `lyrics_panel` ("Lyric Show":
   LRC sync, tags → sidecar → cache → lrclib.net; `lyr.*` pvars), `quick_search`, `library_tree`
-  ("Playlist switcher", self-drawn tree).
+  ("Playlist switcher", self-drawn tree), `cover_menu` (now-playing cover right-click menu +
+  full-size viewer, shared by album_art/track_display).
+- Engine extras: script problems + "!" marker (`script_problems`, `draw_problem_marker`), per-panel
+  view state in `_view.*` pvars (`view_state`, saved at shutdown), Tab traversal
+  (`focus_next_panel`, `ViewOptions::on_tab`, hosts draw `draw_focus_ring`), welcome screen =
+  `builtin_test_skin()` + actions `SKIN:CHOOSE_FOLDER`/`PREFERENCES`/`URL:`.
 - `src/platform/win/` — `main.cpp` (`user_interface`, main window = `ui::MainWindow`, menus,
   keyboard, `$settray` icon via `tray.h`), `win_view.cpp` (`WinViewHost` child HWNDs + every `ui::` service),
   `gdi_canvas.{h,cpp}` (GDI + GDI+), `panel_host` (hosts a DUI `ui_element` by name),
-  `preferences.cpp` (Preferences page, plain Win32 — no ATL/WTL in our toolchain).
+  `preferences.cpp` (Preferences page view, plain Win32 — no ATL/WTL in our toolchain).
 - `src/platform/mac/` — `mac_main.mm` (`ui_element_mac` "Panels UI", root canvas =
   `ui::MainWindow`; skins in `~/Library/foobar2000-v2/foo_ui_panels`), `mac_view.mm` (flipped
   NSView hosts + every `ui::` service), `mac_canvas.{h,mm}` (CoreGraphics/CoreText/ImageIO,
-  1 canvas unit = 1 pt at backingScaleFactor px, dpi 96), `mac_preferences.mm` (General-tab
-  subset of the Windows page, applies live via `pui::mac::reload_skin_everywhere`).
+  1 canvas unit = 1 pt at backingScaleFactor px, dpi 96), `mac_preferences.mm` (same
+  tabs as Windows, applies on every change).
+- Preferences logic: `src/core/prefs_model.{h,cpp}` (SDK-free, tested) — both pages are views
+  over `PrefsModel`; storage + going live is `PrefsBackend` (`prefs_store.cpp`). A new setting
+  goes in the model first. `ui::MainWindow::capture()` (window + panels) feeds the skin preview
+  cache (`SkinEngine::save_preview`).
 - Text drawing on Windows: **always wide APIs** (GdiCanvas converts UTF-8). `DrawTextA`
   mojibakes non-ASCII foobar strings (titleformat output, tags).
 - fooAvA config decode tooling: `tools/extract_fooava.py` (s8.bin → `fooava.txt` + `panels/*.txt`,

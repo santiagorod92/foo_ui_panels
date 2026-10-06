@@ -1,31 +1,28 @@
-// Preferences page (Display > Panels UI (reborn)). Generic skin-manager UI: no fooAvA-specific
-// wording — this drives ANY skin script in the recovered Panels-UI format (see FORMAT.md), not
-// just the bundled reference skin. No ATL/WTL (not in our cross-compile toolchain) — plain Win32
-// child windows + a native tab control (SysTabControl32) + a ListView for the variables grid,
-// same low-level WndProc pattern as the rest of this component (see TrackDisplay/Popup).
+// Preferences page (Display > Panels UI (reborn)), Windows view. Generic skin-manager UI: no
+// skin-specific wording. All logic — what is edited, what changed, applying — is PrefsModel
+// (src/core/prefs_model.h), shared with the macOS page; this file only maps it onto plain Win32
+// child windows (no ATL/WTL in our cross-compile toolchain): a tab control, a ListView for the
+// variables grid, an owner-drawn skin preview.
 //
 // Four tabs:
-//   General   - skins root folder (one subfolder per skin) + active skin + main script picker.
+//   General   - skins root folder (one subfolder per skin), active skin (with a preview), main
+//               script, zoom, always on top.
 //   Script    - raw editor for the active skin's main script.
-//   Variables - grid of the persistent pvars ($getpvar/$setpvar) the active script references.
+//   Variables - grid of the persistent pvars ($getpvar/$setpvar) the skin uses.
 //   Overrides - global font/accent-colour fallback used when a skin doesn't set its own.
 //
-// Applying writes the script file + persists root/active-skin/main-script + the pvar store, the
-// zoom and always-on-top. Everything applies live: a script edit through the engine's hot
-// reload, another skin or main script by reloading the skin in place (SkinEngine::reload_all).
+// Everything applies live (PrefsBackend::store): a script edit through the engine's hot reload,
+// another skin or main script by reloading the skin in place.
 #include "win_sdk.h"
-#include "../../core/skin_engine.h"
+#include "gdi_canvas.h"
+#include "../../core/prefs_model.h"
+#include "../../core/prefs_store.h"
 #include "../../core/skin_paths.h"
-#include "../../core/skin_config.h"
-#include "../../core/fs_util.h"
-#include "../../core/ui_settings.h"
 #include <shlobj.h>
 #include <commctrl.h>
 #include <commdlg.h>
 #include <string>
 #include <vector>
-#include <map>
-#include <set>
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -33,6 +30,7 @@
 namespace pui {
 
 namespace {
+
 std::wstring to_wide(const std::string& s) {
     if (s.empty()) return {};
     int n = MultiByteToWideChar(CP_UTF8, 0, s.data(), (int)s.size(), nullptr, 0);
@@ -47,13 +45,7 @@ std::string to_utf8(const std::wstring& w) {
     WideCharToMultiByte(CP_UTF8, 0, w.data(), (int)w.size(), &s[0], n, nullptr, nullptr);
     return s;
 }
-} // namespace
 
-namespace {
-
-// {9C1D9F3A-2B7E-4A6C-9F0D-7E3C5A8B1D40}
-const GUID g_prefs_page_guid =
-    { 0x9c1d9f3a, 0x2b7e, 0x4a6c, { 0x9f, 0x0d, 0x7e, 0x3c, 0x5a, 0x8b, 0x1d, 0x40 } };
 
 std::wstring get_text(HWND ctl) {
     int n = GetWindowTextLengthW(ctl);
@@ -61,70 +53,15 @@ std::wstring get_text(HWND ctl) {
     if (n > 0) GetWindowTextW(ctl, &w[0], n + 1);
     return w;
 }
+std::string get_utf8(HWND ctl) { return to_utf8(get_text(ctl)); }
 void set_text(HWND ctl, const std::string& s) { SetWindowTextW(ctl, to_wide(s).c_str()); }
-
-// Zoom choices: the combo's index 0 is automatic, then these percentages.
-const int kZoomChoices[] = { 75, 90, 100, 110, 125, 150, 175, 200, 250, 300 };
-
-// Best-effort scan for $getpvar(name)/$setpvar(name,...) references in a script — feeds the
-// Variables tab's grid (the modern equivalent of the original's "setup panel").
-std::vector<std::string> scan_pvar_names(const std::string& script) {
-    std::vector<std::string> names;
-    std::set<std::string> seen;
-    for (const char* fn : { "getpvar", "setpvar" }) {
-        std::string needle = std::string("$") + fn + "(";
-        size_t pos = 0;
-        while ((pos = script.find(needle, pos)) != std::string::npos) {
-            size_t start = pos + needle.size(), end = start;
-            while (end < script.size() && script[end] != ',' && script[end] != ')') ++end;
-            std::string name = script.substr(start, end - start);
-            size_t b = name.find_first_not_of(" \t");
-            if (b == std::string::npos) { pos = end + 1; continue; }
-            size_t e = name.find_last_not_of(" \t");
-            name = name.substr(b, e - b + 1);
-            if (!name.empty() && name.find('$') == std::string::npos && seen.insert(name).second)
-                names.push_back(name);
-            pos = end + 1;
-        }
-    }
-    std::sort(names.begin(), names.end());
-    return names;
-}
-
-std::string serialize_pvars(const PvarMap& m) {
-    std::string out;
-    for (auto& kv : m) { out += kv.first; out += '='; out += kv.second; out += '\n'; }
-    return out;
-}
-
-// "r-g-b" (0..255 each) — same dash format skin_engine.cpp's parse_rgb/find_color use.
-COLORREF parse_rgb_dash(const std::string& s) {
-    int v[3] = { 0,0,0 }, n = 0; const char* p = s.c_str();
-    while (*p && n < 3) {
-        while (*p && (*p < '0' || *p > '9')) ++p;
-        if (!*p) break;
-        int x = 0; while (*p >= '0' && *p <= '9') { x = x * 10 + (*p - '0'); ++p; }
-        v[n++] = x;
-        if (*p == '-') ++p; else break;
-    }
-    return RGB(v[0], v[1], v[2]);
-}
-std::string format_rgb_dash(COLORREF c) {
-    char buf[32]; snprintf(buf, sizeof buf, "%d-%d-%d", GetRValue(c), GetGValue(c), GetBValue(c));
-    return buf;
-}
-
-// Reserved pvar keys the Overrides tab edits. Hidden from the freeform Variables grid.
-const char* kFontFaceKey = "_prefs_font_face";
-const char* kFontSizeKey = "_prefs_font_size";
-const char* kAccentKey   = "_prefs_accent_color";
-bool is_reserved_key(const std::string& k) { return k.rfind("_prefs_", 0) == 0; }
+COLORREF colorref_of(gfx::Color c) { return RGB(c.r, c.g, c.b); }
 
 // Control IDs.
 enum {
     // General
     kIdRootEdit = 1001, kIdRootBrowse = 1002, kIdSkinCombo = 1003, kIdMainCombo = 1004,
-    kIdZoomCombo = 1005, kIdOnTop = 1006,
+    kIdZoomCombo = 1005, kIdOnTop = 1006, kIdPreview = 1007,
     // Script
     kIdScriptEdit = 1010,
     // Variables
@@ -136,78 +73,40 @@ enum {
     kIdTab = 1040,
 };
 
-static const wchar_t* kPageClass = L"foo_ui_panels_prefs_page";
-static const wchar_t* kRootClass = L"foo_ui_panels_prefs";
-
-// One tab page: a plain child window hosting a fixed set of controls, shown/hidden by the
-// owning PrefsInstance on tab switch. Kept dumb — PrefsInstance owns all state and logic.
-struct Page {
-    HWND wnd = nullptr;
-};
+const wchar_t* kPageClass = L"foo_ui_panels_prefs_page";
+const wchar_t* kRootClass = L"foo_ui_panels_prefs";
 
 class PrefsInstance : public preferences_page_instance {
 public:
     PrefsInstance(HWND parent, preferences_page_callback::ptr callback) : m_callback(callback) {
         register_classes();
-        m_pvars = load_all_pvars();
-        m_appliedPvars = serialize_pvars(m_pvars);
+        m_model.load();
         m_wnd = CreateWindowExW(0, kRootClass, L"", WS_CHILD | WS_VISIBLE,
                                 0, 0, 0, 0, parent, nullptr, core_api::get_my_instance(), this);
     }
 
     t_uint32 get_state() override {
         t_uint32 s = preferences_state::resettable;
-        if (has_changed()) s |= preferences_state::changed;
+        if (m_model.changed()) s |= preferences_state::changed;
         return s;
     }
     fb2k::hwnd_t get_wnd() override { return m_wnd; }
 
     void apply() override {
-        std::string root = to_utf8(get_text(m_rootEdit));
-        std::string active = combo_selected_skin();
-        std::string mainName = combo_selected_main();
-        set_skins_root(root);
-        set_active_skin(active);
-        set_main_script_override(mainName);
-        std::string script = to_utf8(get_text(m_scriptEdit));
-        if (!m_scriptPath.empty() && script != m_appliedScript) write_file(m_scriptPath, script);
-        const bool skinChanged = root != m_appliedRoot || active != m_appliedActive || mainName != m_appliedMain;
-        const bool pvarsChanged = serialize_pvars(m_pvars) != m_appliedPvars;
-        // The live engines hold their own copy of the store and would write it back over ours:
-        // push the edits through them (set_pvar persists), or straight to the store if none is open.
-        if (pvarsChanged && !SkinEngine::live().empty()) {
-            PvarMap old = load_all_pvars();
-            for (SkinEngine* e : SkinEngine::live()) {
-                for (auto& kv : m_pvars) e->set_pvar(kv.first, kv.second);
-                for (auto& kv : old) if (!m_pvars.count(kv.first)) e->set_pvar(kv.first, "");
-            }
-        }
-        save_all_pvars(m_pvars);
-        set_zoom_setting(combo_selected_zoom());
-        set_always_on_top(SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED);
-
-        m_appliedRoot = root; m_appliedActive = active; m_appliedMain = mainName; m_appliedScript = script;
-        m_appliedPvars = serialize_pvars(m_pvars);
-        m_appliedZoom = zoom_setting(); m_appliedOnTop = always_on_top();
-        if (skinChanged) SkinEngine::reload_all();
-        apply_view_settings(); // zoom, always on top; repaints (new pvars show too)
+        commit_edit_value(true);
+        m_model.apply();
+        refresh_all(); // the Script tab may edit another file now
         m_callback->on_state_changed();
     }
 
-    void reset() override { // back to defaults: no root override, bundled skin, no overrides
-        set_text(m_rootEdit, "");
-        refresh_skin_combo();
-        refresh_main_combo(""); // automatic
-        load_script_for_active();
-        m_pvars = load_all_pvars();
-        for (const char* k : { kFontFaceKey, kFontSizeKey, kAccentKey }) m_pvars.erase(k);
-        refresh_overrides_ui();
-        refresh_vars_list();
-        select_zoom(0);
-        SendMessageW(m_onTopCheck, BM_SETCHECK, BST_UNCHECKED, 0);
+    // Back to defaults: no skins root, automatic main script and zoom, no overrides.
+    void reset() override {
+        m_model.reset();
+        refresh_all();
         m_callback->on_state_changed();
     }
 
+private:
     static void register_classes() {
         static bool done = false; if (done) return; done = true;
         INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES };
@@ -223,278 +122,181 @@ public:
         }
     }
 
-private:
-    // --- construction -------------------------------------------------------
+    HWND child(HWND parent, const wchar_t* cls, const wchar_t* text, DWORD style, int id = 0, DWORD ex = 0) {
+        HWND h = CreateWindowExW(ex, cls, text, WS_CHILD | WS_VISIBLE | style, 0, 0, 0, 0, parent,
+                                 (HMENU)(INT_PTR)id, core_api::get_my_instance(), nullptr);
+        SendMessageW(h, WM_SETFONT, (WPARAM)m_font, TRUE);
+        return h;
+    }
+
+    // --- construction ----------------------------------------------------------------------
     void create_controls(HWND wnd) {
-        HINSTANCE inst = core_api::get_my_instance();
         m_font = CreateFontW(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
         m_monoFont = CreateFontW(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
-                             CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
+                                 CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
 
-        m_tab = CreateWindowExW(0, WC_TABCONTROLW, L"", WS_CHILD | WS_VISIBLE | WS_TABSTOP,
-            0, 0, 0, 0, wnd, (HMENU)kIdTab, inst, nullptr);
-        SendMessageW(m_tab, WM_SETFONT, (WPARAM)m_font, TRUE);
+        m_tab = child(wnd, WC_TABCONTROLW, L"", WS_TABSTOP, kIdTab);
         for (const wchar_t* t : { L"General", L"Script", L"Variables", L"Overrides" }) {
             TCITEMW ti = {}; ti.mask = TCIF_TEXT; ti.pszText = (LPWSTR)t;
             TabCtrl_InsertItem(m_tab, TabCtrl_GetItemCount(m_tab), &ti);
         }
+        for (HWND* p : { &m_pageGeneral, &m_pageScript, &m_pageVariables, &m_pageOverrides })
+            *p = CreateWindowExW(0, kPageClass, L"", WS_CHILD, 0, 0, 0, 0, wnd, nullptr, core_api::get_my_instance(), this);
 
-        m_pageGeneral   = make_page(wnd, inst);
-        m_pageScript    = make_page(wnd, inst);
-        m_pageVariables = make_page(wnd, inst);
-        m_pageOverrides = make_page(wnd, inst);
-
-        create_general_controls(inst);
-        create_script_controls(inst);
-        create_variables_controls(inst);
-        create_overrides_controls(inst);
-
-        ShowWindow(m_pageGeneral, SW_SHOW);
-        ShowWindow(m_pageScript, SW_HIDE);
-        ShowWindow(m_pageVariables, SW_HIDE);
-        ShowWindow(m_pageOverrides, SW_HIDE);
-
-        set_text(m_rootEdit, skins_root());
-        refresh_skin_combo();
-        refresh_main_combo(main_script_override());
-        m_appliedMain = combo_selected_main();
-        load_script_for_active();
-        refresh_vars_list();
-        refresh_overrides_ui();
-
-        m_appliedRoot = skins_root();
-        m_appliedActive = combo_selected_skin();
-        m_appliedZoom = zoom_setting(); m_appliedOnTop = always_on_top();
-        select_zoom(m_appliedZoom);
-        SendMessageW(m_onTopCheck, BM_SETCHECK, m_appliedOnTop ? BST_CHECKED : BST_UNCHECKED, 0);
-    }
-
-    HWND make_page(HWND parent, HINSTANCE inst) {
-        return CreateWindowExW(0, kPageClass, L"", WS_CHILD, 0, 0, 0, 0, parent, nullptr, inst, this);
-    }
-
-    void create_general_controls(HINSTANCE inst) {
         HWND p = m_pageGeneral;
-        m_rootLabel = CreateWindowExW(0, L"STATIC",
-            L"Skins root folder (one subfolder per skin — leave empty to use the single bundled skin):",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_rootEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 0,0,0,0, p, (HMENU)kIdRootEdit, inst, nullptr);
-        m_rootBrowseBtn = CreateWindowExW(0, L"BUTTON", L"Browse...",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0,0,0,0, p, (HMENU)kIdRootBrowse, inst, nullptr);
-        m_skinLabel = CreateWindowExW(0, L"STATIC", L"Active skin:",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_skinCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdSkinCombo, inst, nullptr);
-        m_mainLabel = CreateWindowExW(0, L"STATIC", L"Main script:",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_mainCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdMainCombo, inst, nullptr);
-        m_skinWarning = CreateWindowExW(0, L"STATIC", L"", WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_zoomLabel = CreateWindowExW(0, L"STATIC", L"Zoom:",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_zoomCombo = CreateWindowExW(WS_EX_CLIENTEDGE, L"COMBOBOX", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | CBS_DROPDOWNLIST, 0,0,0,0, p, (HMENU)kIdZoomCombo, inst, nullptr);
+        m_rootLabel = child(p, L"STATIC", L"Skins root folder (one subfolder per skin — leave empty to use the single skin next to the component):", 0);
+        m_rootEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdRootEdit, WS_EX_CLIENTEDGE);
+        m_rootBrowseBtn = child(p, L"BUTTON", L"Browse...", WS_TABSTOP, kIdRootBrowse);
+        m_skinLabel = child(p, L"STATIC", L"Active skin:", 0);
+        m_skinCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdSkinCombo, WS_EX_CLIENTEDGE);
+        m_mainLabel = child(p, L"STATIC", L"Main script:", 0);
+        m_mainCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdMainCombo, WS_EX_CLIENTEDGE);
+        m_skinWarning = child(p, L"STATIC", L"", 0);
+        m_zoomLabel = child(p, L"STATIC", L"Zoom:", 0);
+        m_zoomCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdZoomCombo, WS_EX_CLIENTEDGE);
         SendMessageW(m_zoomCombo, CB_ADDSTRING, 0, (LPARAM)L"Automatic (display scaling)");
-        for (int z : kZoomChoices) {
+        for (int z : PrefsModel::zoom_choices()) {
             wchar_t buf[16]; swprintf(buf, 16, L"%d%%", z);
             SendMessageW(m_zoomCombo, CB_ADDSTRING, 0, (LPARAM)buf);
         }
-        m_onTopCheck = CreateWindowExW(0, L"BUTTON", L"Keep the player window on top of other windows",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | BS_AUTOCHECKBOX, 0,0,0,0, p, (HMENU)kIdOnTop, inst, nullptr);
-        for (HWND c : { m_rootLabel, m_rootEdit, m_rootBrowseBtn, m_skinLabel, m_skinCombo, m_mainLabel,
-                        m_mainCombo, m_skinWarning, m_zoomLabel, m_zoomCombo, m_onTopCheck })
-            SendMessageW(c, WM_SETFONT, (WPARAM)m_font, TRUE);
-    }
+        m_onTopCheck = child(p, L"BUTTON", L"Keep the player window on top of other windows", WS_TABSTOP | BS_AUTOCHECKBOX, kIdOnTop);
+        m_preview = child(p, L"STATIC", L"", SS_OWNERDRAW, kIdPreview);
 
-    void create_script_controls(HINSTANCE inst) {
-        HWND p = m_pageScript;
-        m_scriptLabel = CreateWindowExW(0, L"STATIC", L"Active skin's main script:",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_scriptEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
-            ES_WANTRETURN | WS_VSCROLL | WS_HSCROLL, 0,0,0,0, p, (HMENU)kIdScriptEdit, inst, nullptr);
+        p = m_pageScript;
+        m_scriptLabel = child(p, L"STATIC", L"Active skin's main script:", 0);
+        m_scriptEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
+                             ES_WANTRETURN | WS_VSCROLL | WS_HSCROLL, kIdScriptEdit, WS_EX_CLIENTEDGE);
         // Plain EDIT controls silently cap input at 30,000 chars without this — real scripts run ~36KB.
         SendMessageW(m_scriptEdit, EM_SETLIMITTEXT, 0, 0);
-        SendMessageW(m_scriptLabel, WM_SETFONT, (WPARAM)m_font, TRUE);
         SendMessageW(m_scriptEdit, WM_SETFONT, (WPARAM)m_monoFont, TRUE);
-    }
 
-    void create_variables_controls(HINSTANCE inst) {
-        HWND p = m_pageVariables;
-        m_varsNote = CreateWindowExW(0, L"STATIC",
-            L"Persistent variables ($getpvar/$setpvar) found in the active script. Double-click a value to edit.",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_varsList = CreateWindowExW(WS_EX_CLIENTEDGE, WC_LISTVIEWW, L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
-            0,0,0,0, p, (HMENU)kIdVarsList, inst, nullptr);
+        p = m_pageVariables;
+        m_varsNote = child(p, L"STATIC", L"Persistent variables ($getpvar/$setpvar) the skin uses. Double-click a value to edit.", 0);
+        m_varsList = child(p, WC_LISTVIEWW, L"", WS_TABSTOP | LVS_REPORT | LVS_SINGLESEL | LVS_SHOWSELALWAYS,
+                           kIdVarsList, WS_EX_CLIENTEDGE);
         ListView_SetExtendedListViewStyle(m_varsList, LVS_EX_FULLROWSELECT | LVS_EX_GRIDLINES);
         LVCOLUMNW col = {}; col.mask = LVCF_TEXT | LVCF_WIDTH;
         col.cx = 220; col.pszText = (LPWSTR)L"Variable"; ListView_InsertColumn(m_varsList, 0, &col);
         col.cx = 300; col.pszText = (LPWSTR)L"Value";    ListView_InsertColumn(m_varsList, 1, &col);
-        m_varsRescanBtn = CreateWindowExW(0, L"BUTTON", L"Rescan script for variables",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0,0,0,0, p, (HMENU)kIdVarsRescan, inst, nullptr);
-        SendMessageW(m_varsNote, WM_SETFONT, (WPARAM)m_font, TRUE);
-        SendMessageW(m_varsList, WM_SETFONT, (WPARAM)m_font, TRUE);
-        SendMessageW(m_varsRescanBtn, WM_SETFONT, (WPARAM)m_font, TRUE);
+        m_varsRescanBtn = child(p, L"BUTTON", L"Find the skin's variables", WS_TABSTOP, kIdVarsRescan);
+
+        p = m_pageOverrides;
+        m_ovNote = child(p, L"STATIC", L"Fallbacks used when the active skin doesn't set its own font / accent colour. Leave blank to defer to the skin.", 0);
+        m_fontFaceLabel = child(p, L"STATIC", L"Font face:", 0);
+        m_fontFaceEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL, kIdFontFaceEdit, WS_EX_CLIENTEDGE);
+        m_fontSizeLabel = child(p, L"STATIC", L"Size:", 0);
+        m_fontSizeEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER, kIdFontSizeEdit, WS_EX_CLIENTEDGE);
+        m_fontPickBtn = child(p, L"BUTTON", L"Pick font...", WS_TABSTOP, kIdFontPickBtn);
+        m_accentLabel = child(p, L"STATIC", L"Accent colour:", 0);
+        m_accentSwatch = child(p, L"BUTTON", L"", BS_OWNERDRAW, kIdAccentSwatch, WS_EX_CLIENTEDGE);
+        m_accentPickBtn = child(p, L"BUTTON", L"Pick colour...", WS_TABSTOP, kIdAccentPickBtn);
+        m_accentClearBtn = child(p, L"BUTTON", L"Clear overrides", WS_TABSTOP, kIdAccentClearBtn);
+
+        ShowWindow(m_pageGeneral, SW_SHOW);
+        refresh_all();
     }
 
-    void create_overrides_controls(HINSTANCE inst) {
-        HWND p = m_pageOverrides;
-        m_ovNote = CreateWindowExW(0, L"STATIC",
-            L"Fallbacks used when the active skin doesn't set its own font / accent colour. Leave blank to defer to the skin.",
-            WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_fontFaceLabel = CreateWindowExW(0, L"STATIC", L"Font face:", WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_fontFaceEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL, 0,0,0,0, p, (HMENU)kIdFontFaceEdit, inst, nullptr);
-        m_fontSizeLabel = CreateWindowExW(0, L"STATIC", L"Size:", WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_fontSizeEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", L"",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP | ES_AUTOHSCROLL | ES_NUMBER, 0,0,0,0, p, (HMENU)kIdFontSizeEdit, inst, nullptr);
-        m_fontPickBtn = CreateWindowExW(0, L"BUTTON", L"Pick font...",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0,0,0,0, p, (HMENU)kIdFontPickBtn, inst, nullptr);
-        m_accentLabel = CreateWindowExW(0, L"STATIC", L"Accent colour:", WS_CHILD | WS_VISIBLE, 0,0,0,0, p, nullptr, inst, nullptr);
-        m_accentSwatch = CreateWindowExW(WS_EX_CLIENTEDGE, L"BUTTON", L"",
-            WS_CHILD | WS_VISIBLE | BS_OWNERDRAW, 0,0,0,0, p, (HMENU)kIdAccentSwatch, inst, nullptr);
-        m_accentPickBtn = CreateWindowExW(0, L"BUTTON", L"Pick colour...",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0,0,0,0, p, (HMENU)kIdAccentPickBtn, inst, nullptr);
-        m_accentClearBtn = CreateWindowExW(0, L"BUTTON", L"Clear overrides",
-            WS_CHILD | WS_VISIBLE | WS_TABSTOP, 0,0,0,0, p, (HMENU)kIdAccentClearBtn, inst, nullptr);
-        for (HWND c : { m_ovNote, m_fontFaceLabel, m_fontFaceEdit, m_fontSizeLabel, m_fontSizeEdit,
-                         m_fontPickBtn, m_accentLabel, m_accentPickBtn, m_accentClearBtn })
-            SendMessageW(c, WM_SETFONT, (WPARAM)m_font, TRUE);
+    // --- model -> UI -----------------------------------------------------------------------
+    // m_updating: the UI is being filled from the model, so its change notifications aren't edits.
+    void refresh_all() {
+        const bool was = m_updating;
+        m_updating = true;
+        set_text(m_rootEdit, m_model.pending().root);
+        refresh_skin_choice();
+        SendMessageW(m_zoomCombo, CB_SETCURSEL, m_model.zoom_index(), 0);
+        SendMessageW(m_onTopCheck, BM_SETCHECK, m_model.pending().onTop ? BST_CHECKED : BST_UNCHECKED, 0);
+        refresh_vars_list();
+        refresh_overrides_ui();
+        m_updating = was;
     }
 
-    // --- data <-> UI ----------------------------------------------------------
-    std::string combo_selected_skin() const { // "" = bundled default (first combo entry)
-        int i = (int)SendMessageW(m_skinCombo, CB_GETCURSEL, 0, 0);
-        if (i <= 0) return {};
-        return m_skinChoices[i - 1];
-    }
-
-    // Zoom combo <-> setting (0 = automatic; a value not in the list selects the nearest below).
-    void select_zoom(int pct) {
-        int sel = 0;
-        for (int i = 0; pct > 0 && i < (int)std::size(kZoomChoices); ++i) if (kZoomChoices[i] <= pct) sel = i + 1;
-        SendMessageW(m_zoomCombo, CB_SETCURSEL, sel, 0);
-    }
-    int combo_selected_zoom() const {
-        int i = (int)SendMessageW(m_zoomCombo, CB_GETCURSEL, 0, 0);
-        return i <= 0 || i > (int)std::size(kZoomChoices) ? 0 : kZoomChoices[i - 1];
-    }
-
-    void refresh_skin_combo() {
-        m_skinChoices = list_skins(to_utf8(get_text(m_rootEdit)));
+    // Skin + main-script combos, the warning, the preview and the script text.
+    void refresh_skin_choice() {
+        const bool was = m_updating;
+        m_updating = true;
+        const auto& skins = m_model.skins();
         SendMessageW(m_skinCombo, CB_RESETCONTENT, 0, 0);
-        SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)L"(bundled default)");
-        for (auto& s : m_skinChoices) SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(s).c_str());
-        std::string a = active_skin();
+        SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)L"(the component's own folder)");
         int sel = 0;
-        for (size_t i = 0; i < m_skinChoices.size(); ++i) if (m_skinChoices[i] == a) sel = (int)i + 1;
+        for (size_t i = 0; i < skins.size(); ++i) {
+            SendMessageW(m_skinCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(skins[i]).c_str());
+            if (skins[i] == m_model.pending().active) sel = (int)i + 1;
+        }
         SendMessageW(m_skinCombo, CB_SETCURSEL, sel, 0);
-        update_skin_warning();
-    }
 
-    // "(automatic)" + the folder's *.txt files; selects `name` if listed, else automatic.
-    void refresh_main_combo(const std::string& name) {
-        m_mainChoices = main_script_candidates(resolve_skin_dir_for_ui());
+        m_mainChoices = m_model.main_choices();
         SendMessageW(m_mainCombo, CB_RESETCONTENT, 0, 0);
         SendMessageW(m_mainCombo, CB_ADDSTRING, 0, (LPARAM)L"(automatic)");
-        int sel = 0;
+        sel = 0;
         for (size_t i = 0; i < m_mainChoices.size(); ++i) {
             SendMessageW(m_mainCombo, CB_ADDSTRING, 0, (LPARAM)to_wide(m_mainChoices[i]).c_str());
-            if (m_mainChoices[i] == name) sel = (int)i + 1;
+            if (m_mainChoices[i] == m_model.pending().main) sel = (int)i + 1;
         }
         SendMessageW(m_mainCombo, CB_SETCURSEL, sel, 0);
-    }
-    std::string combo_selected_main() const { // "" = automatic
-        int i = (int)SendMessageW(m_mainCombo, CB_GETCURSEL, 0, 0);
-        return i <= 0 || i > (int)m_mainChoices.size() ? std::string() : m_mainChoices[i - 1];
-    }
 
-    // The main script the page's pending choices resolve to ("" = none), and why if unclear.
-    std::string resolve_main_for_ui(std::string* why = nullptr) {
-        std::string dir = resolve_skin_dir_for_ui();
-        SkinConfig cfg; cfg.load(dir);
-        return resolve_main_script_with(dir, cfg, combo_selected_main(), why);
-    }
-
-    void update_skin_warning() {
-        std::string why;
-        std::string main = resolve_main_for_ui(&why);
-        std::wstring msg;
-        if (main.empty()) msg = L"⚠ " + to_wide(why.empty() ? "no main script found in this folder." : why);
-        else if (!why.empty()) msg = L"⚠ " + to_wide(why);
-        SetWindowTextW(m_skinWarning, msg.c_str());
-    }
-
-    // Same resolution resolve_skin_dir() does, but against the page's *unsaved* edits.
-    std::string resolve_skin_dir_for_ui() {
-        return resolve_skin_dir_for(to_utf8(get_text(m_rootEdit)), combo_selected_skin());
-    }
-
-    void load_script_for_active() {
-        m_scriptPath = resolve_main_for_ui();
-        std::string script = m_scriptPath.empty() ? std::string() : read_file(m_scriptPath);
-        set_text(m_scriptEdit, script);
-        m_appliedScript = script;
-        update_skin_warning();
+        const std::string warn = m_model.skin_warning();
+        SetWindowTextW(m_skinWarning, warn.empty() ? L"" : (L"⚠ " + to_wide(warn)).c_str());
+        m_previewPath = m_model.preview_image();
+        InvalidateRect(m_preview, nullptr, TRUE);
+        set_text(m_scriptEdit, m_model.script());
+        m_updating = was;
     }
 
     void refresh_vars_list() {
         ListView_DeleteAllItems(m_varsList);
         int row = 0;
-        for (auto& kv : m_pvars) {
-            if (is_reserved_key(kv.first)) continue;
-            LVITEMW it = {}; it.mask = LVIF_TEXT; it.iItem = row; it.iSubItem = 0;
-            std::wstring name = to_wide(kv.first);
-            it.pszText = (LPWSTR)name.c_str();
+        for (auto& [k, v] : m_model.variables()) {
+            std::wstring name = to_wide(k), val = to_wide(v);
+            LVITEMW it = {}; it.mask = LVIF_TEXT; it.iItem = row; it.pszText = (LPWSTR)name.c_str();
             ListView_InsertItem(m_varsList, &it);
-            std::wstring val = to_wide(kv.second);
             ListView_SetItemText(m_varsList, row, 1, (LPWSTR)val.c_str());
             ++row;
         }
     }
 
-    void rescan_vars() {
-        std::string script = to_utf8(get_text(m_scriptEdit));
-        for (auto& name : scan_pvar_names(script))
-            if (m_pvars.find(name) == m_pvars.end()) m_pvars[name] = "";
-        refresh_vars_list();
-    }
-
     void refresh_overrides_ui() {
-        auto get = [&](const char* k) { auto it = m_pvars.find(k); return it != m_pvars.end() ? it->second : std::string(); };
-        set_text(m_fontFaceEdit, get(kFontFaceKey));
-        set_text(m_fontSizeEdit, get(kFontSizeKey));
-        std::string acc = get(kAccentKey);
-        m_accentColor = acc.empty() ? RGB(0, 140, 220) : parse_rgb_dash(acc);
+        const bool was = m_updating;
+        m_updating = true;
+        set_text(m_fontFaceEdit, m_model.font_face());
+        set_text(m_fontSizeEdit, m_model.font_size());
         InvalidateRect(m_accentSwatch, nullptr, TRUE);
+        m_updating = was;
     }
 
-    bool has_changed() const {
-        return to_utf8(get_text(m_rootEdit)) != m_appliedRoot ||
-               combo_selected_skin() != m_appliedActive ||
-               combo_selected_main() != m_appliedMain ||
-               to_utf8(get_text(m_scriptEdit)) != m_appliedScript ||
-               serialize_pvars(m_pvars) != m_appliedPvars ||
-               combo_selected_zoom() != m_appliedZoom ||
-               (SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED) != m_appliedOnTop;
-    }
-    void notify_changed() { m_callback->on_state_changed(); }
+    void changed() { m_callback->on_state_changed(); }
 
-    // --- variables grid inline edit --------------------------------------------
+    // --- UI -> model -----------------------------------------------------------------------
+    void root_edited() {
+        const std::string root = get_utf8(m_rootEdit);
+        if (root == m_model.pending().root) return;
+        m_model.set_root(root);
+        refresh_skin_choice();
+        changed();
+    }
+
+    void browse_root() {
+        wchar_t path[MAX_PATH] = {};
+        BROWSEINFOW bi = {}; bi.hwndOwner = m_wnd; bi.lpszTitle = L"Skins root folder";
+        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
+        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
+        if (!pidl) return;
+        if (SHGetPathFromIDListW(pidl, path)) {
+            m_updating = true; SetWindowTextW(m_rootEdit, path); m_updating = false;
+            root_edited();
+        }
+        CoTaskMemFree(pidl);
+    }
+
+    // --- variables grid inline edit --------------------------------------------------------
     void begin_edit_value(int row) {
         if (row < 0) return;
         RECT rc;
         if (!ListView_GetSubItemRect(m_varsList, row, 1, LVIR_BOUNDS, &rc)) return;
-        wchar_t nameBuf[256] = {};
-        ListView_GetItemText(m_varsList, row, 0, nameBuf, 256);
         wchar_t valBuf[1024] = {};
         ListView_GetItemText(m_varsList, row, 1, valBuf, 1024);
         m_editingRow = row;
-        m_varsEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", valBuf,
-            WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
+        m_varsEdit = CreateWindowExW(WS_EX_CLIENTEDGE, L"EDIT", valBuf, WS_CHILD | WS_VISIBLE | WS_BORDER | ES_AUTOHSCROLL,
             rc.left, rc.top, rc.right - rc.left, rc.bottom - rc.top,
             m_varsList, (HMENU)kIdVarsEdit, core_api::get_my_instance(), nullptr);
         SendMessageW(m_varsEdit, WM_SETFONT, (WPARAM)m_font, TRUE);
@@ -509,10 +311,9 @@ private:
             wchar_t nameBuf[256] = {};
             ListView_GetItemText(m_varsList, m_editingRow, 0, nameBuf, 256);
             std::wstring wval = get_text(m_varsEdit);
-            std::string name = to_utf8(nameBuf);
-            m_pvars[name] = to_utf8(wval);
+            m_model.set_variable(to_utf8(nameBuf), to_utf8(wval));
             ListView_SetItemText(m_varsList, m_editingRow, 1, (LPWSTR)wval.c_str());
-            notify_changed();
+            changed();
         }
         HWND e = m_varsEdit; m_varsEdit = nullptr; m_editingRow = -1;
         DestroyWindow(e);
@@ -527,7 +328,7 @@ private:
         return CallWindowProcW(self->m_origEditProc, wnd, msg, wp, lp);
     }
 
-    // --- font / colour pickers --------------------------------------------------
+    // --- font / colour pickers -------------------------------------------------------------
     void pick_font() {
         LOGFONTW lf = {};
         std::wstring face = get_text(m_fontFaceEdit);
@@ -539,38 +340,53 @@ private:
         cf.hwndOwner = m_wnd; cf.lpLogFont = &lf; cf.hDC = dc;
         cf.Flags = CF_SCREENFONTS | CF_INITTOLOGFONTSTRUCT | CF_FORCEFONTEXIST;
         if (ChooseFontW(&cf)) {
-            set_text(m_fontFaceEdit, to_utf8(lf.lfFaceName));
             int pt = -MulDiv(lf.lfHeight, 72, GetDeviceCaps(dc, LOGPIXELSY));
-            char buf[16]; snprintf(buf, sizeof buf, "%d", pt < 1 ? 1 : pt);
-            set_text(m_fontSizeEdit, buf);
-            commit_overrides_from_ui();
+            m_model.set_font(to_utf8(lf.lfFaceName), std::to_string(pt < 1 ? 1 : pt));
+            refresh_overrides_ui();
+            changed();
         }
         ReleaseDC(m_wnd, dc);
     }
     void pick_color() {
         static COLORREF custom[16] = {};
+        gfx::Color cur(0, 140, 220);
+        m_model.accent(cur);
         CHOOSECOLORW cc = { sizeof(cc) };
-        cc.hwndOwner = m_wnd; cc.rgbResult = m_accentColor; cc.lpCustColors = custom;
+        cc.hwndOwner = m_wnd; cc.rgbResult = colorref_of(cur); cc.lpCustColors = custom;
         cc.Flags = CC_FULLOPEN | CC_RGBINIT;
         if (ChooseColorW(&cc)) {
-            m_accentColor = cc.rgbResult;
-            m_pvars[kAccentKey] = format_rgb_dash(m_accentColor);
+            m_model.set_accent(gfx::Color(GetRValue(cc.rgbResult), GetGValue(cc.rgbResult), GetBValue(cc.rgbResult)));
             InvalidateRect(m_accentSwatch, nullptr, TRUE);
-            notify_changed();
+            changed();
         }
     }
-    void commit_overrides_from_ui() {
-        m_pvars[kFontFaceKey] = to_utf8(get_text(m_fontFaceEdit));
-        m_pvars[kFontSizeKey] = to_utf8(get_text(m_fontSizeEdit));
-        notify_changed();
-    }
-    void clear_overrides() {
-        for (const char* k : { kFontFaceKey, kFontSizeKey, kAccentKey }) m_pvars.erase(k);
-        refresh_overrides_ui();
-        notify_changed();
+
+    // --- drawing ---------------------------------------------------------------------------
+    // The skin's preview, fitted into the box, or a note when there is none yet.
+    void draw_preview(const DRAWITEMSTRUCT* di) {
+        const RECT& r = di->rcItem;
+        const int w = r.right - r.left, h = r.bottom - r.top;
+        {
+            gfx::GdiCanvas gdi(di->hDC, w, h);
+            gfx::Canvas& cv = gdi;
+            cv.fill_rect(gfx::Rect{ 0, 0, w, h }, gfx::Color(32, 32, 32));
+            gfx::ImagePtr img = m_previewPath.empty() ? nullptr : gfx::decode_image_file(m_previewPath);
+            if (img && img->width() > 0 && img->height() > 0) {
+                const double s = std::min((double)w / img->width(), (double)h / img->height());
+                const float dw = (float)(img->width() * s), dh = (float)(img->height() * s);
+                cv.draw_image(*img, gfx::RectF{ (w - dw) / 2, (h - dh) / 2, dw, dh }, gfx::RectF{});
+            } else {
+                gfx::FontSpec f; f.face = "Segoe UI"; f.size = 9;
+                cv.set_font(f);
+                cv.draw_text("No preview yet: a skin gets one the first time it is shown.",
+                             gfx::Rect{ 8, 0, w - 16, h }, gfx::kAlignCenter | gfx::kWordWrap,
+                             gfx::Color(170, 170, 170));
+            }
+        }
+        FrameRect(di->hDC, &r, (HBRUSH)GetStockObject(GRAY_BRUSH));
     }
 
-    // --- layout -----------------------------------------------------------------
+    // --- layout ----------------------------------------------------------------------------
     void layout() {
         RECT rc; GetClientRect(m_wnd, &rc);
         MoveWindow(m_tab, 0, 0, rc.right, rc.bottom, TRUE);
@@ -584,19 +400,22 @@ private:
     }
     void layout_general() {
         RECT rc; GetClientRect(m_pageGeneral, &rc);
-        const int pad = 8, labelH = 18, editH = 22, btnW = 90;
+        const int pad = 8, labelH = 18, editH = 22, btnW = 90, comboW = 260;
         int y = pad;
         MoveWindow(m_rootLabel, pad, y, rc.right - pad * 2, labelH, TRUE); y += labelH + 2;
         MoveWindow(m_rootEdit, pad, y, rc.right - pad * 3 - btnW, editH, TRUE);
         MoveWindow(m_rootBrowseBtn, rc.right - pad - btnW, y, btnW, editH, TRUE); y += editH + 10;
         MoveWindow(m_skinLabel, pad, y, 100, labelH, TRUE);
-        MoveWindow(m_skinCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 6;
+        MoveWindow(m_skinCombo, pad + 104, y - 2, comboW, editH, TRUE); y += editH + 6;
         MoveWindow(m_mainLabel, pad, y, 100, labelH, TRUE);
-        MoveWindow(m_mainCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 4;
-        MoveWindow(m_skinWarning, pad, y, rc.right - pad * 2, labelH, TRUE); y += labelH + 14;
+        MoveWindow(m_mainCombo, pad + 104, y - 2, comboW, editH, TRUE); y += editH + 4;
+        MoveWindow(m_skinWarning, pad, y, rc.right - pad * 2, labelH, TRUE); y += labelH + 8;
         MoveWindow(m_zoomLabel, pad, y, 100, labelH, TRUE);
-        MoveWindow(m_zoomCombo, pad + 104, y - 2, 260, editH, TRUE); y += editH + 8;
-        MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE);
+        MoveWindow(m_zoomCombo, pad + 104, y - 2, comboW, editH, TRUE); y += editH + 8;
+        MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE); y += labelH + 12;
+        // The skin's preview fills the rest of the page (4:3 at most).
+        const int pw = std::max(0, (int)rc.right - pad * 2), ph = std::max(0, std::min(pw * 3 / 4, (int)rc.bottom - y - pad));
+        MoveWindow(m_preview, pad, y, pw, ph, TRUE);
     }
     void layout_script() {
         RECT rc; GetClientRect(m_pageScript, &rc);
@@ -608,8 +427,7 @@ private:
         RECT rc; GetClientRect(m_pageVariables, &rc);
         const int pad = 8, labelH = 18, btnH = 24;
         MoveWindow(m_varsNote, pad, pad, rc.right - pad * 2, labelH, TRUE);
-        MoveWindow(m_varsList, pad, pad + labelH + 2, rc.right - pad * 2,
-                   rc.bottom - pad * 3 - labelH - btnH, TRUE);
+        MoveWindow(m_varsList, pad, pad + labelH + 2, rc.right - pad * 2, rc.bottom - pad * 3 - labelH - btnH, TRUE);
         MoveWindow(m_varsRescanBtn, pad, rc.bottom - pad - btnH, 200, btnH, TRUE);
     }
     void layout_overrides() {
@@ -628,31 +446,53 @@ private:
         MoveWindow(m_accentClearBtn, pad, y, 140, editH, TRUE);
     }
 
-    void browse_root() {
-        wchar_t path[MAX_PATH] = {};
-        BROWSEINFOW bi = {}; bi.hwndOwner = m_wnd; bi.lpszTitle = L"Skins root folder";
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-        if (pidl) {
-            if (SHGetPathFromIDListW(pidl, path)) {
-                SetWindowTextW(m_rootEdit, path);
-                refresh_skin_combo(); load_script_for_active(); rescan_vars();
+    // --- WndProc ---------------------------------------------------------------------------
+    void on_command(WORD id, WORD code) {
+        if (m_updating) return;
+        switch (id) {
+        case kIdRootBrowse: if (code == BN_CLICKED) browse_root(); break;
+        case kIdRootEdit: if (code == EN_KILLFOCUS) root_edited(); break;
+        case kIdSkinCombo:
+            if (code == CBN_SELCHANGE) {
+                const int i = (int)SendMessageW(m_skinCombo, CB_GETCURSEL, 0, 0);
+                const auto& skins = m_model.skins();
+                m_model.set_active(i <= 0 || i > (int)skins.size() ? std::string() : skins[(size_t)i - 1]);
+                refresh_skin_choice(); changed();
             }
-            CoTaskMemFree(pidl);
+            break;
+        case kIdMainCombo:
+            if (code == CBN_SELCHANGE) {
+                const int i = (int)SendMessageW(m_mainCombo, CB_GETCURSEL, 0, 0);
+                m_model.set_main(i <= 0 || i > (int)m_mainChoices.size() ? std::string() : m_mainChoices[(size_t)i - 1]);
+                refresh_skin_choice(); changed();
+            }
+            break;
+        case kIdScriptEdit: if (code == EN_CHANGE) { m_model.set_script(get_utf8(m_scriptEdit)); changed(); } break;
+        case kIdZoomCombo:
+            if (code == CBN_SELCHANGE) { m_model.set_zoom_index((int)SendMessageW(m_zoomCombo, CB_GETCURSEL, 0, 0)); changed(); }
+            break;
+        case kIdOnTop:
+            if (code == BN_CLICKED) { m_model.set_on_top(SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED); changed(); }
+            break;
+        case kIdVarsRescan: if (code == BN_CLICKED) { m_model.rescan_variables(); refresh_vars_list(); changed(); } break;
+        case kIdFontPickBtn: if (code == BN_CLICKED) pick_font(); break;
+        case kIdFontFaceEdit: case kIdFontSizeEdit:
+            if (code == EN_CHANGE) { m_model.set_font(get_utf8(m_fontFaceEdit), get_utf8(m_fontSizeEdit)); changed(); }
+            break;
+        case kIdAccentPickBtn: if (code == BN_CLICKED) pick_color(); break;
+        case kIdAccentClearBtn: if (code == BN_CLICKED) { m_model.clear_overrides(); refresh_overrides_ui(); changed(); } break;
         }
     }
 
-    // --- WndProc ------------------------------------------------------------
     static LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         PrefsInstance* self = reinterpret_cast<PrefsInstance*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
         if (msg == WM_NCCREATE) {
-            auto cs = reinterpret_cast<CREATESTRUCTW*>(lp);
-            self = reinterpret_cast<PrefsInstance*>(cs->lpCreateParams);
+            self = reinterpret_cast<PrefsInstance*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);
             SetWindowLongPtrW(wnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
-        // Only the root page (holding the tab control) creates the child controls.
+        // Only the root window (holding the tab control) creates and lays out the controls.
         wchar_t cls[64] = {}; GetClassNameW(wnd, cls, 64);
-        bool isRoot = wcscmp(cls, kRootClass) == 0;
+        const bool isRoot = wcscmp(cls, kRootClass) == 0;
 
         switch (msg) {
         case WM_CREATE: if (self && isRoot) self->create_controls(wnd); return 0;
@@ -676,36 +516,18 @@ private:
         case WM_DRAWITEM: {
             auto di = reinterpret_cast<DRAWITEMSTRUCT*>(lp);
             if (self && di->CtlID == kIdAccentSwatch) {
-                HBRUSH b = CreateSolidBrush(self->m_accentColor);
+                gfx::Color c;
+                const bool set = self->m_model.accent(c);
+                HBRUSH b = CreateSolidBrush(set ? colorref_of(c) : GetSysColor(COLOR_BTNFACE));
                 FillRect(di->hDC, &di->rcItem, b); DeleteObject(b);
                 FrameRect(di->hDC, &di->rcItem, (HBRUSH)GetStockObject(BLACK_BRUSH));
                 return TRUE;
             }
+            if (self && di->CtlID == kIdPreview) { self->draw_preview(di); return TRUE; }
             break;
         }
         case WM_COMMAND:
-            if (self) {
-                WORD id = LOWORD(wp), code = HIWORD(wp);
-                if (id == kIdRootBrowse && code == BN_CLICKED) self->browse_root();
-                if (id == kIdSkinCombo && code == CBN_SELCHANGE) {
-                    self->refresh_main_combo(self->combo_selected_main());
-                    self->update_skin_warning(); self->load_script_for_active();
-                    self->rescan_vars(); self->notify_changed();
-                }
-                if (id == kIdMainCombo && code == CBN_SELCHANGE) {
-                    self->update_skin_warning(); self->load_script_for_active();
-                    self->rescan_vars(); self->notify_changed();
-                }
-                if (id == kIdScriptEdit && code == EN_CHANGE) self->notify_changed();
-                if (id == kIdZoomCombo && code == CBN_SELCHANGE) self->notify_changed();
-                if (id == kIdOnTop && code == BN_CLICKED) self->notify_changed();
-                if (id == kIdVarsRescan && code == BN_CLICKED) self->rescan_vars();
-                if (id == kIdFontPickBtn && code == BN_CLICKED) self->pick_font();
-                if ((id == kIdFontFaceEdit || id == kIdFontSizeEdit) && code == EN_CHANGE)
-                    self->commit_overrides_from_ui();
-                if (id == kIdAccentPickBtn && code == BN_CLICKED) self->pick_color();
-                if (id == kIdAccentClearBtn && code == BN_CLICKED) self->clear_overrides();
-            }
+            if (self) self->on_command(LOWORD(wp), HIWORD(wp));
             return 0;
         case WM_DESTROY:
             if (self && isRoot) {
@@ -718,17 +540,18 @@ private:
         return DefWindowProcW(wnd, msg, wp, lp);
     }
 
-    // Root + tab control
+    PrefsModel m_model{ prefs_backend() };
+    bool m_updating = false;
+    std::vector<std::string> m_mainChoices;
+    std::string m_previewPath;
+
     HWND m_wnd = nullptr, m_tab = nullptr;
     HWND m_pageGeneral = nullptr, m_pageScript = nullptr, m_pageVariables = nullptr, m_pageOverrides = nullptr;
     // General
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,
          m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr,
          m_mainLabel = nullptr, m_mainCombo = nullptr,
-         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr;
-    int m_appliedZoom = 0; bool m_appliedOnTop = false;
-    std::vector<std::string> m_skinChoices, m_mainChoices;
-    std::string m_scriptPath; // the file the Script tab edits ("" = none resolved)
+         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr, m_preview = nullptr;
     // Script
     HWND m_scriptLabel = nullptr, m_scriptEdit = nullptr;
     // Variables
@@ -738,18 +561,15 @@ private:
     HWND m_ovNote = nullptr, m_fontFaceLabel = nullptr, m_fontFaceEdit = nullptr,
          m_fontSizeLabel = nullptr, m_fontSizeEdit = nullptr, m_fontPickBtn = nullptr,
          m_accentLabel = nullptr, m_accentSwatch = nullptr, m_accentPickBtn = nullptr, m_accentClearBtn = nullptr;
-    COLORREF m_accentColor = RGB(0, 140, 220);
 
     HFONT m_font = nullptr, m_monoFont = nullptr;
-    PvarMap m_pvars; // shared by Variables + Overrides tabs
-    std::string m_appliedRoot, m_appliedActive, m_appliedMain, m_appliedScript, m_appliedPvars; // has_changed() baseline
     const preferences_page_callback::ptr m_callback;
 };
 
 class PrefsPage : public preferences_page_v3 {
 public:
     const char* get_name() override { return "Panels UI (reborn)"; }
-    GUID get_guid() override { return g_prefs_page_guid; }
+    GUID get_guid() override { return pui::prefs_page_guid(); }
     GUID get_parent_guid() override { return preferences_page::guid_display; }
     preferences_page_instance::ptr instantiate(fb2k::hwnd_t parent, preferences_page_callback::ptr callback) override {
         return new service_impl_t<PrefsInstance>(parent, callback);

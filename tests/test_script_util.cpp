@@ -94,6 +94,8 @@ TEST("parse_img_opts / parse_glow_tail leave absent keys alone") {
 TEST("text_opts") {
     CHECK_EQ(text_opts(""), (unsigned)gfx::kEndEllipsis);
     CHECK_EQ(text_opts("right"), (unsigned)(gfx::kEndEllipsis | gfx::kAlignRight));
+    CHECK_EQ(text_opts("wrap"), (unsigned)(gfx::kEndEllipsis | gfx::kWordWrap));
+    CHECK_EQ(text_opts("vcenter wrap") & gfx::kWordWrap, 0u); // one line wins
     // legacy: "vcenter" also matches "center"
     CHECK_EQ(text_opts("vcenter"),
              (unsigned)(gfx::kEndEllipsis | gfx::kAlignCenter | gfx::kVCenter | gfx::kSingleLine));

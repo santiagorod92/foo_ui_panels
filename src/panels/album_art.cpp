@@ -1,4 +1,5 @@
 #include "album_art.h"
+#include "cover_menu.h"
 #include "../core/skin_engine.h"
 #include "../core/image_cache.h"
 #include "../core/fs_util.h"
@@ -66,6 +67,13 @@ void AlbumArt::paint(gfx::Canvas& cv) {
     }
     if (m_prev && alpha < 255) draw_fitted(cv, *m_prev, W, H, 255 - alpha * (m_cur ? 0 : 1));
     if (m_cur) draw_fitted(cv, *m_cur, W, H, std::max(1, alpha));
+}
+
+void AlbumArt::on_mouse_up(const ui::MouseEvent& e) {
+    if (e.button != ui::MouseButton::Right) return;
+    ui::Menu m;
+    if (!add_cover_menu_items(m, 1)) return;
+    run_cover_menu_item(m_engine, ui::popup_menu(host(), e.x, e.y, m), 1);
 }
 
 } // namespace pui
