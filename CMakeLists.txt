@@ -110,7 +110,7 @@ if(WIN32)
   target_link_libraries(foo_ui_panels PRIVATE
     fb2ksdk pfc
     "${SDK}/foobar2000/shared/shared-x64.lib"
-    user32 gdi32 shell32 ole32 oleaut32 uuid comctl32 comdlg32 advapi32 shlwapi winmm msimg32 gdiplus)
+    user32 gdi32 shell32 ole32 oleaut32 uuid comctl32 comdlg32 advapi32 shlwapi winmm msimg32 gdiplus uxtheme)
 else()
   # A loadable bundle: foo_ui_panels.component/Contents/{Info.plist,MacOS/foo_ui_panels}.
   add_library(foo_ui_panels MODULE ${COMP_SRC})

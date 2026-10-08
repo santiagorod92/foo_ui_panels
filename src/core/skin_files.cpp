@@ -3,6 +3,7 @@
 #include "fs_util.h"
 #include "image_cache.h"
 #include "skin_paths.h"
+#include "skin_templates.h"
 #include "../panels/track_display.h"
 #include "../panels/popup.h"
 #include <foobar2000/SDK/cfg_var.h>
@@ -21,7 +22,24 @@ bool SkinEngine::load(const char* script) {
     return true;
 }
 
-bool SkinEngine::load_skin(const std::string& dir) {
+std::string SkinEngine::first_run_setup(const std::string& dir) {
+    if (!skins_root().empty() || !active_skin().empty() || dir != component_dir()) return dir;
+    SkinConfig cfg;
+    cfg.load(dir);
+    if (!resolve_main_script(dir, cfg).empty()) return dir; // a skin installed next to the component
+    const std::string parent = layout_skins_dir();
+    std::string err;
+    const std::string made = parent.empty() ? std::string() : install_skin_template(skin_templates().front(), parent, &err);
+    if (made.empty()) { console::printf("Panels UI: couldn't set up the default layout: %s", err.c_str()); return dir; }
+    console::printf("Panels UI: first run, default layout written to %s", made.c_str());
+    set_skins_root(parent);
+    set_active_skin(fs_utf8(fs_path(made).filename()));
+    m_wizard = true;
+    return made;
+}
+
+bool SkinEngine::load_skin(const std::string& dirIn) {
+    const std::string dir = first_run_setup(dirIn);
     m_st.base = dir;
     if (m_main) m_main->set_tray(""); // only while the (new) skin keeps asking for it
     m_st.cfg.load(dir);
@@ -32,7 +50,7 @@ bool SkinEngine::load_skin(const std::string& dir) {
     m_mainPath = resolve_main_script(dir, m_st.cfg, &why);
     if (!why.empty()) console::printf("Panels UI: %s", why.c_str());
     bool ok = load_main_script();
-    m_previewAt = tick_ms() + 3000; // see save_preview()
+    m_previewAt = m_wizard ? 0 : tick_ms() + 3000; // see save_preview(); not a picture of the wizard
     m_previewBy = m_previewAt + 60000;
     m_fileTimes = scan_skin_files();
     m_nextScan = tick_ms() + 1000;
@@ -40,6 +58,7 @@ bool SkinEngine::load_skin(const std::string& dir) {
 }
 
 bool SkinEngine::load_main_script() {
+    if (m_wizard) return load(layout_wizard_script().c_str());
     std::string skin = m_mainPath.empty() ? std::string() : read_file(m_mainPath);
     if (m_mainPath.empty() || skin.empty())
         console::printf("Panels UI: no main script in %s, using the built-in test skin", m_st.base.c_str());
@@ -69,6 +88,13 @@ SkinEngine::FileTimes SkinEngine::scan_skin_files() const {
         auto t = std::filesystem::last_write_time(fs_path(f), ec);
         if (!ec) out[f] = t;
     }
+    // No main script yet (empty or ambiguous folder): watch the candidates, so one appearing or
+    // going away starts the skin.
+    if (m_mainPath.empty())
+        for (const std::string& c : main_script_candidates(m_st.base)) {
+            auto t = std::filesystem::last_write_time(fs_path(m_st.base + "/" + c), ec);
+            if (!ec) out[m_st.base + "/" + c] = t;
+        }
     const std::string pdir = panels_dir();
     std::filesystem::directory_iterator it(fs_path(pdir), ec), end;
     for (; !ec && it != end; it.increment(ec)) {
@@ -100,7 +126,7 @@ void SkinEngine::save_preview() {
 
 void SkinEngine::check_skin_changes() {
     save_preview();
-    if (m_st.base.empty() || tick_ms() < m_nextScan) return;
+    if (m_wizard || m_st.base.empty() || tick_ms() < m_nextScan) return;
     m_nextScan = tick_ms() + 1000;
     FileTimes now = scan_skin_files();
     if (now == m_fileTimes) return;
@@ -115,8 +141,9 @@ void SkinEngine::check_skin_changes() {
 
     m_reported.clear(); m_st.imagesChecked.clear(); // a reload re-reports what's still wrong
     bool any = false;
-    if (changed.count(m_st.base + "/" + SkinConfig::kFileName)) {
-        // The config can name another main script, art folder, panel folder...: start over.
+    if (changed.count(m_st.base + "/" + SkinConfig::kFileName) || m_mainPath.empty()) {
+        // The config can name another main script, art folder, panel folder...: start over. So
+        // does a main script turning up where there was none.
         console::printf("Panels UI: reloaded %s", SkinConfig::kFileName);
         m_st.cfg.load(m_st.base);
         seed_pvars();
@@ -205,6 +232,18 @@ void SkinEngine::reload_skin() {
     m_st.buttons.clear(); m_st.placements.clear(); m_childShown.clear();
     load_skin(resolve_skin_dir());
     repaint_all();
+}
+
+void SkinEngine::show_layout_wizard() {
+    m_wizard = true;
+    m_previewAt = 0;
+    reload_skin();
+}
+
+void SkinEngine::close_layout_wizard() {
+    if (!m_wizard) return;
+    m_wizard = false;
+    reload_skin();
 }
 
 void SkinEngine::reload_all() {

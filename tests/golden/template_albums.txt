@@ -1,0 +1,24 @@
+fill_rect 0,0,1000,640 #18191e
+fill_rect 0,0,1000,40 #24262e
+font Segoe UI Symbol 13
+text "⏮" 6,4,32,32 f29 #e1e4eb
+text "▶" 38,4,32,32 f29 #e1e4eb
+text "⏹" 70,4,32,32 f29 #e1e4eb
+text "⏭" 102,4,32,32 f29 #e1e4eb
+fill_rect 148,18,700,4 #343740
+fill_rect 864,18,90,4 #343740
+fill_rect 864,18,0,4 #a0a5af
+text "☰" 962,4,32,32 f29 #e1e4eb
+fill_rect 600,40,1,578 #2d3038
+fill_rect 0,618,1000,22 #24262e
+font Segoe UI 9
+text "Stopped" 10,621,980,18 f32 #969ba5
+button 6,4,32,32 Previous tooltip=Previous
+button 38,4,32,32 Play tooltip=Play / pause
+button 70,4,32,32 Stop tooltip=Stop
+button 102,4,32,32 Next tooltip=Next
+button 962,4,32,32 MENU tooltip=Menu
+panel Seekbar Seekbar 148,12,700,16
+panel Volume Volume 864,12,90,16
+panel Albums Album list 0,40,600,578
+panel Playlist Single Column Playlist 601,40,399,578

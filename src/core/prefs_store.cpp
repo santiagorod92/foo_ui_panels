@@ -78,6 +78,13 @@ const GUID& prefs_page_guid() {
 
 void show_preferences_page() { ui_control::get()->show_preferences(prefs_page_guid()); }
 
+bool open_layout_wizard() {
+    if (SkinEngine::live().empty()) return false;
+    SkinEngine::live().front()->show_layout_wizard();
+    ui_control::get()->activate(); // over the Preferences window
+    return true;
+}
+
 PrefsBackend& prefs_backend() {
     static StoreBackend b;
     return b;

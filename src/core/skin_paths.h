@@ -28,6 +28,9 @@ std::string skin_preview_cache_path(const std::string& skinDir);
 struct PrefsBackend;
 PrefsBackend& prefs_backend();
 
+// Where the layout wizard writes the skins it makes: foo_ui_panels-skins in the profile folder.
+std::string layout_skins_dir();
+
 // Folder the component binary lives in (UTF-8, no trailing separator). Platform-supplied.
 std::string component_dir();
 

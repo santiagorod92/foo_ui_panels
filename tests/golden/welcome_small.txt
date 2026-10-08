@@ -3,17 +3,17 @@ gradient 0,0,420,4 #0078d7>#005aaa
 font Segoe UI 20 bold
 text "Welcome to Panels UI" 28,22,336,12 f24 #f0f0f0
 font Segoe UI 10
-text "No skin is set up yet. Panels UI runs skins made for the original Panels UI, such as fooAvA. Choose the folder that holds a skin, or a folder with one skin per subfolder." 28,62,364,52 f160 #afb4be
+text "No skin to run yet. Start from a ready-made layout, or choose the folder that holds a skin (its main script is the .txt file at the top level) or a folder with one skin per subfolder." 28,62,364,52 f160 #afb4be
 font Segoe UI 9
-round_rect 28,152,200,32 6,6 #0078d7
-round_rect 240,152,150,32 6,6 #3a3e48
-round_rect 402,152,190,32 6,6 #3a3e48
+round_rect 28,152,180,32 6,6 #0078d7
+round_rect 220,152,200,32 6,6 #3a3e48
+round_rect 432,152,150,32 6,6 #3a3e48
 text "Looked in: /Users/x/skins" 28,122,336,18 f24 #787d87
 font Segoe UI 10 bold
-text "Choose a skin folder..." 28,152,200,32 f29 #ffffff
-text "Preferences..." 240,152,150,32 f29 #ffffff
-text "Setting up fooAvA..." 402,152,190,32 f29 #ffffff
-button 28,152,200,32 SKIN:CHOOSE_FOLDER tooltip=Load a skin from a folder
-button 240,152,150,32 PREFERENCES
-button 402,152,190,32 URL:https://github.com/santiagorod92/foo_ui_panels#setting-up-fooava
+text "Choose a layout..." 28,152,180,32 f29 #ffffff
+text "Choose a skin folder..." 220,152,200,32 f29 #ffffff
+text "Preferences..." 432,152,150,32 f29 #ffffff
+button 28,152,180,32 WIZARD:OPEN tooltip=Start from a ready-made layout
+button 220,152,200,32 SKIN:CHOOSE_FOLDER tooltip=Load a skin from a folder
+button 432,152,150,32 PREFERENCES
 panel welcome.playlist Single Column Playlist 28,204,364,68

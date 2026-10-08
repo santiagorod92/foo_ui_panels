@@ -70,4 +70,11 @@ std::string resolve_skin_dir_for(const std::string& root, const std::string& act
 
 std::string resolve_skin_dir() { return resolve_skin_dir_for(skins_root(), active_skin()); }
 
+std::string layout_skins_dir() {
+    pfc::string8 native;
+    try { filesystem::g_get_native_path(core_api::get_profile_path(), native); } catch (...) { return {}; }
+    if (native.is_empty()) return {};
+    return std::string(native.get_ptr()) + kPathSep + "foo_ui_panels-skins";
+}
+
 } // namespace pui

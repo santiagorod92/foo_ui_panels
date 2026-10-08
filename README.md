@@ -56,9 +56,23 @@ One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and m
    each) and pick it, the active skin and its main script in **Preferences › Display › Panels UI
    (reborn)**. Changes there apply immediately.
 
-The component ships no skin of its own: until it finds one it shows a welcome screen with a
-**Choose a skin folder…** button (pick the skin's folder, or a folder with one skin per
-subfolder), a shortcut to its Preferences page and a link to the guide below.
+The first time it runs with nothing set up, Panels UI writes its default layout — a dark,
+Default-UI-like player: toolbar with transport, seek and volume, album art and what's playing
+beside the playlist, a status bar — to `foo_ui_panels-skins` in the foobar2000 profile folder,
+makes it the skin and opens the **layout wizard** over it. The wizard (also **View › Panels UI ›
+Layout wizard…**, or the **Layout wizard…** button in Preferences › Display › Panels UI (reborn),
+like the Default UI's *Quick Setup*) offers ready-made layouts — *Playlist and cover*, *Library* (playlists, playlist,
+album art), *Album browser* (cover grid + playlist), *Playlist*, *Now playing* (large cover, synced
+lyrics, spectrum) — each with a thumbnail. Picking one writes it out as a skin folder of its own
+(`main.txt` + `foo_ui_panels.ini`, a new folder each time, so edits are never overwritten): it is an
+ordinary skin from then on, to edit like any other. **Use my own skin folder…** loads any other skin
+instead (fooAvA, see below).
+
+Picking a skin folder (the dialog's **OK**) is all it takes: it is saved and the skin loads. A folder
+with nothing to run yet is kept all the same, with a warning saying why — no `.txt` main script at
+its top level (the skin starts as soon as one appears there, no restart), or several `.txt` files
+(Preferences opens to pick the main one). Until a folder has a main script, a welcome screen offers
+the wizard, the folder chooser and the Preferences page.
 
 ### Setting up fooAvA
 
@@ -161,7 +175,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   sharp text and art at any size. The window keeps the skin's size in skin pixels.
 - **View › Panels UI** menu — every entry can get a keyboard shortcut (Preferences › Keyboard
   Shortcuts): **Mini mode** (the skin's compact player, for skins that declare one —
-  `mini.size`), zoom, **Reload skin**, **Skin ›** (switch between the skins in your skins
+  `mini.size`), zoom, **Reload skin**, **Layout wizard…**, **Skin ›** (switch between the skins in your skins
   folder, applied right away) and **Skin commands ›** (the skin's own `command.<label>` actions).
 - Keyboard and screen readers: **Tab** / **Shift+Tab** move between the panels that take keys
   (playlist, album browser, playlist switcher, search, lyrics), the focused one outlined; each
@@ -178,6 +192,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /
   `screenshot.png` in its folder), else a picture the component takes of it the first time it is
   shown (kept in the profile's `foo_ui_panels-previews` folder).
+- The Preferences page follows foobar2000's **Dark Mode** (Preferences › Display › Default User
+  Interface; on *Auto* it tracks Windows' app theme live, also with Panels UI as the UI module).
 - Album browser / cover flow: type to search by artist or album (Backspace edits, Esc clears),
   right-click empty space to sort by artist, album, year or recently added (remembered), arrow
   keys / Page Up/Down / Home/End move through the grid.

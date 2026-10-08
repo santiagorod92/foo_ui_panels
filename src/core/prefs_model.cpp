@@ -61,14 +61,36 @@ void PrefsModel::set_main(const std::string& file) {
 void PrefsModel::choose_skin_folder(const std::string& folderIn) {
     std::string folder = folderIn;
     while (folder.size() > 1 && (folder.back() == '/' || folder.back() == '\\')) folder.pop_back();
-    std::error_code ec;
-    const bool isSkin = !main_script_candidates(folder).empty() ||
-                        std::filesystem::is_regular_file(fs_path(folder + "/" + SkinConfig::kFileName), ec);
-    if (!isSkin) { set_root(folder); return; }
+    auto looks_like_skin = [](const std::string& dir) {
+        std::error_code ec;
+        return !main_script_candidates(dir).empty() ||
+               std::filesystem::is_regular_file(fs_path(dir + "/" + SkinConfig::kFileName), ec);
+    };
+    // A folder of skins only when one of its subfolders looks like a skin; anything else is the
+    // skin itself, script or not yet (its images/, panels/... aren't skins).
+    if (!looks_like_skin(folder)) {
+        const std::vector<std::string> subs = m_b.list_skins(folder);
+        if (std::any_of(subs.begin(), subs.end(), [&](const std::string& s) { return looks_like_skin(folder + "/" + s); })) {
+            set_root(folder);
+            return;
+        }
+    }
     const std::filesystem::path p = fs_path(folder);
     m_now.root = fs_utf8(p.parent_path());
     refresh_skins();
     set_active(fs_utf8(p.filename()));
+}
+
+std::string PrefsModel::chosen_folder_problem(const std::string& folder) const {
+    if (!main_script().empty()) return {};
+    const std::string msg = "Saved as the skin folder:\n" + folder + "\n\n";
+    if (main_choices().size() > 1)
+        return msg + "It has " + std::to_string(main_choices().size()) + " .txt files at the top level, so the "
+               "main script is ambiguous. Pick it under Main script in Preferences (opening now), or set "
+               "`script =` in the skin's " + SkinConfig::kFileName + ".";
+    return msg + "There is no main script to run in it yet: a skin's main script is the .txt file at its "
+           "top level (or one subfolder per skin, each with its own). The skin starts as soon as one is "
+           "there — no restart needed.";
 }
 
 std::string PrefsModel::skin_dir() const { return m_b.skin_dir(m_now.root, m_now.active); }

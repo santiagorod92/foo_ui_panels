@@ -39,6 +39,7 @@ void save_all_pvars(const PvarMap& pvars);
 
 
 class PopupView;
+class PrefsModel;
 
 class SkinEngine {
 public:
@@ -104,6 +105,12 @@ public:
     // that skin in place: the old skin's panels go, the new one's are created on the next paint.
     void reload_skin();
     static void reload_all();
+
+    // The layout wizard (skin_templates.h) shown in place of the skin until a layout is picked or
+    // it is closed: View > Panels UI > Layout wizard…, the welcome screen, and once on first run.
+    void show_layout_wizard();
+    void close_layout_wizard();
+    bool in_layout_wizard() const { return m_wizard; }
 
     // Mini mode — the skin's compact layout, declared in its config: `mini.size` (client W H),
     // `mini.anchor` (the corner that stays put, e.g. "RIGHT TOP") and where the full size is
@@ -296,6 +303,12 @@ private:
     Slot* ensure_slot(const std::string& name, Kind kind, const Placement& p);
 
     bool m_pvars_loaded = false;
+    bool m_wizard = false; // the layout wizard runs instead of the skin's main script
+    // First run (nothing configured, no skin next to the component): the default layout is
+    // written out and made the skin, and the wizard opens over it. Returns the folder to load.
+    std::string first_run_setup(const std::string& dir);
+    // After a pick from the wizard or the folder chooser: leave the wizard for the new skin.
+    void apply_skin_choice(PrefsModel& prefs);
     ui::MainWindow* m_main = nullptr;
     service_ptr_t<titleformat_object> m_script;
     // What the scripts read and write (pvars, $puts pool, placements, buttons, config, skin

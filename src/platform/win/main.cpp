@@ -479,6 +479,15 @@ private:
             if (self) self->m_skin.repaint_all();
             return 0;
         }
+        case WM_SETTINGCHANGE:
+            // Windows' app theme changed: tell the core, so Dark Mode on "Auto" follows it (the
+            // Default UI does this itself; any other UI has to).
+            if (lp && !wcscmp(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet")) {
+                ui_config_manager_v2::ptr api;
+                if (auto base = ui_config_manager::tryGet(); base.is_valid() && base->service_query_t(api))
+                    api->notify_system_theme_changed();
+            }
+            break;
         case WM_CLOSE:
             standard_commands::main_exit();
             return 0;

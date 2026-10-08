@@ -106,7 +106,7 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `skin_config`, `ui_logic` (zoom steps/mapping, mini-mode plan, skin-command parsing, album search/sort),
   `list_logic` (native panels' geometry/scroll/keyboard nav: `GroupedRows`, `TreeRows`, `GridLayout`,
   `CoverFlow` — panels keep only fb2k + drawing calls), `prefs_model` (+ `prefs_text` wording,
-  picker lists), `builtin_skin`, `script_runtime` (+ `pvars.h`), `skin_lint`. Panel type → kind is `panel_kind()` (script_util).
+  picker lists), `builtin_skin`, `skin_templates` (layout wizard + its built-in layouts), `script_runtime` (+ `pvars.h`), `skin_lint`. Panel type → kind is `panel_kind()` (script_util).
   `make test` compiles them WITHOUT the SDK include path — never `#include "../fb2k.h"` there;
   new pure logic goes in one of these (or a new SDK-free file added to `TEST_SRC`) with a test.
 - Golden render tests (`tests/test_render_golden.cpp`): scripts run via `tests/mini_titleformat.h`
@@ -133,11 +133,14 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - Engine extras: script problems + "!" marker (`script_problems`, `draw_problem_marker`), per-panel
   view state in `_view.*` pvars (`view_state`, saved at shutdown), Tab traversal
   (`focus_next_panel`, `ViewOptions::on_tab`, hosts draw `draw_focus_ring`), welcome screen =
-  `builtin_test_skin()` + actions `SKIN:CHOOSE_FOLDER`/`PREFERENCES`/`URL:`.
+  `builtin_test_skin()` + actions `SKIN:CHOOSE_FOLDER`/`PREFERENCES`/`WIZARD:OPEN`; layout wizard =
+  `layout_wizard_script()` (engine `m_wizard` mode, `SKIN:TEMPLATE:<id>` writes the layout to
+  `layout_skins_dir()`), shown once on first run (`first_run_setup`).
 - `src/platform/win/` — `main.cpp` (`user_interface`, main window = `ui::MainWindow`, menus,
   keyboard, `$settray` icon via `tray.h`), `win_view.cpp` (`WinViewHost` child HWNDs + every `ui::` service),
   `gdi_canvas.{h,cpp}` (GDI + GDI+), `panel_host` (hosts a DUI `ui_element` by name),
-  `preferences.cpp` (Preferences page view, plain Win32 — no ATL/WTL in our toolchain).
+  `preferences.cpp` (Preferences page view, plain Win32 — no ATL/WTL in our toolchain; Dark Mode
+  via `dark_mode.{h,cpp}`, since the SDK's hooks need ATL or real dialogs).
 - `src/platform/mac/` — `mac_main.mm` (`ui_element_mac` "Panels UI", root canvas =
   `ui::MainWindow`; skins in `~/Library/foobar2000-v2/foo_ui_panels`), `mac_view.mm` (flipped
   NSView hosts + every `ui::` service), `mac_canvas.{h,mm}` (CoreGraphics/CoreText/ImageIO,
