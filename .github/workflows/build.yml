@@ -23,6 +23,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: foo_ui_panels
+          fetch-depth: 0   # tags, so scripts/version.sh stamps 1.6.0-dev.3+<sha>
 
       - name: Set up cross-build
         uses: ./foo_ui_panels/.github/actions/setup-build
@@ -57,6 +58,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: foo_ui_panels
+          fetch-depth: 0   # tags, so scripts/version.sh stamps 1.6.0-dev.3+<sha>
 
       - name: Fetch foobar2000 SDK
         uses: ./foo_ui_panels/.github/actions/fetch-sdk
