@@ -144,6 +144,8 @@ private:
                                  CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
 
         m_tab = child(wnd, WC_TABCONTROLW, L"", WS_TABSTOP, kIdTab);
+        m_credit[0] = child(wnd, L"STATIC", w(prefs_text::kAuthor).c_str(), SS_NOPREFIX);
+        m_credit[1] = child(wnd, L"STATIC", w(prefs_text::kSourceUrl).c_str(), SS_NOPREFIX);
         for (const char* t : prefs_text::kTabs) {
             const std::wstring name = w(t);
             TCITEMW ti = {}; ti.mask = TCIF_TEXT; ti.pszText = (LPWSTR)name.c_str();
@@ -379,6 +381,11 @@ private:
     // --- layout ----------------------------------------------------------------------------
     void layout() {
         RECT rc; GetClientRect(m_wnd, &rc);
+        // Credit lines in a strip under the tabs, bottom left.
+        const int lineH = 18, creditH = lineH * 2 + 8;
+        rc.bottom = std::max(0, (int)rc.bottom - creditH);
+        for (int i = 0; i < 2; ++i)
+            MoveWindow(m_credit[i], 8, rc.bottom + 4 + i * lineH, std::max(0, (int)rc.right - 16), lineH, TRUE);
         MoveWindow(m_tab, 0, 0, rc.right, rc.bottom, TRUE);
         RECT disp = rc; TabCtrl_AdjustRect(m_tab, FALSE, &disp);
         for (HWND page : { m_pageGeneral, m_pageScript, m_pageVariables, m_pageOverrides })
@@ -485,6 +492,13 @@ private:
         switch (msg) {
         case WM_CREATE: if (self && isRoot) self->create_controls(wnd); return 0;
         case WM_SIZE:   if (self && isRoot) self->layout(); return 0;
+        case WM_CTLCOLORSTATIC:
+            if (self && ((HWND)lp == self->m_credit[0] || (HWND)lp == self->m_credit[1])) {
+                SetTextColor((HDC)wp, GetSysColor(COLOR_GRAYTEXT));
+                SetBkColor((HDC)wp, GetSysColor(COLOR_BTNFACE));
+                return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
+            }
+            break;
         case WM_NOTIFY: {
             if (!self) break;
             auto nm = reinterpret_cast<NMHDR*>(lp);
@@ -533,6 +547,7 @@ private:
     std::string m_previewPath;
 
     HWND m_wnd = nullptr, m_tab = nullptr;
+    HWND m_credit[2] = {}; // author line, source code URL
     HWND m_pageGeneral = nullptr, m_pageScript = nullptr, m_pageVariables = nullptr, m_pageOverrides = nullptr;
     // General
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,

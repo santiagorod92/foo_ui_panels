@@ -68,6 +68,9 @@ inline constexpr const char* kFontFace = "Font face:";
 inline constexpr const char* kFontSize = "Size:";
 inline constexpr const char* kAccent = "Accent colour:";
 inline constexpr const char* kClearOverrides = "Clear overrides";
+// Credit watermark at the bottom left of the page, under the tabs
+inline constexpr const char* kAuthor = "Author: Santiago Rodriguez";
+inline constexpr const char* kSourceUrl = "https://github.com/santiagorod92/foo_ui_panels";
 } // namespace prefs_text
 
 class PrefsModel {

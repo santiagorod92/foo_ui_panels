@@ -18,7 +18,8 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   LINT_DIR=tests/skins/synthetic`), with new pure logic covered by a unit/golden test;
   (2) both builds; (3) runtime on Windows in the local Wine foobar2000 (`make deploy`,
   `scripts/ui-test.sh` to click/type/screenshot); (4) runtime on macOS in the VM
-  (`make mac-vm` / `make mac-vm-test`, `mvm click|key|shot`). Exercise the changed feature
+  (`make mac-vm` / `make mac-vm-test`, `mvm click|key|shot`); real Windows 11 (`make win11-test`)
+  when the change touches theming, DPI or native controls. Exercise the changed feature
   itself, not just "it loads". Anything that couldn't be checked (and why) goes in the PR.
 - macOS integration: a `user_interface` module ("Panels UI (reborn)", Preferences › Display —
   verified in the VM) owning its window, plus a `ui_element_mac` layout element ("Panels UI").
@@ -26,6 +27,13 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   Intel guest — bundle must keep its x86_64 slice). `make mac-vm-test` = mac-build → deploy →
   relaunch → screenshot; `make mac-vm` boots it and opens the noVNC tab only once macOS is up
   (input during OpenCore's picker cancels its auto-boot timeout; `VNC=0` = no tab); `make mac-vm-skin`, `make mac-vm-navidrome[-config]` (foo_navidrome + its Wine settings), `make mac-vm-<mvm cmd>`. Never `docker prune`/`rm`.
+- Real Windows 11 runtime testing (Dark Mode, DPI, native theming — what Wine fakes): sibling
+  `../windows-devbox` (`wvm`, dockur/windows). `make win11-test` = build → `wvm deploy` → copy
+  skins/$SKIN into the component folder (Panels UI's default skin dir; `wvm deploy` recreates
+  that folder, so the skin is re-copied every time) → relaunch → screenshot. `win11-skin` drops
+  names Windows can't hold (stray `*`/`\` files a skin's scripts wrote under Wine) — scp aborts
+  the whole copy on one. The guest needs Panels UI picked as UI module once (then
+  `make win11-snapshot`). `make win11-<wvm cmd>`: `-theme ARGS=dark`, `-dpi ARGS=144`, `-shot`.
 
 ## Key decisions
 - Target service (Windows): full UI replacement via `user_interface` (`foobar2000/SDK/ui.h`, v1–v4),
