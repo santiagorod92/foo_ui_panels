@@ -2,7 +2,7 @@
 // skin-specific wording. All logic — what is edited, what changed, applying — is PrefsModel
 // (src/core/prefs_model.h), shared with the macOS page; this file only maps it onto plain Win32
 // child windows (no ATL/WTL in our cross-compile toolchain): a tab control, a ListView for the
-// variables grid, an owner-drawn skin preview.
+// variables grid, an owner-drawn skin preview. Follows foobar2000's Dark Mode (dark_mode.h), live.
 //
 // Four tabs:
 //   General   - skins root folder (one subfolder per skin), active skin (with a preview), main
@@ -15,6 +15,7 @@
 // another skin or main script by reloading the skin in place.
 #include "win_sdk.h"
 #include "gdi_canvas.h"
+#include "dark_mode.h"
 #include "../../core/prefs_model.h"
 #include "../../core/prefs_store.h"
 #include "../../core/skin_paths.h"
@@ -30,6 +31,8 @@
 namespace pui {
 
 namespace {
+
+namespace dark = win::dark;
 
 std::wstring to_wide(const std::string& s) {
     if (s.empty()) return {};
@@ -83,7 +86,7 @@ enum {
 const wchar_t* kPageClass = L"foo_ui_panels_prefs_page";
 const wchar_t* kRootClass = L"foo_ui_panels_prefs";
 
-class PrefsInstance : public preferences_page_instance {
+class PrefsInstance : public preferences_page_instance, private ui_config_callback_impl {
 public:
     PrefsInstance(HWND parent, preferences_page_callback::ptr callback) : m_callback(callback) {
         register_classes();
@@ -93,7 +96,7 @@ public:
     }
 
     t_uint32 get_state() override {
-        t_uint32 s = preferences_state::resettable;
+        t_uint32 s = preferences_state::resettable | preferences_state::dark_mode_supported;
         if (m_model.changed()) s |= preferences_state::changed;
         return s;
     }
@@ -114,6 +117,19 @@ public:
     }
 
 private:
+    // Dark Mode toggled (or Auto followed Windows) while the page is open.
+    void ui_colors_changed() override {
+        if (m_wnd && IsWindow(m_wnd)) apply_theme();
+    }
+
+    // The page and every control in foobar2000's current Dark Mode state.
+    void apply_theme() {
+        m_dark = dark::enabled();
+        for (HWND page : { m_wnd, m_pageGeneral, m_pageScript, m_pageVariables, m_pageOverrides })
+            dark::theme_children(page, m_dark);
+        RedrawWindow(m_wnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
+    }
+
     static void register_classes() {
         static bool done = false; if (done) return; done = true;
         INITCOMMONCONTROLSEX icc = { sizeof(icc), ICC_TAB_CLASSES | ICC_LISTVIEW_CLASSES };
@@ -143,7 +159,8 @@ private:
         m_monoFont = CreateFontW(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
                                  CLEARTYPE_QUALITY, FIXED_PITCH, L"Consolas");
 
-        m_tab = child(wnd, WC_TABCONTROLW, L"", WS_TABSTOP, kIdTab);
+        m_tab = child(wnd, WC_TABCONTROLW, L"", WS_TABSTOP | WS_CLIPSIBLINGS, kIdTab);
+        dark::subclass_tab(m_tab, &m_dark);
         m_credit[0] = child(wnd, L"STATIC", w(prefs_text::kAuthor).c_str(), SS_NOPREFIX);
         m_credit[1] = child(wnd, L"STATIC", w(prefs_text::kSourceUrl).c_str(), SS_NOPREFIX);
         for (const char* t : prefs_text::kTabs) {
@@ -152,7 +169,9 @@ private:
             TabCtrl_InsertItem(m_tab, TabCtrl_GetItemCount(m_tab), &ti);
         }
         for (HWND* p : { &m_pageGeneral, &m_pageScript, &m_pageVariables, &m_pageOverrides })
-            *p = CreateWindowExW(0, kPageClass, L"", WS_CHILD, 0, 0, 0, 0, wnd, nullptr, core_api::get_my_instance(), this);
+            *p = CreateWindowExW(0, kPageClass, L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, wnd, nullptr, core_api::get_my_instance(), this);
+        // Pages above the tab control, which clips them out of what it paints.
+        SetWindowPos(m_tab, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
         HWND p = m_pageGeneral;
         m_rootLabel = child(p, L"STATIC", w(prefs_text::kRoot).c_str(), 0);
@@ -167,7 +186,7 @@ private:
         m_zoomCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdZoomCombo, WS_EX_CLIENTEDGE);
         fill_combo(m_zoomCombo, PrefsModel::zoom_labels(prefs_text::kZoomAutoScaled), 0);
         m_onTopCheck = child(p, L"BUTTON", w(prefs_text::kOnTop).c_str(), WS_TABSTOP | BS_AUTOCHECKBOX, kIdOnTop);
-        m_rootNote = child(p, L"STATIC", L"", 0);
+        m_rootNote = child(p, L"STATIC", L"", SS_EDITCONTROL); // wraps long paths too
         m_preview = child(p, L"STATIC", L"", SS_OWNERDRAW, kIdPreview);
 
         p = m_pageScript;
@@ -202,6 +221,7 @@ private:
         m_accentClearBtn = child(p, L"BUTTON", w(prefs_text::kClearOverrides).c_str(), WS_TABSTOP, kIdAccentClearBtn);
 
         ShowWindow(m_pageGeneral, SW_SHOW);
+        apply_theme();
         refresh_all();
     }
 
@@ -226,6 +246,7 @@ private:
         fill_combo(m_skinCombo, m_model.skin_labels(), m_model.skin_index());
         fill_combo(m_mainCombo, m_model.main_labels(), m_model.main_index());
         set_text(m_rootNote, m_model.root_note());
+        layout_general(); // the note's height follows its text
 
         const std::string warn = m_model.skin_warning();
         SetWindowTextW(m_skinWarning, warn.empty() ? L"" : (L"⚠ " + to_wide(warn)).c_str());
@@ -379,6 +400,18 @@ private:
     }
 
     // --- layout ----------------------------------------------------------------------------
+    // Height a static's (word-wrapped) text needs at `width`.
+    int text_height(HWND ctl, int width) const {
+        const std::wstring t = get_text(ctl);
+        if (t.empty() || width <= 0) return 0;
+        HDC dc = GetDC(ctl);
+        HGDIOBJ old = SelectObject(dc, m_font);
+        RECT r = { 0, 0, width, 0 };
+        DrawTextW(dc, t.c_str(), (int)t.size(), &r, DT_CALCRECT | DT_WORDBREAK | DT_EDITCONTROL | DT_NOPREFIX);
+        SelectObject(dc, old);
+        ReleaseDC(ctl, dc);
+        return r.bottom + 2;
+    }
     void layout() {
         RECT rc; GetClientRect(m_wnd, &rc);
         // Credit lines in a strip under the tabs, bottom left.
@@ -410,9 +443,14 @@ private:
         MoveWindow(m_zoomLabel, pad, y, 100, labelH, TRUE);
         MoveWindow(m_zoomCombo, pad + 104, y - 2, comboW, editH, TRUE); y += editH + 8;
         MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE); y += labelH + 8;
-        MoveWindow(m_rootNote, pad, y, rc.right - pad * 2, labelH * 2, TRUE); y += labelH * 2 + 8;
-        // The skin's preview fills the rest of the page (4:3 at most).
-        const int pw = std::max(0, (int)rc.right - pad * 2), ph = std::max(0, std::min(pw * 3 / 4, (int)rc.bottom - y - pad));
+        const int noteW = std::max(0, (int)rc.right - pad * 2), noteH = text_height(m_rootNote, noteW);
+        MoveWindow(m_rootNote, pad, y, noteW, noteH, TRUE); y += noteH + 8;
+        // The skin's preview in what's left, 4:3 and at most kPreviewMaxW wide, so it never
+        // crowds the settings above.
+        const int kPreviewMaxW = 320;
+        int ph = std::max(0, std::min((int)rc.bottom - y - pad, kPreviewMaxW * 3 / 4));
+        int pw = std::min(noteW, ph * 4 / 3);
+        ph = pw * 3 / 4;
         MoveWindow(m_preview, pad, y, pw, ph, TRUE);
     }
     void layout_script() {
@@ -492,13 +530,21 @@ private:
         switch (msg) {
         case WM_CREATE: if (self && isRoot) self->create_controls(wnd); return 0;
         case WM_SIZE:   if (self && isRoot) self->layout(); return 0;
-        case WM_CTLCOLORSTATIC:
-            if (self && ((HWND)lp == self->m_credit[0] || (HWND)lp == self->m_credit[1])) {
+        case WM_ERASEBKGND: {
+            RECT rc; GetClientRect(wnd, &rc);
+            FillRect((HDC)wp, &rc, dark::palette(self && self->m_dark).bgBrush);
+            return 1;
+        }
+        case WM_CTLCOLORSTATIC: case WM_CTLCOLOREDIT: case WM_CTLCOLORLISTBOX: case WM_CTLCOLORBTN: {
+            const bool credit = self && ((HWND)lp == self->m_credit[0] || (HWND)lp == self->m_credit[1]);
+            if (self && self->m_dark) return dark::ctl_color(msg, (HDC)wp, credit);
+            if (credit) {
                 SetTextColor((HDC)wp, GetSysColor(COLOR_GRAYTEXT));
                 SetBkColor((HDC)wp, GetSysColor(COLOR_BTNFACE));
                 return (LRESULT)GetSysColorBrush(COLOR_BTNFACE);
             }
             break;
+        }
         case WM_NOTIFY: {
             if (!self) break;
             auto nm = reinterpret_cast<NMHDR*>(lp);
@@ -520,7 +566,7 @@ private:
             if (self && di->CtlID == kIdAccentSwatch) {
                 gfx::Color c;
                 const bool set = self->m_model.accent(c);
-                HBRUSH b = CreateSolidBrush(set ? colorref_of(c) : GetSysColor(COLOR_BTNFACE));
+                HBRUSH b = CreateSolidBrush(set ? colorref_of(c) : dark::palette(self->m_dark).bg);
                 FillRect(di->hDC, &di->rcItem, b); DeleteObject(b);
                 FrameRect(di->hDC, &di->rcItem, (HBRUSH)GetStockObject(BLACK_BRUSH));
                 return TRUE;
@@ -544,6 +590,7 @@ private:
 
     PrefsModel m_model{ prefs_backend() };
     bool m_updating = false;
+    bool m_dark = false; // foobar2000's Dark Mode, as last applied (apply_theme)
     std::string m_previewPath;
 
     HWND m_wnd = nullptr, m_tab = nullptr;
