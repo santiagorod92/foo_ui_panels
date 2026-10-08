@@ -163,9 +163,17 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - SDK source: `reupen/foobar2000-sdk-unmodified` (not `razielanarki/foobar2000-sdk` — stale
   mirror). Currently SDK-2026-09-17. The 2026-09-16 sync bumped `pfc-lite.h` to require C++20 —
   `CMakeLists.txt`'s `CMAKE_CXX_STANDARD` must stay at 20.
-- Version: `version.txt` → `PUI_VERSION` define → main.cpp's `DECLARE_COMPONENT_VERSION`.
-  Release jobs stamp it before building (nothing is committed back); in the repo it stays at the
-  last value committed by hand, so dev builds report that.
+- Version: `scripts/version.sh` → `<build>/generated/version_generated.h` (`PUI_VERSION`, a
+  CMake target run every build, header rewritten only on change) → `component.cpp`'s
+  `DECLARE_COMPONENT_VERSION`, i.e. what *Preferences › Components* shows. Order: `$PUI_VERSION`
+  (release jobs: `release-build.sh`, `release-mac` — the tag doesn't exist yet while
+  semantic-release builds) → `git describe` (`1.6.0` on a clean tag, `1.6.0-dev.2+ef96f46[.dirty]`
+  after it) → `version.txt`, only without `.git`: in the repo it's a `$Format:%(describe…)$`
+  placeholder `git archive` expands (`.gitattributes` `export-subst`). No version number is kept
+  by hand; releases are the `v*` tags (`git fetch --tags` after one, or builds describe against
+  the previous). The mac Info.plist takes plain x.y.z (`--base`, fixed at configure). Same
+  resolver as foo_navidrome's `scripts/version.sh` (there: `NAVIDROME_VERSION`/`COMPONENT_VERSION`).
+  `build.yml` checks out with `fetch-depth: 0` so CI builds see the tags.
 
 ## CI / release
 - `.github/workflows/build.yml` — build check on push/PR: Windows DLL + `check-portable` +
@@ -179,7 +187,7 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `feat` minor, `fix`/`perf`/`refactor` patch, `chore`/`docs`/`ci`/`style`/`test` none.
 - `main` is branch-protected (PR + review required; admins exempt): the release workflow never
   pushes to it — only the `v<ver>` tag and the GitHub release (notes = changelog; no
-  `@semantic-release/git`/`changelog` plugins). `release-mac` writes `version.txt` itself. A PR
+  `@semantic-release/git`/`changelog` plugins). `release-mac` passes `PUI_VERSION` itself. A PR
   squash-merged as `ci:`/`docs:`/`chore:` skips the release gate: dispatch the workflow by hand
   if earlier release-worthy commits are still unreleased.
 - Shared CI setup: `.github/actions/fetch-sdk` (SDK sibling layout) and

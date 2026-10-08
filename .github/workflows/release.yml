@@ -7,7 +7,7 @@ name: Release
 # workflow that publishes it on foobar2000.org (same flow as foo_navidrome).
 #
 # main is protected (changes only through pull requests), so nothing here pushes to it: no
-# release commit, no CHANGELOG.md/version.txt write-back — only the tag and the release. Every
+# release commit, no CHANGELOG.md/version write-back — only the tag and the release. Every
 # job that builds stamps the version itself (scripts/release-build.sh / the mac job below).
 
 # Chained to Build (workflow_run) instead of running next to it on the same push: a release is
@@ -96,8 +96,7 @@ jobs:
 
   # --------------------------------------------------------------------------
   # macOS bundle for the release just cut: built natively (universal) from the release tag, with
-  # version.txt stamped to the released version first (the tag is the release-worthy commit
-  # itself — no release commit — so its version.txt is the previous one), then merged into the
+  # PUI_VERSION set to the released version (scripts/version.sh prefers it), then merged into the
   # release's .fb2k-component next to the Windows DLL (mac/ + x64/, foo_navidrome's layout).
   # --------------------------------------------------------------------------
   release-mac:
@@ -120,10 +119,8 @@ jobs:
       - name: Build (universal)
         working-directory: foo_ui_panels
         env:
-          VERSION: ${{ needs.release.outputs.released_version }}
-        run: |
-          echo "$VERSION" > version.txt
-          ./scripts/mac-build.sh
+          PUI_VERSION: ${{ needs.release.outputs.released_version }}
+        run: ./scripts/mac-build.sh
 
       # A zip, not the bare bundle: upload-artifact drops file modes.
       - name: Zip bundle

@@ -15,10 +15,17 @@ foreach(_req pfc foobar2000/SDK foobar2000/foobar2000_component_client foobar200
   endif()
 endforeach()
 
-# Component version (the release jobs write version.txt before building; dev builds read the last one).
-file(STRINGS "${CMAKE_SOURCE_DIR}/version.txt" PUI_VERSION LIMIT_COUNT 1)
-if(NOT PUI_VERSION)
-  set(PUI_VERSION "0.0.0-dev")
+# Component version: scripts/version.sh ($PUI_VERSION from the release jobs, else git describe,
+# e.g. 1.6.0-dev.2+ef96f46). Regenerated on every build into version_generated.h (rewritten only
+# on change, so component.cpp recompiles only when the version moves). The bundle's Info.plist is
+# fixed at configure time and takes a plain x.y.z: the release's own, else the last release tag.
+set(PUI_GENERATED_DIR "${CMAKE_BINARY_DIR}/generated")
+file(MAKE_DIRECTORY "${PUI_GENERATED_DIR}")
+if(DEFINED ENV{PUI_VERSION})
+  set(PUI_BUNDLE_VERSION "$ENV{PUI_VERSION}")
+else()
+  execute_process(COMMAND bash "${CMAKE_SOURCE_DIR}/scripts/version.sh" --base
+    OUTPUT_VARIABLE PUI_BUNDLE_VERSION OUTPUT_STRIP_TRAILING_WHITESPACE)
 endif()
 
 if(WIN32)
@@ -96,7 +103,6 @@ file(GLOB COMP_SRC CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/src/panels/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/platform/${PLATFORM_DIR}/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/platform/${PLATFORM_DIR}/*.mm")
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/version.txt")
 
 if(WIN32)
   add_library(foo_ui_panels SHARED ${COMP_SRC})
@@ -113,13 +119,19 @@ else()
     BUNDLE_EXTENSION component
     MACOSX_BUNDLE_BUNDLE_NAME foo_ui_panels
     MACOSX_BUNDLE_GUI_IDENTIFIER com.santirod.foo-ui-panels
-    MACOSX_BUNDLE_BUNDLE_VERSION "${PUI_VERSION}"
-    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PUI_VERSION}"
+    MACOSX_BUNDLE_BUNDLE_VERSION "${PUI_BUNDLE_VERSION}"
+    MACOSX_BUNDLE_SHORT_VERSION_STRING "${PUI_BUNDLE_VERSION}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/mac/Info.plist.in")
   target_compile_options(foo_ui_panels PRIVATE -fobjc-arc)
   target_link_libraries(foo_ui_panels PRIVATE fb2ksdk pfc
     "-framework Cocoa" "-framework CoreGraphics" "-framework CoreText" "-framework ImageIO"
     "-framework QuartzCore" "-framework CoreFoundation" "-framework Security")
 endif()
-target_compile_definitions(foo_ui_panels PRIVATE PUI_VERSION="${PUI_VERSION}")
+add_custom_target(pui_version
+  COMMAND bash "${CMAKE_SOURCE_DIR}/scripts/version.sh" --header "${PUI_GENERATED_DIR}/version_generated.h"
+  BYPRODUCTS "${PUI_GENERATED_DIR}/version_generated.h"
+  COMMENT "Component version"
+  VERBATIM)
+add_dependencies(foo_ui_panels pui_version)
+target_include_directories(foo_ui_panels PRIVATE "${PUI_GENERATED_DIR}")
 set_target_properties(foo_ui_panels PROPERTIES EXPORT_COMPILE_COMMANDS ON)
