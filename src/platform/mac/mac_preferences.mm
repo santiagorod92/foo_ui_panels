@@ -94,7 +94,27 @@ NSStackView* column(NSArray<NSView*>* views) {
         item.view = t[1];
         [tabs addTabViewItem:item];
     }
-    self.view = tabs;
+    // Credit watermark under the tabs, bottom left.
+    NSTextField* credit = [NSTextField labelWithString:
+        [NSString stringWithFormat:@"%@\n%@", ns(text::kAuthor), ns(text::kSourceUrl)]];
+    credit.textColor = [NSColor tertiaryLabelColor];
+    credit.font = [NSFont systemFontOfSize:10];
+    credit.selectable = YES;
+
+    NSView* root = [[NSView alloc] initWithFrame:NSMakeRect(0, 0, 640, 480)];
+    for (NSView* v in @[ tabs, credit ]) {
+        v.translatesAutoresizingMaskIntoConstraints = NO;
+        [root addSubview:v];
+    }
+    [NSLayoutConstraint activateConstraints:@[
+        [tabs.topAnchor constraintEqualToAnchor:root.topAnchor],
+        [tabs.leadingAnchor constraintEqualToAnchor:root.leadingAnchor],
+        [tabs.trailingAnchor constraintEqualToAnchor:root.trailingAnchor],
+        [credit.topAnchor constraintEqualToAnchor:tabs.bottomAnchor constant:6],
+        [credit.leadingAnchor constraintEqualToAnchor:root.leadingAnchor constant:16],
+        [credit.bottomAnchor constraintEqualToAnchor:root.bottomAnchor constant:-8],
+    ]];
+    self.view = root;
     [self refresh];
 }
 

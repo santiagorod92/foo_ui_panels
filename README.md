@@ -238,7 +238,9 @@ wrong, a function isn't supported, or a panel is missing, just
 The script functions the engine implements are listed in
 [docs/SCRIPT_FUNCTIONS.md](docs/SCRIPT_FUNCTIONS.md).
 
-**Pull requests.** Fixes and new features are welcome. A few conventions keep things smooth:
+**Pull requests.** Fixes and new features are welcome. The tools and versions you need are
+listed under [Development environment](#development-environment). A few conventions keep
+things smooth:
 
 - **Every change is cross-platform.** Logic lives in platform-free C++ (`src/core`,
   `src/panels`); anything that needs the OS goes through `src/gfx/canvas.h` / `src/ui/view.h`
@@ -265,6 +267,111 @@ The script functions the engine implements are listed in
 Not sure where to start, or want to discuss an idea first? Open an issue.
 
 ## Building from source
+
+### Development environment
+
+No Windows PC or Visual Studio needed: the Windows DLL is cross-compiled on Linux, and the macOS
+bundle builds either on a Mac or cross-compiled on Linux. CI builds both on every PR. For
+reference, this is what the project is developed and tested with today:
+
+| | Used for development | Minimum / notes |
+|---|---|---|
+| **Dev OS** | Linux ([Omarchy](https://omarchy.org), Arch-based) | any Linux with LLVM ≥ 19 (CI: Ubuntu 24.04), or a Mac for the macOS build |
+| **foobar2000** | v2.26 for Windows (x64, under Wine 11 Staging) and v2 for Mac (latest) | foobar2000 v2.x |
+| **foobar2000 SDK** | `SDK-2026-09-16` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (`build.sh` and CI fetch the latest tag) | a foobar2000 v2 SDK; only `SDK-2026-09-16` and newer are tested |
+| **C++ standard** | C++20 | |
+| **Windows compiler** | clang-cl / lld-link (LLVM 22) + CMake 4 + Ninja | LLVM **19+** (the MSVC STL headers reject older Clang), CMake 3.21+; Visual Studio/MSVC isn't used or tested |
+| **Windows SDK / CRT** | Windows SDK 10.0.26100 + MSVC CRT, fetched by [xwin](https://github.com/Jake-Shadle/xwin) | |
+| **macOS toolchain** | Linux cross-build with `clang` + `ld64.lld` against the macOS 14.5 SDK (from Xcode 15.4); CI uses the `macos-latest` runner's Xcode | Xcode command line tools + CMake + Ninja on a Mac; deployment target **macOS 11.0**, universal (arm64 + x86_64) |
+| **Runtime testing** | Wine (fast loop), a Windows 11 VM ([dockur/windows](https://github.com/dockur/windows)) and a macOS 14 Sonoma VM ([dockur/macos](https://github.com/dockur/macos)) | any Windows 10/11 or macOS 11+ machine with foobar2000 v2 |
+| **Build tooling** | GNU Make, bash, git | |
+
+The unit tests (`make test`) and the skin linter use the host compiler and need neither the SDK
+nor foobar2000.
+
+### Happy path: build it and try it live
+
+`make help` lists every target.
+
+**Linux (Windows build, running under Wine)**, the main dev loop:
+
+```sh
+sudo pacman -S --needed clang lld llvm cmake ninja          # once (Arch shown)
+cargo install xwin && xwin --accept-license splat --output ~/.xwin
+make test        # unit tests + golden render tests (host compiler, ASan/UBSan)
+make run         # build.sh (fetches the SDK if missing), install into Wine foobar2000, relaunch
+```
+
+Pick **Panels UI (reborn)** as the *User interface module* in *Preferences › Display* and
+point it at a skin folder (see [Installation](#installation) and
+[Skin configuration](#skin-configuration)). After each code change
+run `make run` again. `make launch` restarts foobar2000 without rebuilding, and
+`make skin-lint LINT_DIR=<skin folder>` checks a skin without running foobar2000.
+
+**macOS:**
+
+```sh
+make test
+make mac-build   # build-mac/foo_ui_panels.component (universal)
+```
+
+With foobar2000 quit, copy the bundle to
+`~/Library/foobar2000-v2/user-components/foo_ui_panels/foo_ui_panels.component`, start
+foobar2000 and add the **Panels UI** layout element (see [Installation](#installation)).
+A bundle copied from another machine has to be re-signed ad hoc
+(`codesign --sign - --force --deep <bundle>`), or macOS kills it on load.
+
+### Cross-platform testing in VMs (Docker)
+
+Most development happens on Linux, so both real platforms run as VMs in containers on the
+same box, driven by helper scripts from the maintainer's sibling repos (`../macos-devbox`
+→ `mvm`, `../windows-devbox` → `wvm`; point at other copies with `MVM=` / `WVM=`):
+
+| VM | Based on | Used for |
+|---|---|---|
+| **Windows 11** | [dockur/windows](https://github.com/dockur/windows), unattended install | what Wine fakes or lacks: Dark Mode, DPI scaling, native theming, GDI+ text rendering |
+| **macOS 14 Sonoma** | [dockur/macos](https://github.com/dockur/macos) | the macOS bundle on a real Cocoa/CoreText stack |
+
+```sh
+# Windows 11
+make win11                     # boot, open the VM screen (noVNC) in the browser, then win11-test
+make win11-test                # build, deploy the DLL + skins/$SKIN into the VM, relaunch, screenshot
+make win11-skin SKIN=fooava    # re-copy a skin (into the component folder, Panels UI's default)
+make win11-theme ARGS=dark     # Windows app theme; win11-dpi ARGS=144 for 150% scaling
+
+# macOS
+make mac-vm                    # boot, open the VM screen (noVNC) in the browser, then mac-vm-test
+make mac-vm-test               # mac-build, deploy the bundle into the VM, relaunch foobar2000, screenshot
+make mac-vm-skin SKIN=fooava   # copy a skin from skins/ into the guest
+make mac-vm-navidrome          # install foo_navidrome there (latest release) ...
+make mac-vm-navidrome-config   # ... and copy its server settings from the local Wine profile
+```
+
+In the Windows guest, pick **Panels UI (reborn)** as the user interface module once and then
+`make win11-snapshot`. `make win11-<cmd>` / `make mac-vm-<cmd>` pass through to `wvm` / `mvm`:
+`win11-shot`, `mac-vm-click ARGS='x y'`, `mac-vm-snapshot ARGS=name`, and so on. Each disk sits
+on a host bind mount with reflink snapshots, so a broken guest is one restore away. No VM? Any
+real Windows or Mac machine with foobar2000 v2 works the same way.
+
+### Driving the UI from scripts, and letting an LLM agent do it
+
+`scripts/ui-test.sh` drives the Panels UI running in the local Wine foobar2000 without
+touching your mouse or keyboard: `tools/wclick.c` runs inside Wine and posts input straight
+to the window (Hyprland host, screenshots via `grim`).
+
+```sh
+make ui ARGS='restart'                     # graceful close, install build/ DLL, relaunch + play
+make ui ARGS='click X Y r'                 # also dbl, wheelN, key:VK, type:TEXT, …
+make ui ARGS='shot build/ui-test/after.png'
+make ui ARGS='pvars key=value'             # edit persisted panel vars (foobar2000 stopped)
+```
+
+Together with `make win11-test` / `win11-shot` and `make mac-vm-test` / `mac-vm-shot` in the VMs, a change can be checked
+end to end with nothing but commands. A coding agent (the maintainer uses [Claude
+Code](https://claude.com/claude-code)) runs the same loop: build, click through the skin,
+take a screenshot and compare it with the expected render, on Wine, real Windows and macOS.
+[`CLAUDE.md`](CLAUDE.md) holds the project rules for such an agent. The golden render tests
+(`make test`) catch drawing regressions without foobar2000 at all.
 
 The skin engine and every panel are platform-free C++ (`src/core`, `src/panels`) drawing through
 a small canvas/view interface (`src/gfx`, `src/ui`); each platform supplies that layer
