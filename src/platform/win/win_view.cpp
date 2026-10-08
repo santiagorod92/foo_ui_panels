@@ -708,7 +708,7 @@ bool choose_color(ViewHost* owner, gfx::Color& c) {
 
 void message_box(ViewHost* owner, const std::string& title, const std::string& text) {
     MessageBoxW(owner ? (HWND)owner->native() : (HWND)core_api::get_main_window(),
-                widen(text).c_str(), widen(title).c_str(), MB_ICONERROR);
+                widen(text).c_str(), widen(title).c_str(), MB_ICONWARNING);
 }
 
 static int CALLBACK browse_start(HWND wnd, UINT msg, LPARAM, LPARAM data) {

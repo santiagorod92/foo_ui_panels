@@ -79,6 +79,28 @@ TEST("prefs: skin choice — root keeps or replaces the active skin, main script
     CHECK_EQ(m.pending().main, std::string()); // but the main script is automatic again
 }
 
+TEST("prefs: chosen skin folder — a skin, a folder of skins, ambiguous, nothing to run") {
+    Skins s;
+    std::filesystem::create_directories(s.dir + "/empty/sub");
+    FakeBackend b; b.root = s.dir;
+    PrefsModel m(b);
+    m.load();
+    m.choose_skin_folder(s.dir + "/lib/alpha/");     // the skin itself
+    CHECK_EQ(m.pending().root, s.dir + "/lib");
+    CHECK_EQ(m.pending().active, std::string("alpha"));
+    CHECK(m.chosen_folder_problem("x").empty());
+    m.choose_skin_folder(s.dir + "/lib");            // a folder of skins: first one
+    CHECK(m.chosen_folder_problem("x").empty());
+    m.choose_skin_folder(s.dir + "/lib/beta");       // two .txt: ambiguous, named as such
+    CHECK(m.chosen_folder_problem(s.dir + "/lib/beta").find("2 .txt files") != std::string::npos);
+    m.choose_skin_folder(s.dir + "/empty");          // no script anywhere: the skin itself, kept
+    CHECK_EQ(m.pending().root, s.dir);
+    CHECK_EQ(m.pending().active, std::string("empty"));
+    const std::string p = m.chosen_folder_problem(s.dir + "/empty");
+    CHECK(p.find("no main script to run") != std::string::npos);
+    CHECK(p.find(s.dir + "/empty\n") != std::string::npos); // the folder picked, not its subfolder
+}
+
 TEST("prefs: script edits are written on apply") {
     Skins s;
     FakeBackend b; b.root = s.dir;

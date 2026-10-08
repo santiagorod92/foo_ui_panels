@@ -7,6 +7,7 @@
 #include "core/builtin_skin.h"
 #include "core/fs_util.h"
 #include "core/skin_lint.h"
+#include "core/skin_templates.h"
 #include <cstdlib>
 
 using namespace pui;
@@ -54,6 +55,20 @@ TEST("golden: the built-in welcome screen") {
 
 TEST("golden: the welcome screen at another size") {
     check_golden("welcome_small", builtin_test_skin(), 420, 300, { { "pui_skin_folder", "/Users/x/skins" } });
+}
+
+TEST("golden: the layout wizard") {
+    check_golden("wizard", layout_wizard_script(), 900, 600);
+}
+
+TEST("golden: every layout template, stopped") {
+    for (auto& t : skin_templates()) check_golden(std::string("template_") + t.id, t.script, 1000, 640);
+}
+
+TEST("golden: the default layout while playing") {
+    check_golden("template_playing", skin_templates().front().script, 1000, 640,
+                 { { "isplaying", "1" }, { "title", "Song" }, { "artist", "Artist" }, { "album", "Album" }, { "date", "2001" },
+                   { "codec", "FLAC" }, { "bitrate", "900" }, { "playback_time", "1:02" }, { "length", "4:05" } });
 }
 
 // tests/skins/synthetic: a skin that calls every engine function, places every panel kind and

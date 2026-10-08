@@ -7,6 +7,7 @@
 #include "prefs_model.h"
 #include "prefs_store.h"
 #include "skin_paths.h"
+#include "skin_templates.h"
 #include <cstdio>
 #include <cstring>
 
@@ -244,7 +245,31 @@ bool SkinEngine::run_button_action(const std::string& action) {
                                                   prefs.pending().root);
         if (dir.empty()) return true;
         prefs.choose_skin_folder(dir);
-        prefs.apply(); // reloads the skin everywhere
+        apply_skin_choice(prefs); // saved and reloaded everywhere, whatever is (not yet) in it
+        // Nothing to run there yet: say why rather than silently staying on this screen. Several
+        // candidate scripts: Preferences picks one.
+        const std::string problem = prefs.chosen_folder_problem(dir);
+        if (!problem.empty()) {
+            ui::message_box(nullptr, "Panels UI", problem);
+            if (prefs.main_choices().size() > 1) show_preferences_page();
+        }
+        return true;
+    }
+    // WIZARD:OPEN / WIZARD:CLOSE — the layout wizard; SKIN:TEMPLATE:<id> — its cards: the layout
+    // is written out as a skin folder of its own (skin_templates.h) and becomes the skin.
+    if (a == "WIZARD:OPEN") { show_layout_wizard(); return true; }
+    if (a == "WIZARD:CLOSE") { close_layout_wizard(); return true; }
+    if (a.compare(0, 14, "SKIN:TEMPLATE:") == 0) {
+        const SkinTemplate* t = find_skin_template(a.substr(14));
+        const std::string parent = layout_skins_dir();
+        if (!t || parent.empty()) return true;
+        std::string err;
+        const std::string dir = install_skin_template(*t, parent, &err);
+        if (dir.empty()) { ui::message_box(nullptr, "Panels UI", err); return true; }
+        PrefsModel prefs(prefs_backend());
+        prefs.load();
+        prefs.choose_skin_folder(dir);
+        apply_skin_choice(prefs);
         return true;
     }
     // MENU — the logo button: classic File/Edit/View/Playback/Library/Help menu, popped up at the cursor.
@@ -366,6 +391,14 @@ void SkinEngine::set_rating(const metadb_handle_ptr& track, int stars) {
     metadb_handle_list list; list.add_item(track);
     service_ptr_t<file_info_filter> f = new service_impl_t<meta_set_filter>("RATING", v);
     metadb_io_v2::get()->update_info_async(list, f, core_api::get_main_window(), 0, nullptr);
+}
+
+void SkinEngine::apply_skin_choice(PrefsModel& prefs) {
+    const bool wasWizard = m_wizard;
+    const std::string before = m_st.base;
+    m_wizard = false;
+    prefs.apply(); // a different skin reloads every player
+    if (wasWizard && m_st.base == before) reload_skin(); // the same one: still showing the wizard
 }
 
 } // namespace pui

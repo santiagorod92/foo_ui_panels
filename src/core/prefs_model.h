@@ -51,6 +51,11 @@ inline constexpr const char* kZoom = "Zoom:";
 inline constexpr const char* kZoomAutoScaled = "Automatic (display scaling)"; // Windows: follows the system scale
 inline constexpr const char* kZoomAuto100 = "Automatic (100%)";               // macOS: Retina is the canvas's job
 inline constexpr const char* kOnTop = "Keep the player window on top of other windows";
+// Like the Default UI's Quick Setup: the layout wizard, in the player window.
+inline constexpr const char* kWizard = "Layout wizard...";
+inline constexpr const char* kWizardNote = "Start again from a ready-made layout.";
+inline constexpr const char* kWizardUnavailable = "The layout wizard runs in the Panels UI player window, which isn't open: "
+                                                  "pick Panels UI as the user interface first.";
 inline constexpr const char* kOwnFolder = "(the component's own folder)";
 inline constexpr const char* kAutomatic = "(automatic)";
 inline constexpr const char* kNoPreview = "No preview yet: a skin gets one the first time it is shown.";
@@ -99,10 +104,14 @@ public:
     void set_root(const std::string& root);
     void set_active(const std::string& skin);
     void set_main(const std::string& file); // "" = automatic
-    // A folder someone picked as "the skin": the skin itself (it has a main script or a
-    // foo_ui_panels.ini) -> its parent as root, it as active; else a folder of skins -> it as
-    // root, its first skin active. Applied with set_root/set_active.
+    // A folder someone picked as "the skin": a folder of skins (no main script or
+    // foo_ui_panels.ini of its own, but a subfolder with one) -> it as root, its first skin
+    // active; anything else is the skin itself, even with no script yet -> its parent as root,
+    // it as active. Applied with set_root/set_active.
     void choose_skin_folder(const std::string& folder);
+    // After choose_skin_folder(folder): "" when the pending skin has a main script to run, else
+    // a warning for the person who picked `folder` (kept anyway): why, what a skin folder needs.
+    std::string chosen_folder_problem(const std::string& folder) const;
     std::string skin_dir() const;
     std::vector<std::string> main_choices() const;     // the skin folder's *.txt
     std::string main_script(std::string* why = nullptr) const; // the path it resolves to, "" = none

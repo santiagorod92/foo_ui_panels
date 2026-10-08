@@ -71,7 +71,7 @@ COLORREF colorref_of(gfx::Color c) { return RGB(c.r, c.g, c.b); }
 enum {
     // General
     kIdRootEdit = 1001, kIdRootBrowse = 1002, kIdSkinCombo = 1003, kIdMainCombo = 1004,
-    kIdZoomCombo = 1005, kIdOnTop = 1006, kIdPreview = 1007,
+    kIdZoomCombo = 1005, kIdOnTop = 1006, kIdPreview = 1007, kIdWizard = 1008,
     // Script
     kIdScriptEdit = 1010,
     // Variables
@@ -186,6 +186,8 @@ private:
         m_zoomCombo = child(p, L"COMBOBOX", L"", WS_TABSTOP | CBS_DROPDOWNLIST, kIdZoomCombo, WS_EX_CLIENTEDGE);
         fill_combo(m_zoomCombo, PrefsModel::zoom_labels(prefs_text::kZoomAutoScaled), 0);
         m_onTopCheck = child(p, L"BUTTON", w(prefs_text::kOnTop).c_str(), WS_TABSTOP | BS_AUTOCHECKBOX, kIdOnTop);
+        m_wizardBtn = child(p, L"BUTTON", w(prefs_text::kWizard).c_str(), WS_TABSTOP, kIdWizard);
+        m_wizardNote = child(p, L"STATIC", w(prefs_text::kWizardNote).c_str(), SS_NOPREFIX);
         m_rootNote = child(p, L"STATIC", L"", SS_EDITCONTROL); // wraps long paths too
         m_preview = child(p, L"STATIC", L"", SS_OWNERDRAW, kIdPreview);
 
@@ -443,6 +445,10 @@ private:
         MoveWindow(m_zoomLabel, pad, y, 100, labelH, TRUE);
         MoveWindow(m_zoomCombo, pad + 104, y - 2, comboW, editH, TRUE); y += editH + 8;
         MoveWindow(m_onTopCheck, pad, y, rc.right - pad * 2, labelH + 2, TRUE); y += labelH + 8;
+        const int wizW = 130;
+        MoveWindow(m_wizardBtn, pad, y, wizW, editH + 2, TRUE);
+        MoveWindow(m_wizardNote, pad + wizW + 8, y + 4, std::max(0, (int)rc.right - pad * 2 - wizW - 8), labelH, TRUE);
+        y += editH + 10;
         const int noteW = std::max(0, (int)rc.right - pad * 2), noteH = text_height(m_rootNote, noteW);
         MoveWindow(m_rootNote, pad, y, noteW, noteH, TRUE); y += noteH + 8;
         // The skin's preview in what's left, 4:3 and at most kPreviewMaxW wide, so it never
@@ -506,6 +512,13 @@ private:
             break;
         case kIdOnTop:
             if (code == BN_CLICKED) { m_model.set_on_top(SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED); changed(); }
+            break;
+        case kIdWizard:
+            // The wizard is in the player window, which the Preferences dialog (owned by it) would
+            // keep covering: close the dialog, as its Cancel would.
+            if (code != BN_CLICKED) break;
+            if (open_layout_wizard()) PostMessageW(GetAncestor(m_wnd, GA_ROOT), WM_CLOSE, 0, 0);
+            else MessageBoxW(m_wnd, w(prefs_text::kWizardUnavailable).c_str(), L"Panels UI", MB_ICONINFORMATION);
             break;
         case kIdVarsRescan: if (code == BN_CLICKED) { m_model.rescan_variables(); refresh_vars_list(); changed(); } break;
         case kIdFontPickBtn: if (code == BN_CLICKED) pick_font(); break;
@@ -600,7 +613,8 @@ private:
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,
          m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr,
          m_mainLabel = nullptr, m_mainCombo = nullptr,
-         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr, m_rootNote = nullptr, m_preview = nullptr;
+         m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr, m_rootNote = nullptr, m_preview = nullptr,
+         m_wizardBtn = nullptr, m_wizardNote = nullptr;
     // Script
     HWND m_scriptLabel = nullptr, m_scriptEdit = nullptr;
     // Variables

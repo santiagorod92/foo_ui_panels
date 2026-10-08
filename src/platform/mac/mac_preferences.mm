@@ -140,6 +140,9 @@ NSStackView* column(NSArray<NSView*>* views) {
     _zoomPopup.target = self; _zoomPopup.action = @selector(zoomChanged:);
     fill_popup(_zoomPopup, pui::PrefsModel::zoom_labels(text::kZoomAuto100), 0);
     _onTopCheck = [NSButton checkboxWithTitle:ns(text::kOnTop) target:self action:@selector(onTopChanged:)];
+    // Like the Default UI's Quick Setup. (The row is too narrow beside the preview for the note.)
+    NSButton* wizardRow = [NSButton buttonWithTitle:ns(text::kWizard) target:self action:@selector(openWizard:)];
+    wizardRow.toolTip = ns(text::kWizardNote);
 
     NSGridView* grid = [NSGridView gridViewWithViews:@[
         @[ label(ns(text::kRoot)), rootRow ],
@@ -148,6 +151,7 @@ NSStackView* column(NSArray<NSView*>* views) {
         @[ [NSGridCell emptyContentView], _warning ],
         @[ label(ns(text::kZoom)), _zoomPopup ],
         @[ [NSGridCell emptyContentView], _onTopCheck ],
+        @[ [NSGridCell emptyContentView], wizardRow ],
     ]];
     grid.rowSpacing = 10;
     grid.columnSpacing = 8;
@@ -298,6 +302,13 @@ NSStackView* column(NSArray<NSView*>* views) {
 - (void)mainChanged:(id)sender { _model->set_main_index((int)_mainPopup.indexOfSelectedItem); [self commit]; }
 - (void)zoomChanged:(id)sender { _model->set_zoom_index((int)_zoomPopup.indexOfSelectedItem); [self commit]; }
 - (void)onTopChanged:(id)sender { _model->set_on_top(_onTopCheck.state == NSControlStateValueOn); [self commit]; }
+- (void)openWizard:(id)sender {
+    if (pui::open_layout_wizard()) return;
+    NSAlert* a = [NSAlert new];
+    a.messageText = @"Panels UI";
+    a.informativeText = ns(text::kWizardUnavailable);
+    [a runModal];
+}
 
 // --- Script ------------------------------------------------------------------------------------
 - (void)saveScript:(id)sender { _model->set_script(utf8(_scriptView.string)); [self commit]; }
