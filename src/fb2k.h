@@ -7,3 +7,8 @@
 #else
 #include <foobar2000/SDK/foobar2000.h>
 #endif
+
+// An abort_callback_impl owned through a smart pointer (std::make_shared<shared_abort>()):
+// abort_callback_impl has virtual functions but a non-virtual destructor, so deleting it
+// directly warns (-Wdelete-non-abstract-non-virtual-dtor); a final subclass is safe to delete.
+struct shared_abort final : abort_callback_impl {};

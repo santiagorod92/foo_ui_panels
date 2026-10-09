@@ -60,7 +60,7 @@ SDK_ROOT ?= $(abspath ..)
 CXX_HOST ?= clang++
 check-portable:
 	@set -e; for f in src/core/*.cpp src/panels/*.cpp; do \
-	  $(CXX_HOST) -std=c++20 -fsyntax-only -DNDEBUG -I$(SDK_ROOT) -I$(SDK_ROOT)/foobar2000 $$f; \
+	  $(CXX_HOST) -std=c++20 -fsyntax-only -DNDEBUG -isystem $(SDK_ROOT) -isystem $(SDK_ROOT)/foobar2000 $$f; \
 	done; echo "portable: ok"
 
 # Unit tests for the SDK-free parts of the engine, built with the host compiler. The include path

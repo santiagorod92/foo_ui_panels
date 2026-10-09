@@ -15,6 +15,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# actions/checkout runs `git init`, which prints a "Using 'master' as the name for the initial
+# branch" hint on every checkout unless init.defaultBranch is set.
+env:
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+
 jobs:
   build:
     runs-on: ubuntu-24.04
@@ -64,7 +71,7 @@ jobs:
         uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
       - name: Install ninja
-        run: brew install ninja
+        run: command -v ninja >/dev/null || brew install ninja  # the runner image usually has it
 
       - name: Build (universal)
         working-directory: foo_ui_panels

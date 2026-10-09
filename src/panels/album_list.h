@@ -107,7 +107,7 @@ private:
     // Remote (Navidrome) library state. m_alive/m_abort outlive the window so worker callbacks
     // can tell whether `this` is still there before touching it.
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
-    std::shared_ptr<abort_callback_impl> m_abort = std::make_shared<abort_callback_impl>();
+    std::shared_ptr<abort_callback_impl> m_abort = std::make_shared<shared_abort>();
     unsigned m_gen = 0;
     bool m_remote_loading = false;
     std::string m_remote_err;

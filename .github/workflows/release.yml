@@ -24,6 +24,7 @@ on:
   workflow_dispatch:
 
 permissions:
+  actions: read          # release-package downloads this run's mac artifact with gh
   contents: write
   issues: write
   pull-requests: write
@@ -31,6 +32,13 @@ permissions:
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
+
+# actions/checkout runs `git init`, which prints a "Using 'master' as the name for the initial
+# branch" hint on every checkout unless init.defaultBranch is set.
+env:
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
 
 jobs:
   release:
@@ -82,10 +90,10 @@ jobs:
         working-directory: foo_ui_panels
         run: |
           npm install --no-save --no-package-lock \
-            semantic-release@22 \
-            conventional-changelog-conventionalcommits@7 \
-            @semantic-release/exec@6 \
-            @semantic-release/github@9
+            semantic-release@25 \
+            conventional-changelog-conventionalcommits@9 \
+            @semantic-release/exec@7 \
+            @semantic-release/github@12
 
       - name: Run semantic-release
         id: semantic_release
@@ -114,7 +122,7 @@ jobs:
         uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
       - name: Install ninja
-        run: brew install ninja
+        run: command -v ninja >/dev/null || brew install ninja  # the runner image usually has it
 
       - name: Build (universal)
         working-directory: foo_ui_panels
@@ -146,9 +154,10 @@ jobs:
         with:
           ref: v${{ needs.release.outputs.released_version }}
 
-      - uses: actions/download-artifact@v8
-        with:
-          name: foo_ui_panels-mac
+      # gh, not actions/download-artifact: that action's bundled deps print a Node
+      # "Buffer() is deprecated" warning on every run.
+      - name: Download the macOS bundle
+        run: gh run download "${{ github.run_id }}" -R "${{ github.repository }}" -n foo_ui_panels-mac
 
       - name: Merge the macOS bundle into the release asset
         run: |

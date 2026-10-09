@@ -78,11 +78,17 @@ else()
   set(PLATFORM_DIR mac)
 endif()
 
+# The SDK is third-party code we don't patch: its headers are SYSTEM includes (no warnings from
+# them in our sources) and its own .cpp files build with warnings off, so the build log only
+# shows warnings in our code.
 add_library(pfc STATIC ${PFC_SRC})
-target_include_directories(pfc PUBLIC "${SDK}")
+target_include_directories(pfc SYSTEM PUBLIC "${SDK}")
 add_library(fb2ksdk STATIC ${SDK_SRC})
-target_include_directories(fb2ksdk PUBLIC "${SDK}" "${SDK}/foobar2000")
+target_include_directories(fb2ksdk SYSTEM PUBLIC "${SDK}" "${SDK}/foobar2000")
 target_link_libraries(fb2ksdk PUBLIC pfc)
+foreach(t pfc fb2ksdk)
+  target_compile_options(${t} PRIVATE $<IF:$<BOOL:${WIN32}>,/w,-w>)
+endforeach()
 
 if(APPLE)
   # The SDK's own targets build with ARC (CLANG_ENABLE_OBJC_ARC = YES in foobar2000_SDK.xcodeproj

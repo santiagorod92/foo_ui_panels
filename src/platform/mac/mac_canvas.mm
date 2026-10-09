@@ -31,7 +31,7 @@ CGRect to_cg(const Rect& r) { return CGRectMake(r.x, r.y, r.w, r.h); }
 CGContextRef make_bitmap_context(int w, int h, double scale = 1.0) {
     const size_t pw = (size_t)std::max(1L, std::lround(w * scale)), ph = (size_t)std::max(1L, std::lround(h * scale));
     CGContextRef ctx = CGBitmapContextCreate(nullptr, pw, ph, 8, 0, srgb(),
-                                             kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+                                             (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
     if (!ctx) return nullptr;
     CGContextTranslateCTM(ctx, 0, (CGFloat)ph);
     CGContextScaleCTM(ctx, scale, -scale);
@@ -52,7 +52,7 @@ public:
     Color average_color() const override {
         uint8_t px[4] = {};
         CGContextRef ctx = CGBitmapContextCreate(px, 1, 1, 8, 4, srgb(),
-                                                 kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+                                                 (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
         if (!ctx) return Color();
         CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
         CGContextDrawImage(ctx, CGRectMake(0, 0, 1, 1), m_img);
@@ -213,7 +213,7 @@ ImagePtr resample_image(const Image& img, int pw, int ph) {
     auto* mi = dynamic_cast<const MacImage*>(&img);
     if (!mi || !mi->image() || pw <= 0 || ph <= 0) return nullptr;
     CGContextRef ctx = CGBitmapContextCreate(nullptr, (size_t)pw, (size_t)ph, 8, 0, srgb(),
-                                             kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+                                             (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
     if (!ctx) return nullptr;
     CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
     CGContextDrawImage(ctx, CGRectMake(0, 0, pw, ph), mi->image());
@@ -234,7 +234,7 @@ bool encode_png_file(const Image& img, const std::string& utf8_path, int maxWidt
     if (!sw || !sh) return false;
     const size_t tw = std::min(sw, (size_t)std::max(1, maxWidth)), th = std::max<size_t>(1, sh * tw / sw);
     CGContextRef ctx = CGBitmapContextCreate(nullptr, tw, th, 8, 0, srgb(),
-                                             kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+                                             (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
     if (!ctx) return false;
     CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
     CGContextDrawImage(ctx, CGRectMake(0, 0, tw, th), src);
@@ -409,7 +409,7 @@ void CGCanvas::blend_argb(const Rect& dst, const uint32_t* src, int stride) {
     CFDataRef d = CFDataCreate(nullptr, (const UInt8*)buf.data(), (CFIndex)(buf.size() * 4));
     CGDataProviderRef prov = CGDataProviderCreateWithCFData(d);
     CGImageRef img = CGImageCreate(dst.w, dst.h, 8, 32, (size_t)dst.w * 4, srgb(),
-                                   kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little,
+                                   (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little,
                                    prov, nullptr, false, kCGRenderingIntentDefault);
     if (img) { draw_cgimage(m_ctx, img, to_cg(dst), false); CGImageRelease(img); }
     CGDataProviderRelease(prov);
