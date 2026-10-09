@@ -15,6 +15,13 @@ on:
   pull_request:
   workflow_dispatch:
 
+# actions/checkout runs `git init`, which prints a "Using 'master' as the name for the initial
+# branch" hint on every checkout unless init.defaultBranch is set.
+env:
+  GIT_CONFIG_COUNT: 1
+  GIT_CONFIG_KEY_0: init.defaultBranch
+  GIT_CONFIG_VALUE_0: main
+
 jobs:
   build:
     runs-on: ubuntu-24.04

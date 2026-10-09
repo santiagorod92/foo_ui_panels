@@ -65,7 +65,7 @@ private:
     bool m_loaded = false, m_remote_loading = false;
     std::string m_remote_err;
     std::shared_ptr<std::atomic<bool>> m_alive = std::make_shared<std::atomic<bool>>(true);
-    std::shared_ptr<abort_callback_impl> m_abort = std::make_shared<abort_callback_impl>();
+    std::shared_ptr<abort_callback_impl> m_abort = std::make_shared<shared_abort>();
     unsigned m_gen = 0;
 };
 
