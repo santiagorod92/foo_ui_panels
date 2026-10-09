@@ -63,7 +63,7 @@ makes it the skin and opens the **layout wizard** over it. The wizard (also **Vi
 Layout wizard…**, or the **Layout wizard…** button in Preferences › Display › Panels UI (reborn),
 like the Default UI's *Quick Setup*) offers ready-made layouts — *Playlist and cover*, *Library* (playlists, playlist,
 album art), *Album browser* (cover grid + playlist), *Playlist*, *Now playing* (large cover, synced
-lyrics, spectrum) — each with a thumbnail. Picking one writes it out as a skin folder of its own
+lyrics, spectrum) — each with a screenshot of it. Picking one writes it out as a skin folder of its own
 (`main.txt` + `foo_ui_panels.ini`, a new folder each time, so edits are never overwritten): it is an
 ordinary skin from then on, to edit like any other. **Use my own skin folder…** loads any other skin
 instead (fooAvA, see below).
@@ -377,10 +377,15 @@ to the window (Hyprland host, screenshots via `grim`).
 
 ```sh
 make ui ARGS='restart'                     # graceful close, install build/ DLL, relaunch + play
-make ui ARGS='click X Y r'                 # also dbl, wheelN, key:VK, type:TEXT, …
+make ui ARGS='click X Y r'                 # also dbl, wheelN, key:VK, type:TEXT, bmclick, …
 make ui ARGS='shot build/ui-test/after.png'
 make ui ARGS='pvars key=value'             # edit persisted panel vars (foobar2000 stopped)
 ```
+
+The layout wizard's previews (`res/wizard/*.png`, built into the component) are screenshots of
+each template taken by `scripts/wizard-previews.sh`: it runs them in a throwaway portable
+foobar2000 with its own Wine prefix and profile, playing a made-up library of synthesized tracks
+and generated covers (`scripts/wizard-demo-library.sh`) — rerun it after changing a template.
 
 Together with `make win11-test` / `win11-shot` and `make mac-vm-test` / `mac-vm-shot` in the VMs, a change can be checked
 end to end with nothing but commands. A coding agent (the maintainer uses [Claude

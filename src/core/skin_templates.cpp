@@ -198,7 +198,8 @@ $textbutton(250,100,110,32,Close,,WIZARD:CLOSE)
              ",'$drawroundrect(0,0," + e(CW) + "," + e(CH) + ",8,8,34-37-45)'" +
              ",'$drawroundrect(0,0," + e(CW) + "," + e(CH) + ",8,8,46-50-62)'" +
              ",SKIN:TEMPLATE:" + t.id + ",'TOOLTIP:" + t.summary + "')\n";
-        // Thumbnail: the window, then each part, in percent of it.
+        // Thumbnail: a screenshot of the layout (res/wizard/<id>.png, built in), drawn over a
+        // sketch of it — the window, then each part, in percent of it — that shows if it's missing.
         const std::string TX = "{" + X + " + 12}", TY = "{" + Y + " + 12}", TW = "{" + CW + " - 24}", TH = "{" + PH + " - 8}";
         s += "$drawrect(" + e(TX) + "," + e(TY) + "," + e(TW) + "," + e(TH) + ",brushcolor-24-25-30 pencolor-70-74-86)\n";
         for (const auto& b : t.thumbnail) {
@@ -207,6 +208,8 @@ $textbutton(250,100,110,32,Close,,WIZARD:CLOSE)
                  e(std::to_string(b.w) + " * " + TW + " / 100") + "," + e(std::to_string(b.h) + " * " + TH + " / 100") +
                  ",brushcolor-" + part_color(b.part) + " pencolor-null)\n";
         }
+        s += "$imageabs(" + e(TX) + "," + e(TY) + "," + e(TW) + "," + e(TH) + ",builtin:wizard/" + t.id + ".png)\n";
+        s += "$drawrect(" + e(TX) + "," + e(TY) + "," + e(TW) + "," + e(TH) + ",brushcolor-null pencolor-70-74-86)\n";
         s += "$font(Segoe UI,11,bold)\n";
         s += "$drawstring(" + std::string(t.name) + "," + e(TX) + "," + e(Y + " + " + PH + " + 12") + "," + e(TW) + ",20,235-238-245)\n";
         s += "$font(Segoe UI,9)\n";

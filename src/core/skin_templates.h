@@ -9,7 +9,9 @@
 namespace pui {
 
 struct SkinTemplate {
-    // What a box in the wizard's thumbnail stands for (its colour).
+    // The wizard's preview is a screenshot, res/wizard/<id>.png (scripts/wizard-previews.sh);
+    // `thumbnail` sketches the layout beneath it, shown if the image is missing.
+    // What a box in the sketch stands for (its colour).
     enum class Part { Toolbar, Status, Playlist, Cover, Tree, Albums, Lyrics, Spectrum };
     struct Box { int x, y, w, h; Part part; }; // in percent of the window
 
@@ -25,7 +27,7 @@ struct SkinTemplate {
 const std::vector<SkinTemplate>& skin_templates();
 const SkinTemplate* find_skin_template(const std::string& id);
 
-// The wizard: a card per template (thumbnail, name, summary; SKIN:TEMPLATE:<id>), plus
+// The wizard: a card per template (preview, name, summary; SKIN:TEMPLATE:<id>), plus
 // "Use my own skin folder…" (SKIN:CHOOSE_FOLDER) and "Close" (WIZARD:CLOSE).
 std::string layout_wizard_script();
 

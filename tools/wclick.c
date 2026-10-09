@@ -1,4 +1,4 @@
-// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP|menukey:VK]
+// wclick <x> <y> [top:<window title>] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP|menukey:VK|bmclick]
 // Dev tool: posts a mouse/key event to the deepest visible child of the Panels UI main window
 // (or another top-level window by title) at client point (x,y). Runs inside Wine next to
 // foobar2000, so UI tests never touch the host's real mouse — except `hover`, which moves the
@@ -73,6 +73,8 @@ int main(int argc, char** argv) {
         PostMessageW(target, WM_LBUTTONUP, 0, MAKELPARAM(cp.x, cp.y + dy));
     } else if (!strncmp(what, "key:", 4)) {
         PostMessageW(target, WM_KEYDOWN, (WPARAM)strtol(what + 4, NULL, 0), 0);
+    } else if (!strcmp(what, "bmclick")) { // a native button (posted mouse clicks don't press those)
+        PostMessageW(target, BM_CLICK, 0, 0);
     }
     return 0;
 }

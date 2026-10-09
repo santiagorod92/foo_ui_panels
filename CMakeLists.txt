@@ -103,6 +103,10 @@ file(GLOB COMP_SRC CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/src/panels/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/platform/${PLATFORM_DIR}/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/platform/${PLATFORM_DIR}/*.mm")
+# Images built into the component (res/, e.g. the layout wizard's previews): src/core/builtin_images.h.
+include(cmake/embed_images.cmake)
+pui_embed_images("${CMAKE_SOURCE_DIR}/res" "${PUI_GENERATED_DIR}/builtin_images.cpp")
+list(APPEND COMP_SRC "${PUI_GENERATED_DIR}/builtin_images.cpp")
 
 if(WIN32)
   add_library(foo_ui_panels SHARED ${COMP_SRC})

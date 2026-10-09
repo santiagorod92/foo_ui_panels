@@ -158,9 +158,10 @@ TrackIds ids_for(const metadb_handle_ptr& np) {
 }
 
 // The track's path without its extension, for sidecar .lrc/.txt files ("" if not a local file).
+// A portable install keeps files under its own folder as file-relative:// paths.
 std::string sidecar_base(const metadb_handle_ptr& np) {
     pfc::string8 path = np->get_path();
-    if (strncmp(path, "file://", 7) != 0) return {};
+    if (strncmp(path, "file://", 7) != 0 && strncmp(path, "file-relative://", 16) != 0) return {};
     std::string nat = to_native(path);
     size_t dot = nat.find_last_of('.'), sl = nat.find_last_of("\\/");
     if (nat.empty() || dot == std::string::npos || (sl != std::string::npos && dot < sl)) return {};

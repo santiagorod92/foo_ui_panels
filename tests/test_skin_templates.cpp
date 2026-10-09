@@ -48,6 +48,9 @@ TEST("templates: unique ids and names, each with a thumbnail, script and config"
         CHECK_EQ(find_skin_template(t.id), &t);
         // The wizard offers every one of them.
         CHECK(layout_wizard_script().find(std::string("SKIN:TEMPLATE:") + t.id) != std::string::npos);
+        // ...with its preview, built in from res/ (scripts/wizard-previews.sh makes them).
+        CHECK(std::filesystem::is_regular_file(std::string("res/wizard/") + t.id + ".png"));
+        CHECK(layout_wizard_script().find(std::string("builtin:wizard/") + t.id + ".png") != std::string::npos);
     }
     CHECK(find_skin_template("nope") == nullptr);
 }
