@@ -248,7 +248,8 @@ std::string ScriptRuntime::resolve_vars(const std::string& in) const {
 
 std::string ScriptRuntime::resolve(std::string p) const {
     for (auto& c : p) if (c == '\\') c = '/';
-    bool absolute = (p.size() >= 2 && p[1] == ':') || p.compare(0, 2, "//") == 0;
+    bool absolute = (p.size() >= 2 && p[1] == ':') || p.compare(0, 2, "//") == 0 ||
+                    p.compare(0, 8, "builtin:") == 0; // an image built into the component (builtin_images.h)
     if (absolute) return p;
     while (!p.empty() && (p[0] == '.' || p[0] == '/')) p.erase(0, 1);
     if (m_st.base.empty()) return p;

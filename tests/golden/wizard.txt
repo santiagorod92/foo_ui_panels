@@ -16,6 +16,8 @@ fill_rect 40,162,246,11 #3a3e48
 fill_rect 44,177,63,43 #0078d7
 fill_rect 113,173,172,109 #262932
 fill_rect 40,282,246,6 #30333c
+img builtin:wizard/playlist-cover.png 40,162,246,127
+frame_rect 40,162,246,127 #464a56
 font Segoe UI 11 bold
 text "Playlist and cover" 40,297,246,20 f32 #ebeef5
 font Segoe UI 9
@@ -28,6 +30,8 @@ fill_rect 326,173,54,109 #2e323e
 fill_rect 380,173,127,109 #262932
 fill_rect 512,177,54,38 #0078d7
 fill_rect 326,282,246,6 #30333c
+img builtin:wizard/library.png 326,162,246,127
+frame_rect 326,162,246,127 #464a56
 font Segoe UI 11 bold
 text "Library" 326,297,246,20 f32 #ebeef5
 font Segoe UI 9
@@ -39,6 +43,8 @@ fill_rect 612,162,246,11 #3a3e48
 fill_rect 612,173,147,109 #005faa
 fill_rect 759,173,98,109 #262932
 fill_rect 612,282,246,6 #30333c
+img builtin:wizard/albums.png 612,162,246,127
+frame_rect 612,162,246,127 #464a56
 font Segoe UI 11 bold
 text "Album browser" 612,297,246,20 f32 #ebeef5
 font Segoe UI 9
@@ -49,6 +55,8 @@ frame_rect 40,385,246,127 #464a56
 fill_rect 40,385,246,11 #3a3e48
 fill_rect 40,396,246,109 #262932
 fill_rect 40,505,246,6 #30333c
+img builtin:wizard/playlist.png 40,385,246,127
+frame_rect 40,385,246,127 #464a56
 font Segoe UI 11 bold
 text "Playlist" 40,520,246,20 f32 #ebeef5
 font Segoe UI 9
@@ -61,6 +69,8 @@ fill_rect 330,400,98,71 #0078d7
 fill_rect 436,397,130,81 #463e6e
 fill_rect 326,484,246,21 #009688
 fill_rect 326,505,246,6 #30333c
+img builtin:wizard/now-playing.png 326,385,246,127
+frame_rect 326,385,246,127 #464a56
 font Segoe UI 11 bold
 text "Now playing" 326,520,246,20 f32 #ebeef5
 font Segoe UI 9

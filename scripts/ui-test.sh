@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # ui-test.sh — drive the Panels UI running in the local Wine foobar2000 (dev aid, Hyprland host).
-#   ui-test.sh click X Y [top:TITLE] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP|menukey:VK]
+#   ui-test.sh click X Y [top:TITLE] [l|r|dbl|move|hover|close|wheelN|key:VK|type:TEXT|drag:DY|post:MSG:WP:LP|menukey:VK|bmclick]
 #                                     (hover moves the host's real pointer: tooltips need it)
 #   ui-test.sh shot FILE.png          screenshot of the Panels UI window
 #   ui-test.sh pvars k=v ...          edit persisted pvars (foobar2000 must be stopped)

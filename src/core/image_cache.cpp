@@ -1,4 +1,5 @@
 #include "image_cache.h"
+#include "builtin_images.h"
 #include "fs_util.h"
 #include <algorithm>
 #include <cmath>
@@ -203,6 +204,10 @@ gfx::ImagePtr load(const std::string& rawpath) {
     ensure_started();
     gfx::ImagePtr img;
     if (cache_get(rawpath, img)) return img;
+    if (rawpath.compare(0, std::char_traits<char>::length(kBuiltinImagePrefix), kBuiltinImagePrefix) == 0) {
+        const BuiltinImage* b = find_builtin_image(rawpath.substr(std::char_traits<char>::length(kBuiltinImagePrefix)));
+        return cache_put(rawpath, b ? gfx::decode_image_memory(b->data, b->size) : nullptr, kMissTtl);
+    }
     std::string path = resolve_wildcard(rawpath);
     img = path.empty() ? nullptr : gfx::decode_image_file(path);
     return cache_put(rawpath, img, kMissTtl);
