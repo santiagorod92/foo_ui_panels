@@ -71,7 +71,7 @@ jobs:
         uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
       - name: Install ninja
-        run: brew install ninja
+        run: command -v ninja >/dev/null || brew install ninja  # the runner image usually has it
 
       - name: Build (universal)
         working-directory: foo_ui_panels
