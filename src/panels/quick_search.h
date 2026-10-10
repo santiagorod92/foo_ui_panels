@@ -1,7 +1,3 @@
-// Native "Quick Search Toolbar" (legacy fooAvA panel type; no stock DUI equivalent): a small
-// text box in the skin's top bar. Typing (or Enter) fills a "Search results" playlist with every
-// track from the Media Library and from all playlists that matches the query, using foobar2000's
-// own search syntax; Esc clears it and closes the box (showsr pvar).
 #pragma once
 #include "../ui/view.h"
 #include <memory>
@@ -34,4 +30,4 @@ private:
     std::unique_ptr<ui::TextField> m_edit;
 };
 
-} // namespace pui
+}

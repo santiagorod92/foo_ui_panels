@@ -12,7 +12,6 @@ const Palette& palette(bool dark) {
         light = { GetSysColor(COLOR_BTNFACE), GetSysColor(COLOR_WINDOWTEXT), GetSysColor(COLOR_GRAYTEXT),
                   GetSysColor(COLOR_WINDOW), GetSysColor(COLOR_WINDOWTEXT), GetSysColor(COLOR_BTNSHADOW),
                   GetSysColor(COLOR_WINDOW), GetSysColorBrush(COLOR_BTNFACE), GetSysColorBrush(COLOR_WINDOW) };
-        // Close to foobar2000's own dark pages.
         darkp = { RGB(32, 32, 32), RGB(230, 230, 230), RGB(150, 150, 150),
                   RGB(25, 25, 25), RGB(230, 230, 230), RGB(90, 90, 90),
                   RGB(56, 56, 56), nullptr, nullptr };
@@ -24,8 +23,6 @@ const Palette& palette(bool dark) {
 
 namespace {
 
-// A list view's header sends its custom-draw notifications to the list: that's where its text
-// colour is set.
 LRESULT CALLBACK list_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id, DWORD_PTR dark) {
     if (msg == WM_NOTIFY && dark) {
         auto cd = reinterpret_cast<NMCUSTOMDRAW*>(lp);
@@ -41,7 +38,7 @@ LRESULT CALLBACK list_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id
     return DefSubclassProc(wnd, msg, wp, lp);
 }
 
-} // namespace
+}
 
 void theme_control(HWND ctl, bool dark) {
     wchar_t cls[64] = {};
@@ -50,8 +47,6 @@ void theme_control(HWND ctl, bool dark) {
         SetWindowTheme(ctl, nullptr, nullptr);
     } else if (!_wcsicmp(cls, L"Button")) {
         const LONG type = GetWindowLongW(ctl, GWL_STYLE) & BS_TYPEMASK;
-        // A themed check box draws its label in the theme's (black) text colour; unthemed, it
-        // takes WM_CTLCOLORSTATIC's.
         if (type == BS_AUTOCHECKBOX || type == BS_CHECKBOX) SetWindowTheme(ctl, L"", L"");
         else SetWindowTheme(ctl, L"DarkMode_Explorer", nullptr);
     } else if (!_wcsicmp(cls, L"ComboBox") || !_wcsicmp(cls, L"Edit")) {
@@ -64,7 +59,6 @@ void theme_control(HWND ctl, bool dark) {
         ListView_SetBkColor(ctl, p.field);
         ListView_SetTextBkColor(ctl, p.field);
         ListView_SetTextColor(ctl, p.fieldText);
-        // Grid lines are drawn in a fixed light colour: too loud on dark.
         ListView_SetExtendedListViewStyleEx(ctl, LVS_EX_GRIDLINES, dark ? 0 : LVS_EX_GRIDLINES);
         if (HWND header = ListView_GetHeader(ctl))
             SetWindowTheme(header, dark ? L"DarkMode_ItemsView" : nullptr, nullptr);
@@ -92,7 +86,6 @@ void paint_tab(HWND tab, HDC dc) {
     RECT rc; GetClientRect(tab, &rc);
     FillRect(dc, &rc, p.bgBrush);
     HBRUSH border = CreateSolidBrush(p.border);
-    // The page frame below the tab strip.
     RECT body = rc; TabCtrl_AdjustRect(tab, FALSE, &body);
     InflateRect(&body, 1, 1);
     FrameRect(dc, &body, border);
@@ -106,7 +99,7 @@ void paint_tab(HWND tab, HDC dc) {
         TCITEMW ti = {}; ti.mask = TCIF_TEXT; ti.pszText = text; ti.cchTextMax = 128;
         TabCtrl_GetItem(tab, i, &ti);
         if (i == sel) {
-            r.top -= 2; r.bottom += 1; // the selected tab stands out and joins its page
+            r.top -= 2; r.bottom += 1;
             HBRUSH b = CreateSolidBrush(p.tabSel);
             FillRect(dc, &r, b); DeleteObject(b);
         }
@@ -140,10 +133,10 @@ LRESULT CALLBACK tab_proc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp, UINT_PTR id,
     return DefSubclassProc(wnd, msg, wp, lp);
 }
 
-} // namespace
+}
 
 void subclass_tab(HWND tab, const bool* dark) {
     SetWindowSubclass(tab, tab_proc, 1, reinterpret_cast<DWORD_PTR>(dark));
 }
 
-} // namespace pui::win::dark
+}

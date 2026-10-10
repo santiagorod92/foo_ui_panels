@@ -1,6 +1,3 @@
-// Offline Panels UI skin check (see src/core/skin_lint.h). Built by `make skin-lint`:
-//   build/tools/skin_lint <skin folder>     findings, exit code 1 if any error
-//   build/tools/skin_lint --functions-md    the script-function reference (docs/SCRIPT_FUNCTIONS.md)
 #include "core/script_runtime.h"
 #include "core/skin_lint.h"
 #include <cstdio>

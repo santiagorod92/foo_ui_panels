@@ -1,8 +1,8 @@
 #include "panel_host.h"
+#include "../../core/log.h"
 
 namespace pui {
 
-// ASCII case-insensitive "does haystack contain needle?"
 static bool name_contains(const char* haystack, const char* needle) {
     pfc::string8 h, n;
     for (const char* p = haystack; p && *p; ++p) h.add_char((char)tolower((unsigned char)*p));
@@ -11,14 +11,14 @@ static bool name_contains(const char* haystack, const char* needle) {
 }
 
 void PanelHost::log_available() {
-    pfc::string8 line = "Panels UI: available UI elements:";
+    std::string line = "available UI elements:";
     service_enum_t<ui_element> e;
     service_ptr_t<ui_element> p;
     while (e.next(p)) {
         pfc::string8 nm; p->get_name(nm);
-        line << "\n  - " << nm;
+        line += std::string("\n  - ") + nm.get_ptr();
     }
-    console::print(line);
+    log::console(log::Level::Info, "panel", line);
 }
 
 HWND PanelHost::create(HWND parent, const char* name) {
@@ -29,17 +29,17 @@ HWND PanelHost::create(HWND parent, const char* name) {
         if (name_contains(nm, name)) { found = p; break; }
     }
     if (found.is_empty()) {
-        console::printf("Panels UI: no UI element matching \"%s\"", name);
+        log::console(log::Level::Warn, "panel", std::string("no UI element matching \"") + name + "\"");
         return nullptr;
     }
     try {
         ui_element_config::ptr cfg = found->get_default_configuration();
         m_inst = found->instantiate(parent, cfg, ui_element_instance_callback_get_ptr());
     } catch (std::exception const& ex) {
-        console::printf("Panels UI: failed to host \"%s\": %s", name, ex.what());
+        log::console(log::Level::Error, "panel", std::string("failed to host \"") + name + "\": " + ex.what());
         return nullptr;
     }
     return wnd();
 }
 
-} // namespace pui
+}

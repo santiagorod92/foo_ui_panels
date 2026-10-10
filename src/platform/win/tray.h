@@ -1,6 +1,3 @@
-// Notification-area ("tray") icon for the main window — what a skin's $settray(tooltip) asks for.
-// The owner window receives kMessage (lParam = the mouse message) and re-adds the icon when
-// Explorer restarts (taskbar_created_message()).
 #pragma once
 #include "win_sdk.h"
 #include <shellapi.h>
@@ -20,7 +17,6 @@ public:
 
     bool active() const { return m_added; }
 
-    // Adds the icon, or updates its tooltip (same text: nothing to do — called on every repaint).
     void set(HWND owner, HICON icon, const std::wstring& tip) {
         if (m_added && tip == m_tip) return;
         m_tip = tip;
@@ -34,7 +30,6 @@ public:
         m_added = false;
     }
 
-    // Explorer restarted: its notification area forgot us.
     void readd() {
         if (!m_added) return;
         m_added = Shell_NotifyIconW(NIM_ADD, &m_nid) != FALSE;
@@ -57,4 +52,4 @@ private:
     bool m_added = false;
 };
 
-} // namespace pui::win
+}

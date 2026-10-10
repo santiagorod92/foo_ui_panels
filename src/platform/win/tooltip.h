@@ -1,6 +1,3 @@
-// One tooltip control per window, covering its whole client area: the skin's buttons aren't
-// child windows, so the text simply follows whatever button the mouse is over (set() from the
-// window's mouse-move handling). Empty text shows nothing.
 #pragma once
 #include "win_sdk.h"
 #include <commctrl.h>
@@ -26,7 +23,6 @@ public:
             if (!m_tip) return;
             m_owner = owner;
             TTTOOLINFOW ti = tool(L"");
-            // TTF_SUBCLASS: the control watches the owner's mouse messages itself.
             ti.uFlags = TTF_IDISHWND | TTF_SUBCLASS;
             SendMessageW(m_tip, TTM_ADDTOOLW, 0, (LPARAM)&ti);
             SendMessageW(m_tip, TTM_SETMAXTIPWIDTH, 0, 400);
@@ -34,7 +30,6 @@ public:
         m_text = text;
         TTTOOLINFOW ti = tool(m_text.c_str());
         SendMessageW(m_tip, TTM_UPDATETIPTEXTW, 0, (LPARAM)&ti);
-        // Hide the previous button's tip; the new one shows after the usual hover delay.
         SendMessageW(m_tip, TTM_POP, 0, 0);
     }
 
@@ -57,4 +52,4 @@ private:
     std::wstring m_text;
 };
 
-} // namespace pui::win
+}

@@ -6,7 +6,6 @@
 using namespace pui;
 
 namespace {
-// A throwaway skin folder under the system temp dir.
 struct TempSkin {
     std::string dir;
     TempSkin() {
@@ -21,7 +20,7 @@ bool has(const std::vector<LintFinding>& f, LintFinding::Level lv, const std::st
     for (auto& x : f) if (x.level == lv && (x.file + ": " + x.message).find(part) != std::string::npos) return true;
     return false;
 }
-} // namespace
+}
 
 TEST("lint: call sites split top-level arguments only") {
     auto c = script_call_sites("$button(1,$add(2,3),'a,b',x.png)");
@@ -32,7 +31,7 @@ TEST("lint: call sites split top-level arguments only") {
     CHECK_EQ(c[0].args[2], std::string("'a,b'"));
     CHECK_EQ(c[1].name, std::string("add"));
     CHECK(script_call_sites("$f()")[0].args.empty());
-    CHECK(script_call_sites("$f(").empty()); // unbalanced
+    CHECK(script_call_sites("$f(").empty());
 }
 
 TEST("lint: standard titleformat vs. unknown functions") {
@@ -46,7 +45,7 @@ TEST("lint: a skin with problems") {
     s.put("img/ok.png", "x");
     s.put("main.txt",
           "$imageabs2(0,0,0,0,0,0,1,1,img/ok.png)$imageabs2(0,0,0,0,0,0,1,1,img/gone.png)"
-          "$imageabs2(0,0,0,0,0,0,1,1,img/$getpvar(x).png)"   // computed: not checked
+          "$imageabs2(0,0,0,0,0,0,1,1,img/$getpvar(x).png)"
           "$panel(disp,Track Display,0,0,10,10)$panel(eq,Equalizer,0,0,1,1)"
           "$button(0,0,0,0,0,0,img/ok.png,img/ok.png,'POPUP:settings.ava')"
           "$frobnicate(1)$drawrect(1,2)$scplsetlayout(x)");
@@ -60,16 +59,16 @@ TEST("lint: a skin with problems") {
     CHECK(has(f, LintFinding::Level::Info, "$scplsetlayout is accepted but not implemented"));
     CHECK(has(f, LintFinding::Level::Info, "panel 'eq' (Equalizer)"));
     CHECK(has(f, LintFinding::Level::Error, "panel script not found: panels/settings.ava.txt"));
-    CHECK(has(f, LintFinding::Level::Error, "panel script not found: panels/inner.txt")); // found transitively
+    CHECK(has(f, LintFinding::Level::Error, "panel script not found: panels/inner.txt"));
     CHECK(!has(f, LintFinding::Level::Error, "panels/disp.txt"));
     CHECK(has(f, LintFinding::Level::Warning, "asset.nocover not found: img/none_1.png"));
-    CHECK(f.front().level == LintFinding::Level::Error); // errors first
+    CHECK(f.front().level == LintFinding::Level::Error);
     CHECK(format_findings(f).find(" error(s), ") != std::string::npos);
 }
 
 TEST("lint: no main script, not a folder") {
     TempSkin s;
-    s.put("a.txt", "x"); s.put("b.txt", "y"); // two candidates, no config: ambiguous
+    s.put("a.txt", "x"); s.put("b.txt", "y");
     CHECK(has(lint_skin(s.dir), LintFinding::Level::Error, "no main script"));
     CHECK(has(lint_skin(s.dir + "/nope"), LintFinding::Level::Error, "not a folder"));
 }
@@ -85,7 +84,7 @@ TEST("editor: tokens") {
     CHECK(k[3].kind == K::Quoted && at(3) == "'b,c'");
     CHECK(k[5].kind == K::Field && at(5) == "%title%");
     CHECK(k.back().kind == K::Paren && at(k.size() - 1) == "]");
-    for (auto& x : k) CHECK(t.substr(x.start, x.len) != "% [x"); // a lone % isn't a field
+    for (auto& x : k) CHECK(t.substr(x.start, x.len) != "% [x");
 }
 
 TEST("editor: check_script and line_col") {
@@ -97,7 +96,7 @@ TEST("editor: check_script and line_col") {
     CHECK(p[2].find("1 unclosed") != std::string::npos);
     CHECK(check_script("'open").back().find("quote") != std::string::npos);
     int l, c;
-    line_col("ab\n\xc3\xa9x", 5, l, c); // after "é"
+    line_col("ab\n\xc3\xa9x", 5, l, c);
     CHECK_EQ(l, 2); CHECK_EQ(c, 2);
 }
 
@@ -107,7 +106,7 @@ TEST("editor: script_to_rtf colours tokens and escapes") {
     CHECK(r.find("\\cf2 $f\\cf1 ") != std::string::npos);
     CHECK(r.find("a\\{b\\}\\\\c") != std::string::npos);
     CHECK(r.find("\\par\n") != std::string::npos);
-    CHECK(r.find("\\u233?") != std::string::npos); // é
+    CHECK(r.find("\\u233?") != std::string::npos);
     CHECK(r.back() == '}');
 }
 
@@ -115,11 +114,11 @@ TEST("editor status line: caret position, problems, long scripts") {
     int line, col;
     line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 0, line, col);
     CHECK(line == 1 && col == 1);
-    line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 4, line, col); // "\r\n" is one line break
+    line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 4, line, col);
     CHECK(line == 2 && col == 1);
     line_col_utf16(std::u16string(u"ab\r\ncd\ne"), 6, line, col);
     CHECK(line == 2 && col == 3);
-    line_col_utf16(std::u16string(u"a\rb\nc"), 99, line, col);   // lone \r (RichEdit) and \n
+    line_col_utf16(std::u16string(u"a\rb\nc"), 99, line, col);
     CHECK(line == 3 && col == 2);
 
     CHECK_EQ(problems_summary({}), std::string());

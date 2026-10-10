@@ -20,7 +20,6 @@ std::vector<ScriptCallSite> script_call_sites(const std::string& text) {
         if (j == i + 1 || j >= text.size() || text[j] != '(') continue;
         ScriptCallSite call;
         call.name = text.substr(i + 1, j - i - 1);
-        // Arguments up to the matching ')': nested calls and '…' literals don't split.
         int depth = 0;
         bool q = false;
         std::string cur;
@@ -33,7 +32,7 @@ std::vector<ScriptCallSite> script_call_sites(const std::string& text) {
             if (!q && d == ',' && depth == 0) { call.args.push_back(cur); cur.clear(); continue; }
             cur += d;
         }
-        if (k >= text.size()) continue; // unbalanced: the core reports it when compiling
+        if (k >= text.size()) continue;
         if (!call.args.empty() || !cur.empty()) call.args.push_back(cur);
         out.push_back(std::move(call));
     }
@@ -42,25 +41,20 @@ std::vector<ScriptCallSite> script_call_sites(const std::string& text) {
 
 bool standard_titleformat_function(const std::string& name) {
     static const std::set<std::string> known = {
-        // control flow
         "if", "if2", "if3", "ifequal", "ifgreater", "iflonger", "select",
-        // arithmetic / boolean
         "add", "sub", "mul", "div", "mod", "muldiv", "min", "max", "rand", "greater",
         "and", "or", "not", "xor",
-        // strings
         "abbr", "ansi", "ascii", "caps", "caps2", "char", "crc32", "crlf", "cut", "directory",
         "directory_path", "ext", "filename", "fix_eol", "hex", "insert", "left", "len", "len2",
         "longer", "longest", "lower", "num", "pad", "pad_right", "padcut", "padcut_right",
         "progress", "progress2", "repeat", "replace", "right", "roman", "rot13", "shortest",
         "strchr", "strcmp", "stricmp", "strrchr", "strstr", "substr", "stripprefix", "swapprefix",
         "tab", "trim", "upper", "nodiacritics",
-        // track info / variables / dates
         "meta", "meta_sep", "meta_test", "meta_num", "info", "get", "put", "puts",
         "year", "month", "day_of_month", "date", "time",
-        // colours
         "rgb", "blend", "transition", "hsl",
     };
-    std::string n = name; // titleformat function names ignore case
+    std::string n = name;
     for (auto& c : n) if (c >= 'A' && c <= 'Z') c = (char)(c + 32);
     return known.count(n) != 0;
 }
@@ -81,8 +75,6 @@ struct Linter {
         return path.compare(0, dir.size() + 1, dir + "/") == 0 ? path.substr(dir.size() + 1) : path;
     }
 
-    // A script argument that is a plain path (nothing computed in it), resolved like the runtime
-    // does; "" when it is computed, absolute, a wildcard or not an image.
     std::string literal_image(std::string a) const {
         a = clean_action(a);
         if (a.empty() || a.find_first_of("$%[*?") != std::string::npos) return {};
@@ -108,7 +100,6 @@ struct Linter {
             if (f && c.args.size() < f->minArgs)
                 add(LintFinding::Level::Error, file, "$" + c.name + " needs " + std::to_string(f->minArgs) +
                     " arguments, has " + std::to_string(c.args.size()) + " (renders as an error)");
-            // Images the call names literally.
             std::vector<size_t> imgArgs;
             if (c.name == "imageabs" || c.name == "draw_image") imgArgs = { 4 };
             else if (c.name == "imageabs2") imgArgs = { 8 };
@@ -118,7 +109,6 @@ struct Linter {
                 if (i >= c.args.size()) continue;
                 check_file(file, literal_image(c.args[i]), "image");
             }
-            // Panels: native, or a foreign UI element; a Track Display runs panels/<name>.txt.
             if (c.name == "panel" && c.args.size() >= 2) {
                 const std::string name = clean_action(c.args[0]), type = clean_action(c.args[1]);
                 if (name.find_first_of("$%") != std::string::npos || type.find_first_of("$%") != std::string::npos) continue;
@@ -129,7 +119,6 @@ struct Linter {
                 else if (kind == PanelKind::TrackDisplay)
                     panelScripts.insert(name);
             }
-            // POPUP:<file> buttons open panels/<file>.txt.
             for (const std::string& a : c.args) {
                 const std::string act = clean_action(a);
                 if (act.compare(0, 6, "POPUP:") == 0) panelScripts.insert(unquote(act.substr(6)));
@@ -142,8 +131,6 @@ struct Linter {
             add(LintFinding::Level::Info, file, n + " is accepted but not implemented (ignored)");
     }
 
-    // A file the skin names: missing is a warning; present only under another letter case is a
-    // note (fine on Windows and a default macOS volume, missing on a case-sensitive one).
     void check_file(const std::string& file, const std::string& path, const std::string& what) {
         if (path.empty() || file_exists_utf8(path)) return;
         const std::filesystem::path p = fs_path(path);
@@ -187,7 +174,6 @@ struct Linter {
         if (!why.empty()) add(LintFinding::Level::Info, "", why);
         std::set<std::string> wanted, done;
         lint_script(main, wanted);
-        // Panel scripts the skin reaches, transitively (a Display.txt can host more panels).
         while (true) {
             std::string next;
             for (auto& n : wanted) if (!done.count(n)) { next = n; break; }
@@ -197,7 +183,6 @@ struct Linter {
             if (!file_exists_utf8(path)) add(LintFinding::Level::Error, rel(main), "panel script not found: " + rel(path));
             else lint_script(path, wanted);
         }
-        // asset.* art for the native panels ({theme} as the default theme, {n} = 1).
         std::string images = cfg.str("images");
         for (auto& c : images) if (c == '\\') c = '/';
         while (!images.empty() && images.back() == '/') images.pop_back();
@@ -210,13 +195,13 @@ struct Linter {
             put("{theme}", cfg.num("theme.index_default", 1));
             put("{n}", 1);
             for (auto& c : a) if (c == '\\') c = '/';
-            if (a.find('.') == std::string::npos) continue; // not a file (e.g. a window rect "57 8 494 474")
+            if (a.find('.') == std::string::npos) continue;
             check_file(SkinConfig::kFileName, imgDir + "/" + a, "asset." + key);
         }
     }
 };
 
-} // namespace
+}
 
 std::vector<LintFinding> lint_skin(const std::string& dirIn) {
     Linter l;
@@ -233,12 +218,12 @@ std::vector<ScriptToken> tokenize_script(const std::string& t) {
     using K = ScriptToken::Kind;
     for (size_t i = 0; i < t.size();) {
         const char c = t[i];
-        if (c == '\'') { // '…' literal, through the closing quote (or the end)
+        if (c == '\'') {
             size_t j = t.find('\'', i + 1);
             j = j == std::string::npos ? t.size() : j + 1;
             out.push_back({ K::Quoted, i, j - i });
             i = j;
-        } else if (c == '%') { // %field% (a lone % is literal)
+        } else if (c == '%') {
             size_t j = t.find('%', i + 1);
             const bool field = j != std::string::npos &&
                 std::all_of(t.begin() + (long)i + 1, t.begin() + (long)j,
@@ -263,7 +248,7 @@ std::string script_to_rtf(const std::string& t) {
                       "{\\colortbl;\\red30\\green30\\blue30;\\red0\\green70\\blue190;\\red140\\green30\\blue140;"
                       "\\red30\\green130\\blue60;\\red170\\green100\\blue0;}\\f0\\fs20\\cf1 ";
     out.reserve(out.size() + t.size() * 2);
-    auto emit = [&](size_t from, size_t to) { // UTF-8 bytes -> RTF text
+    auto emit = [&](size_t from, size_t to) {
         for (size_t i = from; i < to;) {
             const unsigned char c = (unsigned char)t[i];
             if (c < 0x80) {
@@ -330,7 +315,7 @@ void line_col(const std::string& text, size_t pos, int& line, int& col) {
     for (size_t i = 0; i < pos && i < text.size(); ++i) {
         const unsigned char c = (unsigned char)text[i];
         if (c == '\n') { ++line; col = 1; }
-        else if ((c & 0xC0) != 0x80) ++col; // count characters, not continuation bytes
+        else if ((c & 0xC0) != 0x80) ++col;
     }
 }
 
@@ -358,4 +343,4 @@ std::string format_findings(const std::vector<LintFinding>& findings) {
     return s;
 }
 
-} // namespace pui
+}

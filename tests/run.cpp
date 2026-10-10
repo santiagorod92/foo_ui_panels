@@ -3,7 +3,7 @@
 
 int main() {
     int failedCases = 0;
-    const bool verbose = std::getenv("T_VERBOSE") != nullptr; // names each case first (finds a hang)
+    const bool verbose = std::getenv("T_VERBOSE") != nullptr;
     for (auto& c : t::cases()) {
         if (verbose) { std::fprintf(stderr, "... %s\n", c.name); std::fflush(stderr); }
         const int before = t::failures();

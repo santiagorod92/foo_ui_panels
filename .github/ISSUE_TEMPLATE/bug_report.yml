@@ -1,0 +1,99 @@
+name: Bug report
+description: Something in Panels UI (reborn) doesn't work or looks wrong.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to report this. The **diagnostics** section below is the
+        most useful part: it tells us your versions, your skin, its panels and script problems,
+        and what the component logged around the problem. It takes about a minute.
+
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you did, what you expected, and what happened instead. A screenshot helps a lot for drawing problems.
+      placeholder: |
+        I switched fooAvA to its one-panel layout.
+        I expected the playlist to fill the window, but the cover stayed on screen.
+    validations:
+      required: true
+
+  - type: textarea
+    id: steps
+    attributes:
+      label: Steps to reproduce
+      description: The shortest list of steps that makes it happen. Say if it only happens sometimes.
+      placeholder: |
+        1. Start foobar2000 with the fooAvA skin
+        2. Click the layout button at the bottom left
+        3. ...
+    validations:
+      required: true
+
+  - type: input
+    id: skin
+    attributes:
+      label: Skin
+      description: Which skin, and where you got it (a link if it's public). "Default layout" if it's one the layout wizard made.
+      placeholder: fooAvA 1.05 (DeviantArt)
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Windows (x64)
+        - Windows on ARM
+        - macOS
+        - Windows under Wine (Linux)
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## Diagnostics
+
+        **1. Turn on verbose logging** (recommended, so the log has the full detail):
+        *Preferences › Display › Panels UI (reborn) › Diagnostics › Verbose logging*, then
+        **Apply** (on macOS it applies right away).
+
+        **2. Reproduce the problem** once more, right away.
+
+        **3. Copy the diagnostics:** on the same tab click **Copy Diagnostics**. When the
+        label under it says *Copied to the clipboard*, paste below.
+
+        **4. Turn verbose logging off** again if you like.
+
+        The diagnostics never include your persistent variables' values, and your user name
+        is replaced by `<user>` in paths. Read it before posting anyway.
+
+        If foobar2000 crashed or the player window won't open, use **Open Log Folder**
+        (**Show Log in Finder** on macOS) instead, or open `foo_ui_panels.log` in your
+        foobar2000 profile folder, and attach that file.
+
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output of **Copy Diagnostics** here.
+      placeholder: |
+        ### foo_ui_panels diagnostics
+
+        - Component: 1.x.y (x64)
+        - foobar2000: foobar2000 v2.x
+        ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: extra
+    attributes:
+      label: Anything else?
+      description: Screenshots, the attached log file, other components involved (foo_navidrome, lyrics, visualisations), etc.
+    validations:
+      required: false

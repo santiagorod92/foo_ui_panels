@@ -1,10 +1,10 @@
-// PrefsBackend on foobar2000's configuration: where the Preferences pages' settings are stored and
-// how an applied change reaches the open players. Also the skin preview cache the engine fills.
 #include "prefs_model.h"
 #include "prefs_store.h"
 #include "skin_engine.h"
 #include "skin_paths.h"
 #include "ui_settings.h"
+#include "diagnostics.h"
+#include "log.h"
 #include "fs_util.h"
 #include <functional>
 
@@ -32,6 +32,7 @@ public:
         s.main = main_script_override();
         s.zoom = zoom_setting();
         s.onTop = always_on_top();
+        s.verbose = verbose_logging();
         s.pvars = load_all_pvars();
         return s;
     }
@@ -41,8 +42,6 @@ public:
         set_active_skin(now.active);
         set_main_script_override(now.main);
         const bool skinChanged = now.root != before.root || now.active != before.active || now.main != before.main;
-        // The live engines hold their own copy of the store and would write it back over ours:
-        // push the edits through them (set_pvar persists), or straight to the store if none is open.
         if (serialize_pvars(now.pvars) != serialize_pvars(before.pvars)) {
             const PvarMap stored = load_all_pvars();
             for (SkinEngine* e : SkinEngine::live()) {
@@ -53,14 +52,18 @@ public:
         }
         set_zoom_setting(now.zoom);
         set_always_on_top(now.onTop);
+        set_verbose_logging(now.verbose);
+        if (skinChanged) log::info("prefs", "skin changed to " + (now.active.empty() ? now.root : now.root + "/" + now.active));
         if (skinChanged) SkinEngine::reload_all();
-        apply_view_settings(); // zoom, always on top; repaints (new pvars show too)
+        apply_view_settings();
     }
 
     std::vector<std::string> list_skins(const std::string& root) override { return pui::list_skins(root); }
     std::string skin_dir(const std::string& root, const std::string& active) override {
         return resolve_skin_dir_for(root, active);
     }
+    std::string diagnostics() override { return collect_diagnostics(); }
+    std::string log_path() override { return log::Logger::get().path(); }
     std::string cached_preview(const std::string& skinDir) override {
         const std::string p = skin_preview_cache_path(skinDir);
         std::error_code ec;
@@ -68,10 +71,9 @@ public:
     }
 };
 
-} // namespace
+}
 
 const GUID& prefs_page_guid() {
-    // {9C1D9F3A-2B7E-4A6C-9F0D-7E3C5A8B1D40}
     static const GUID g = { 0x9c1d9f3a, 0x2b7e, 0x4a6c, { 0x9f, 0x0d, 0x7e, 0x3c, 0x5a, 0x8b, 0x1d, 0x40 } };
     return g;
 }
@@ -81,7 +83,7 @@ void show_preferences_page() { ui_control::get()->show_preferences(prefs_page_gu
 bool open_layout_wizard() {
     if (SkinEngine::live().empty()) return false;
     SkinEngine::live().front()->show_layout_wizard();
-    ui_control::get()->activate(); // over the Preferences window
+    ui_control::get()->activate();
     return true;
 }
 
@@ -90,4 +92,4 @@ PrefsBackend& prefs_backend() {
     return b;
 }
 
-} // namespace pui
+}

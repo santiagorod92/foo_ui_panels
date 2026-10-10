@@ -26,8 +26,6 @@ void set_fill(CGContextRef ctx, Color c, CGFloat a = 1.0) {
 
 CGRect to_cg(const Rect& r) { return CGRectMake(r.x, r.y, r.w, r.h); }
 
-// A top-left-origin, y-down bitmap context (premultiplied BGRA, sRGB) of w x h points at
-// `scale` pixels per point.
 CGContextRef make_bitmap_context(int w, int h, double scale = 1.0) {
     const size_t pw = (size_t)std::max(1L, std::lround(w * scale)), ph = (size_t)std::max(1L, std::lround(h * scale));
     CGContextRef ctx = CGBitmapContextCreate(nullptr, pw, ph, 8, 0, srgb(),
@@ -39,12 +37,9 @@ CGContextRef make_bitmap_context(int w, int h, double scale = 1.0) {
     return ctx;
 }
 
-// --- images -------------------------------------------------------------------------------
-// `scale` pixels per unit: decoded files are 1 (sizes in pixels, like on Windows); snapshots of a
-// Retina canvas keep its scale so their size and source rects stay in points.
 class MacImage : public Image {
 public:
-    explicit MacImage(CGImageRef img, double scale = 1.0) : m_img(img), m_scale(scale) {} // takes ownership
+    explicit MacImage(CGImageRef img, double scale = 1.0) : m_img(img), m_scale(scale) {}
     ~MacImage() override { if (m_img) CGImageRelease(m_img); }
     int width() const override { return (int)std::lround(CGImageGetWidth(m_img) / m_scale); }
     int height() const override { return (int)std::lround(CGImageGetHeight(m_img) / m_scale); }
@@ -57,7 +52,7 @@ public:
         CGContextSetInterpolationQuality(ctx, kCGInterpolationHigh);
         CGContextDrawImage(ctx, CGRectMake(0, 0, 1, 1), m_img);
         CGContextRelease(ctx);
-        return Color(px[2], px[1], px[0]); // BGRA
+        return Color(px[2], px[1], px[0]);
     }
     CGImageRef image() const { return m_img; }
 private:
@@ -65,8 +60,7 @@ private:
     double m_scale;
 };
 
-// --- fonts --------------------------------------------------------------------------------
-std::map<std::string, std::pair<CTFontRef, bool>> g_fonts; // key -> (font, face matched)
+std::map<std::string, std::pair<CTFontRef, bool>> g_fonts;
 std::mutex g_fontMx;
 
 bool same_name(CFStringRef a, const std::string& b) {
@@ -75,8 +69,6 @@ bool same_name(CFStringRef a, const std::string& b) {
     return [s caseInsensitiveCompare:[NSString stringWithUTF8String:b.c_str()]] == NSOrderedSame;
 }
 
-// Faces the skins/panels ask for that only exist on Windows: use the system UI font instead of
-// CoreText's arbitrary fallback (Helvetica).
 bool windows_ui_face(const std::string& f) {
     static const char* faces[] = { "Segoe UI", "Tahoma", "MS Sans Serif", "Microsoft Sans Serif", "Verdana" };
     for (auto* x : faces) if (strcasecmp(f.c_str(), x) == 0) return true;
@@ -98,7 +90,7 @@ std::pair<CTFontRef, bool> cached_font(const std::string& face, CGFloat px, bool
     if (!matched && windows_ui_face(face)) {
         CFRelease(f);
         f = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, px, nullptr);
-        matched = true; // a deliberate substitute: don't make the caller try its own aliases
+        matched = true;
     }
     CTFontSymbolicTraits traits = (bold ? kCTFontBoldTrait : 0) | (italic ? kCTFontItalicTrait : 0);
     if (traits) {
@@ -108,9 +100,8 @@ std::pair<CTFontRef, bool> cached_font(const std::string& face, CGFloat px, bool
     return { f, matched };
 }
 
-// --- text layout ----------------------------------------------------------------------------
 struct Layout {
-    std::vector<CTLineRef> lines; // nullptr = empty line
+    std::vector<CTLineRef> lines;
     CGFloat ascent = 0, lineH = 0;
     ~Layout() { for (auto l : lines) if (l) CFRelease(l); }
 };
@@ -167,7 +158,7 @@ void draw_layout(CGContextRef ctx, const Layout& L, const Rect& r, unsigned flag
     if (!(flags & kNoClip)) CGContextClipToRect(ctx, to_cg(r));
     CGFloat y0 = r.y;
     if ((flags & kVCenter) && (flags & kSingleLine)) y0 = r.y + std::floor((r.h - L.lineH) / 2);
-    CGContextSetTextMatrix(ctx, CGAffineTransformMakeScale(1, -1)); // glyphs upright in y-down space
+    CGContextSetTextMatrix(ctx, CGAffineTransformMakeScale(1, -1));
     for (size_t i = 0; i < L.lines.size(); ++i) {
         CTLineRef line = L.lines[i];
         if (!line) continue;
@@ -181,10 +172,10 @@ void draw_layout(CGContextRef ctx, const Layout& L, const Rect& r, unsigned flag
     CGContextRestoreGState(ctx);
 }
 
-} // namespace
+}
 
 void draw_cgimage(CGContextRef ctx, CGImageRef img, CGRect dst, bool flip_v) {
-    if (flip_v) { CGContextDrawImage(ctx, dst, img); return; } // y-down space mirrors it already
+    if (flip_v) { CGContextDrawImage(ctx, dst, img); return; }
     CGContextSaveGState(ctx);
     CGContextTranslateCTM(ctx, 0, dst.origin.y + dst.size.height);
     CGContextScaleCTM(ctx, 1, -1);
@@ -192,7 +183,6 @@ void draw_cgimage(CGContextRef ctx, CGImageRef img, CGRect dst, bool flip_v) {
     CGContextRestoreGState(ctx);
 }
 
-// --- decoding -------------------------------------------------------------------------------
 static ImagePtr from_source(CGImageSourceRef src) {
     if (!src) return nullptr;
     CGImageRef img = CGImageSourceCreateImageAtIndex(src, 0, nullptr);
@@ -270,7 +260,6 @@ void platform_images_shutdown() {
     g_fonts.clear();
 }
 
-// --- CGCanvas ---------------------------------------------------------------------------------
 CGCanvas::CGCanvas(int w, int h, double scale) : m_w(w), m_h(h), m_scale(scale > 0 ? scale : 1.0) {
     m_ctx = make_bitmap_context(w, h, m_scale);
 }
@@ -424,7 +413,7 @@ void CGCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcIn
     CGImageRef sub = nullptr;
     if (srcIn.w > 0 && srcIn.h > 0 &&
         (srcIn.x > 0 || srcIn.y > 0 || srcIn.w < img.width() || srcIn.h < img.height())) {
-        const CGFloat s = mi->scale(); // source rects are in the image's units; CG crops in pixels
+        const CGFloat s = mi->scale();
         CGRect sr = CGRectMake(std::floor(srcIn.x * s), std::floor(srcIn.y * s),
                                std::max<CGFloat>(1, std::round(srcIn.w * s)), std::max<CGFloat>(1, std::round(srcIn.h * s)));
         sub = CGImageCreateWithImageInRect(ci, sr);
@@ -450,4 +439,4 @@ ImagePtr CGCanvas::snapshot(const Rect& r) {
     return part ? std::make_shared<MacImage>(part, m_scale) : nullptr;
 }
 
-} // namespace pui::gfx
+}

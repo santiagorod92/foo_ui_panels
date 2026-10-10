@@ -1,22 +1,11 @@
 name: Build
 
-# Build check on every push / PR, both platforms, uploaded as artifacts:
-#  - Windows x64 DLL: cross-compiled on Linux exactly like local dev (./build.sh: clang-cl +
-#    lld-link + xwin), plus `make check-portable` (the platform-free code builds without
-#    <windows.h>) and `make test` (host-side unit tests of the SDK-free engine parts, under
-#    ASan/UBSan).
-#  - macOS universal (arm64 + x86_64) .component bundle: native on a macOS runner
-#    (scripts/mac-build.sh).
-# A successful run on a push to main triggers release.yml (semantic-release), via workflow_run.
-
 on:
   push:
     branches: [main]
   pull_request:
   workflow_dispatch:
 
-# actions/checkout runs `git init`, which prints a "Using 'master' as the name for the initial
-# branch" hint on every checkout unless init.defaultBranch is set.
 env:
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: init.defaultBranch
@@ -30,31 +19,42 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: foo_ui_panels
-          fetch-depth: 0   # tags, so scripts/version.sh stamps 1.6.0-dev.3+<sha>
+          fetch-depth: 0
 
       - name: Set up cross-build
         uses: ./foo_ui_panels/.github/actions/setup-build
 
-      - name: Build
+      - name: Build (x64)
         working-directory: foo_ui_panels
-        run: ./build.sh
+        run: WIN_ARCH=x64 ./build.sh
+
+      - name: Build (ARM64EC)
+        working-directory: foo_ui_panels
+        run: WIN_ARCH=arm64ec ./build.sh
 
       - name: Platform-free code builds without Windows headers
         working-directory: foo_ui_panels
-        run: make check-portable CXX_HOST=clang++-19
+        run: make check-portable CXX_HOST=clang++-$LLVM_VERSION
 
       - name: Unit tests
         working-directory: foo_ui_panels
         run: |
-          sudo apt-get install -y libclang-rt-19-dev # ASan/UBSan runtimes
-          make test CXX_HOST=clang++-19
-          make skin-lint CXX_HOST=clang++-19 LINT_DIR=tests/skins/synthetic # the engine's own test skin
+          make test CXX_HOST=clang++-$LLVM_VERSION
+          make skin-lint CXX_HOST=clang++-$LLVM_VERSION LINT_DIR=tests/skins/synthetic
 
-      - name: Upload foo_ui_panels.dll
+      - name: Upload foo_ui_panels.dll (x64)
         uses: actions/upload-artifact@v7
         with:
           name: foo_ui_panels-dll
           path: foo_ui_panels/build/foo_ui_panels.dll
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Upload foo_ui_panels.dll (ARM64EC)
+        uses: actions/upload-artifact@v7
+        with:
+          name: foo_ui_panels-dll-arm64ec
+          path: foo_ui_panels/build-arm64ec/foo_ui_panels.dll
           if-no-files-found: error
           retention-days: 7
 
@@ -65,13 +65,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           path: foo_ui_panels
-          fetch-depth: 0   # tags, so scripts/version.sh stamps 1.6.0-dev.3+<sha>
+          fetch-depth: 0
 
       - name: Fetch foobar2000 SDK
         uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
       - name: Install ninja
-        run: command -v ninja >/dev/null || brew install ninja  # the runner image usually has it
+        run: command -v ninja >/dev/null || brew install ninja
 
       - name: Build (universal)
         working-directory: foo_ui_panels

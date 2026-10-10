@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
-# deploy.sh — install the built foo_ui_panels.dll into the local Wine
-# foobar2000's user-components-x64 dir. Optionally relaunch foobar2000 after.
-#
-# Usage:
-#   ./scripts/deploy.sh            install only
-#   ./scripts/deploy.sh --launch   install, then kill+relaunch foobar2000
+usage() {
+  cat <<'USAGE'
+Usage: scripts/deploy.sh [--launch]
+Installs build/foo_ui_panels.dll into the local Wine foobar2000's user-components-x64.
+  --launch   kill and relaunch foobar2000 afterwards
+USAGE
+}
 
 set -euo pipefail
 
@@ -12,7 +13,8 @@ LAUNCH=0
 for arg in "$@"; do
   case "$arg" in
     --launch) LAUNCH=1 ;;
-    *) echo "unknown arg: $arg" >&2; exit 2 ;;
+    -h|--help) usage; exit 0 ;;
+    *) echo "unknown arg: $arg" >&2; usage >&2; exit 2 ;;
   esac
 done
 

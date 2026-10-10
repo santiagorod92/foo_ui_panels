@@ -7,10 +7,6 @@ description: >-
 runs:
   using: composite
   steps:
-    # {GITHUB_WORKSPACE}/
-    #   foobar2000/{SDK,helpers,shared,foobar2000_component_client}  <- SDK bundle
-    #   pfc/                                                         <- SDK bundle
-    #   foo_ui_panels/                                               <- this repo
     - name: Checkout foobar2000 SDK (reupen/foobar2000-sdk-unmodified)
       uses: actions/checkout@v7
       with:

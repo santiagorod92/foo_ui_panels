@@ -13,7 +13,7 @@ TEST("eval_expr: precedence, grouping, signs") {
     CHECK_EQ(eval_expr("-5+2"), -3L);
     CHECK_EQ(eval_expr("100/7"), 14L);
     CHECK_EQ(eval_expr("10 % 3"), 1L);
-    CHECK_EQ(eval_expr("12abc"), 12L); // parsing stops at the first character it doesn't know
+    CHECK_EQ(eval_expr("12abc"), 12L);
     CHECK_EQ(eval_expr(""), 0L);
 }
 
@@ -53,7 +53,7 @@ TEST("find_color: present, null (transparent), absent") {
 TEST("hex COLORREF round trip") {
     CHECK_EQ(parse_hex_colorref("0000ff"), 255UL);
     CHECK_EQ(hex_colorref(parse_hex_colorref("ff0000")), std::string("ff0000"));
-    CHECK_EQ(hex_colorref(0x1ff00ffUL), std::string("ff00ff")); // masked to 24 bits
+    CHECK_EQ(hex_colorref(0x1ff00ffUL), std::string("ff00ff"));
 }
 
 TEST("trailing_literal: label after balanced $func prefixes") {
@@ -95,8 +95,7 @@ TEST("text_opts") {
     CHECK_EQ(text_opts(""), (unsigned)gfx::kEndEllipsis);
     CHECK_EQ(text_opts("right"), (unsigned)(gfx::kEndEllipsis | gfx::kAlignRight));
     CHECK_EQ(text_opts("wrap"), (unsigned)(gfx::kEndEllipsis | gfx::kWordWrap));
-    CHECK_EQ(text_opts("vcenter wrap") & gfx::kWordWrap, 0u); // one line wins
-    // legacy: "vcenter" also matches "center"
+    CHECK_EQ(text_opts("vcenter wrap") & gfx::kWordWrap, 0u);
     CHECK_EQ(text_opts("vcenter"),
              (unsigned)(gfx::kEndEllipsis | gfx::kAlignCenter | gfx::kVCenter | gfx::kSingleLine));
 }
@@ -104,8 +103,8 @@ TEST("text_opts") {
 TEST("map_type: legacy panel types") {
     CHECK_EQ(std::string(map_type("Channel spectrum panel")), std::string("Spectrum"));
     CHECK_EQ(std::string(map_type("Single Column Playlist")), std::string("Playlist View"));
-    CHECK(map_type("Peakmeter") == nullptr); // native PeakMeter
-    CHECK(map_type("Album Art") == nullptr); // native AlbumArt
+    CHECK(map_type("Peakmeter") == nullptr);
+    CHECK(map_type("Album Art") == nullptr);
     CHECK(map_type("Track Display") == nullptr);
     CHECK(map_type("Album list") == nullptr);
     CHECK(map_type("Chronflow") == nullptr);
@@ -124,12 +123,12 @@ TEST("best_menu_match: full path, shortest suffix, no partial words") {
         "playback/random", "playback/order/random", "library/album list", "file/restart", "view/album list",
     };
     CHECK_EQ(best_menu_match(paths, "Playback/Random"), 0);
-    CHECK_EQ(best_menu_match(paths, "Random"), 0);              // shortest of the two "…/random"
+    CHECK_EQ(best_menu_match(paths, "Random"), 0);
     CHECK_EQ(best_menu_match(paths, "Order/Random"), 1);
-    CHECK_EQ(best_menu_match(paths, "Library/Album List"), 2);  // exact beats shorter suffix
+    CHECK_EQ(best_menu_match(paths, "Library/Album List"), 2);
     CHECK_EQ(best_menu_match(paths, "Album List"), 4);
     CHECK_EQ(best_menu_match(paths, "&File/Restart"), 3);
-    CHECK_EQ(best_menu_match(paths, "dom"), -1);                // "/dom" isn't a path segment
+    CHECK_EQ(best_menu_match(paths, "dom"), -1);
     CHECK_EQ(best_menu_match(paths, "Nope"), -1);
     CHECK_EQ(best_menu_match({}, "Random"), -1);
 }
@@ -140,6 +139,6 @@ TEST("parse_argb: A-R-G-B, opaque R-G-B, malformed") {
     CHECK(parse_argb("255-0-0-0", c, a) && a == 255 && same(c, 0, 0, 0));
     CHECK(parse_argb("10-20-30", c, a) && a == 255 && same(c, 10, 20, 30));
     a = 7;
-    CHECK(!parse_argb("10-20", c, a) && a == 7); // untouched on failure
+    CHECK(!parse_argb("10-20", c, a) && a == 7);
     CHECK(!parse_argb("", c, a));
 }

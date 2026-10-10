@@ -1,8 +1,4 @@
 #!/usr/bin/env python3
-# Usage: scripts/extract-macos-sdk.py Xcode_XX.xip OUTDIR   (then keep OUTDIR/Xcode.app/.../SDKs/MacOSX.sdk)
-# Streams the xip (xar -> pbzx -> cpio) with parallel xz; needs cpio. Full extraction: the
-# Xcode cpio uses hard links whose data may live outside the SDK tree.
-# Extract MacOSX.sdk from an Xcode .xip on Linux: xar -> pbzx (parallel xz) -> cpio (filtered).
 import struct, sys, zlib, lzma, re, subprocess, os
 from concurrent.futures import ThreadPoolExecutor
 from collections import deque

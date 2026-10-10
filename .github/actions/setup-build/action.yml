@@ -1,9 +1,10 @@
 name: Set up cross-build
 description: >-
   Lays out the foobar2000 SDK as siblings of the repo checkout (the layout build.sh /
-  CMakeLists.txt expect, same as foo_navidrome) and installs the Linux -> Windows x64
-  cross toolchain: clang-cl, lld-link, llvm-rc/mt, cmake, ninja, plus the xwin-splatted
-  Windows SDK/CRT (cached).
+  CMakeLists.txt expect, same as foo_navidrome) and installs the Linux -> Windows x64 +
+  ARM64EC cross toolchain: clang-cl, lld-link, llvm-rc/mt, cmake, ninja, plus the
+  xwin-splatted Windows SDK/CRT for both arches (cached). Exports LLVM_VERSION, so later
+  steps can name the matching host compiler (clang++-$LLVM_VERSION).
   Expects the repo to be checked out at $GITHUB_WORKSPACE/foo_ui_panels.
 
 runs:
@@ -12,23 +13,21 @@ runs:
     - name: Fetch foobar2000 SDK
       uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
-    - name: Check the Windows import lib is there
+    - name: Check the Windows import libs are there
       shell: bash
-      run: test -f foobar2000/shared/shared-x64.lib
+      run: test -f foobar2000/shared/shared-x64.lib && test -f foobar2000/shared/shared-ARM64EC.lib
 
-    - name: Install clang-cl / lld-link / cmake / ninja (LLVM 19)
+    - name: Install clang-cl / lld-link / cmake / ninja (LLVM 22)
       shell: bash
       run: |
         set -euo pipefail
-        # The MSVC STL headers xwin splats require Clang >= 19 (yvals_core.h STL1000);
-        # ubuntu-24.04's default clang is 18, so pin the versioned LLVM 19 packages and point
-        # the unversioned MSVC-style driver names the toolchain file uses at them.
-        LLVM=19
+        LLVM=22
+        echo "LLVM_VERSION=$LLVM" >> "$GITHUB_ENV"
+        wget -qO- https://apt.llvm.org/llvm-snapshot.gpg.key | sudo tee /etc/apt/trusted.gpg.d/apt.llvm.org.asc >/dev/null
+        echo "deb http://apt.llvm.org/noble/ llvm-toolchain-noble-$LLVM main" | sudo tee /etc/apt/sources.list.d/llvm.list
         sudo apt-get update
-        sudo apt-get install -y "clang-$LLVM" "lld-$LLVM" "llvm-$LLVM" cmake ninja-build
+        sudo apt-get install -y "clang-$LLVM" "lld-$LLVM" "llvm-$LLVM" "libclang-rt-$LLVM-dev" cmake ninja-build
         BIN="/usr/lib/llvm-$LLVM/bin"
-        # clang-cl / lld-link are argv[0] personalities of clang / lld: if the package doesn't
-        # ship the named link, alias the base binary under that name.
         declare -A base=( [clang-cl]=clang [lld-link]=lld [llvm-lib]=llvm-ar
                           [llvm-rc]=llvm-rc [llvm-mt]=llvm-mt [llvm-ar]=llvm-ar )
         for t in "${!base[@]}"; do
@@ -48,7 +47,7 @@ runs:
       uses: actions/cache@v6
       with:
         path: ~/.xwin
-        key: xwin-${{ runner.os }}-v1
+        key: xwin-${{ runner.os }}-x86_64-aarch64-v2
 
     - name: Splat Windows SDK/CRT with xwin
       if: steps.xwin-cache.outputs.cache-hit != 'true'
@@ -56,4 +55,4 @@ runs:
       run: |
         set -euo pipefail
         cargo install xwin --locked
-        xwin --accept-license splat --output ~/.xwin
+        xwin --accept-license --arch x86_64,aarch64 splat --output ~/.xwin

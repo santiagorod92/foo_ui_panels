@@ -1,24 +1,11 @@
-// Preferences page (Display > Panels UI (reborn)), Windows view. Generic skin-manager UI: no
-// skin-specific wording. All logic — what is edited, what changed, applying — is PrefsModel
-// (src/core/prefs_model.h), shared with the macOS page; this file only maps it onto plain Win32
-// child windows (no ATL/WTL in our cross-compile toolchain): a tab control, a ListView for the
-// variables grid, an owner-drawn skin preview. Follows foobar2000's Dark Mode (dark_mode.h), live.
-//
-// Four tabs:
-//   General   - skins root folder (one subfolder per skin), active skin (with a preview), main
-//               script, zoom, always on top.
-//   Script    - raw editor for the active skin's main script.
-//   Variables - grid of the persistent pvars ($getpvar/$setpvar) the skin uses.
-//   Overrides - global font/accent-colour fallback used when a skin doesn't set its own.
-//
-// Everything applies live (PrefsBackend::store): a script edit through the engine's hot reload,
-// another skin or main script by reloading the skin in place.
 #include "win_sdk.h"
 #include "gdi_canvas.h"
 #include "dark_mode.h"
 #include "../../core/prefs_model.h"
 #include "../../core/prefs_store.h"
 #include "../../core/skin_paths.h"
+#include "../../core/diagnostics.h"
+#include "../../ui/view.h"
 #include <shlobj.h>
 #include <commctrl.h>
 #include <commdlg.h>
@@ -49,7 +36,6 @@ std::string to_utf8(const std::wstring& w) {
     return s;
 }
 
-
 std::wstring get_text(HWND ctl) {
     int n = GetWindowTextLengthW(ctl);
     std::wstring w(n, L'\0');
@@ -58,7 +44,6 @@ std::wstring get_text(HWND ctl) {
 }
 std::string get_utf8(HWND ctl) { return to_utf8(get_text(ctl)); }
 std::wstring w(const char* s) { return to_wide(s); }
-// A combo box's entries and selection, from the model's picker lists.
 void fill_combo(HWND combo, const std::vector<std::string>& labels, int sel) {
     SendMessageW(combo, CB_RESETCONTENT, 0, 0);
     for (auto& l : labels) SendMessageW(combo, CB_ADDSTRING, 0, (LPARAM)to_wide(l).c_str());
@@ -67,20 +52,15 @@ void fill_combo(HWND combo, const std::vector<std::string>& labels, int sel) {
 void set_text(HWND ctl, const std::string& s) { SetWindowTextW(ctl, to_wide(s).c_str()); }
 COLORREF colorref_of(gfx::Color c) { return RGB(c.r, c.g, c.b); }
 
-// Control IDs.
 enum {
-    // General
     kIdRootEdit = 1001, kIdRootBrowse = 1002, kIdSkinCombo = 1003, kIdMainCombo = 1004,
     kIdZoomCombo = 1005, kIdOnTop = 1006, kIdPreview = 1007, kIdWizard = 1008,
-    // Script
     kIdScriptEdit = 1010,
-    // Variables
     kIdVarsList = 1020, kIdVarsRescan = 1021, kIdVarsEdit = 1022,
-    // Overrides
     kIdFontFaceEdit = 1030, kIdFontSizeEdit = 1031, kIdFontPickBtn = 1032,
     kIdAccentSwatch = 1033, kIdAccentPickBtn = 1034, kIdAccentClearBtn = 1035,
-    // Tab control
     kIdTab = 1040,
+    kIdVerbose = 1050, kIdCopyDiag = 1051, kIdOpenLog = 1052, kIdReportIssue = 1053,
 };
 
 const wchar_t* kPageClass = L"foo_ui_panels_prefs_page";
@@ -105,11 +85,10 @@ public:
     void apply() override {
         commit_edit_value(true);
         m_model.apply();
-        refresh_all(); // the Script tab may edit another file now
+        refresh_all();
         m_callback->on_state_changed();
     }
 
-    // Back to defaults: no skins root, automatic main script and zoom, no overrides.
     void reset() override {
         m_model.reset();
         refresh_all();
@@ -117,15 +96,13 @@ public:
     }
 
 private:
-    // Dark Mode toggled (or Auto followed Windows) while the page is open.
     void ui_colors_changed() override {
         if (m_wnd && IsWindow(m_wnd)) apply_theme();
     }
 
-    // The page and every control in foobar2000's current Dark Mode state.
     void apply_theme() {
         m_dark = dark::enabled();
-        for (HWND page : { m_wnd, m_pageGeneral, m_pageScript, m_pageVariables, m_pageOverrides })
+        for (HWND page : { m_wnd, m_pageGeneral, m_pageScript, m_pageVariables, m_pageOverrides, m_pageDiag })
             dark::theme_children(page, m_dark);
         RedrawWindow(m_wnd, nullptr, nullptr, RDW_INVALIDATE | RDW_ERASE | RDW_ALLCHILDREN | RDW_FRAME);
     }
@@ -152,7 +129,6 @@ private:
         return h;
     }
 
-    // --- construction ----------------------------------------------------------------------
     void create_controls(HWND wnd) {
         m_font = CreateFontW(-14, 0, 0, 0, FW_NORMAL, 0, 0, 0, DEFAULT_CHARSET, 0, 0,
                              CLEARTYPE_QUALITY, DEFAULT_PITCH, L"Segoe UI");
@@ -168,9 +144,8 @@ private:
             TCITEMW ti = {}; ti.mask = TCIF_TEXT; ti.pszText = (LPWSTR)name.c_str();
             TabCtrl_InsertItem(m_tab, TabCtrl_GetItemCount(m_tab), &ti);
         }
-        for (HWND* p : { &m_pageGeneral, &m_pageScript, &m_pageVariables, &m_pageOverrides })
+        for (HWND* p : { &m_pageGeneral, &m_pageScript, &m_pageVariables, &m_pageOverrides, &m_pageDiag })
             *p = CreateWindowExW(0, kPageClass, L"", WS_CHILD | WS_CLIPSIBLINGS, 0, 0, 0, 0, wnd, nullptr, core_api::get_my_instance(), this);
-        // Pages above the tab control, which clips them out of what it paints.
         SetWindowPos(m_tab, HWND_BOTTOM, 0, 0, 0, 0, SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
 
         HWND p = m_pageGeneral;
@@ -188,14 +163,13 @@ private:
         m_onTopCheck = child(p, L"BUTTON", w(prefs_text::kOnTop).c_str(), WS_TABSTOP | BS_AUTOCHECKBOX, kIdOnTop);
         m_wizardBtn = child(p, L"BUTTON", w(prefs_text::kWizard).c_str(), WS_TABSTOP, kIdWizard);
         m_wizardNote = child(p, L"STATIC", w(prefs_text::kWizardNote).c_str(), SS_NOPREFIX);
-        m_rootNote = child(p, L"STATIC", L"", SS_EDITCONTROL); // wraps long paths too
+        m_rootNote = child(p, L"STATIC", L"", SS_EDITCONTROL);
         m_preview = child(p, L"STATIC", L"", SS_OWNERDRAW, kIdPreview);
 
         p = m_pageScript;
         m_scriptLabel = child(p, L"STATIC", w(prefs_text::kScript).c_str(), 0);
         m_scriptEdit = child(p, L"EDIT", L"", WS_TABSTOP | ES_MULTILINE | ES_AUTOVSCROLL | ES_AUTOHSCROLL |
                              ES_WANTRETURN | WS_VSCROLL | WS_HSCROLL, kIdScriptEdit, WS_EX_CLIENTEDGE);
-        // Plain EDIT controls silently cap input at 30,000 chars without this — real scripts run ~36KB.
         SendMessageW(m_scriptEdit, EM_SETLIMITTEXT, 0, 0);
         SendMessageW(m_scriptEdit, WM_SETFONT, (WPARAM)m_monoFont, TRUE);
 
@@ -222,13 +196,21 @@ private:
         m_accentPickBtn = child(p, L"BUTTON", L"Pick colour...", WS_TABSTOP, kIdAccentPickBtn);
         m_accentClearBtn = child(p, L"BUTTON", w(prefs_text::kClearOverrides).c_str(), WS_TABSTOP, kIdAccentClearBtn);
 
+        p = m_pageDiag;
+        m_diagNote = child(p, L"STATIC", w(prefs_text::kDiagNote).c_str(), SS_NOPREFIX);
+        m_verboseCheck = child(p, L"BUTTON", w(prefs_text::kVerbose).c_str(), WS_TABSTOP | BS_AUTOCHECKBOX, kIdVerbose);
+        m_verboseNote = child(p, L"STATIC", w(prefs_text::kVerboseNote).c_str(), SS_NOPREFIX);
+        m_copyDiagBtn = child(p, L"BUTTON", w(prefs_text::kCopyDiagnostics).c_str(), WS_TABSTOP, kIdCopyDiag);
+        m_openLogBtn = child(p, L"BUTTON", w(prefs_text::kOpenLogFolder).c_str(), WS_TABSTOP, kIdOpenLog);
+        m_reportBtn = child(p, L"BUTTON", w(prefs_text::kReportIssue).c_str(), WS_TABSTOP, kIdReportIssue);
+        m_diagStatus = child(p, L"STATIC", L"", SS_NOPREFIX);
+        m_logPathLabel = child(p, L"STATIC", L"", SS_NOPREFIX | SS_PATHELLIPSIS);
+
         ShowWindow(m_pageGeneral, SW_SHOW);
         apply_theme();
         refresh_all();
     }
 
-    // --- model -> UI -----------------------------------------------------------------------
-    // m_updating: the UI is being filled from the model, so its change notifications aren't edits.
     void refresh_all() {
         const bool was = m_updating;
         m_updating = true;
@@ -236,19 +218,21 @@ private:
         refresh_skin_choice();
         SendMessageW(m_zoomCombo, CB_SETCURSEL, m_model.zoom_index(), 0);
         SendMessageW(m_onTopCheck, BM_SETCHECK, m_model.pending().onTop ? BST_CHECKED : BST_UNCHECKED, 0);
+        SendMessageW(m_verboseCheck, BM_SETCHECK, m_model.pending().verbose ? BST_CHECKED : BST_UNCHECKED, 0);
+        const std::string log = m_model.log_path();
+        set_text(m_logPathLabel, std::string(prefs_text::kLogFile) + " " + (log.empty() ? prefs_text::kNoLog : log));
         refresh_vars_list();
         refresh_overrides_ui();
         m_updating = was;
     }
 
-    // Skin + main-script combos, the warning, the preview and the script text.
     void refresh_skin_choice() {
         const bool was = m_updating;
         m_updating = true;
         fill_combo(m_skinCombo, m_model.skin_labels(), m_model.skin_index());
         fill_combo(m_mainCombo, m_model.main_labels(), m_model.main_index());
         set_text(m_rootNote, m_model.root_note());
-        layout_general(); // the note's height follows its text
+        layout_general();
 
         const std::string warn = m_model.skin_warning();
         SetWindowTextW(m_skinWarning, warn.empty() ? L"" : (L"⚠ " + to_wide(warn)).c_str());
@@ -281,7 +265,16 @@ private:
 
     void changed() { m_callback->on_state_changed(); }
 
-    // --- UI -> model -----------------------------------------------------------------------
+    void copy_diagnostics() {
+        const bool ok = ui::copy_to_clipboard(m_model.diagnostics());
+        set_text(m_diagStatus, ok ? prefs_text::kCopied : prefs_text::kCopyFailed);
+    }
+
+    void open_log_folder() {
+        const std::string log = m_model.log_path();
+        if (!log.empty()) ui::reveal_in_file_manager(log);
+    }
+
     void root_edited() {
         const std::string root = get_utf8(m_rootEdit);
         if (root == m_model.pending().root) return;
@@ -303,7 +296,6 @@ private:
         CoTaskMemFree(pidl);
     }
 
-    // --- variables grid inline edit --------------------------------------------------------
     void begin_edit_value(int row) {
         if (row < 0) return;
         RECT rc;
@@ -343,7 +335,6 @@ private:
         return CallWindowProcW(self->m_origEditProc, wnd, msg, wp, lp);
     }
 
-    // --- font / colour pickers -------------------------------------------------------------
     void pick_font() {
         LOGFONTW lf = {};
         std::wstring face = get_text(m_fontFaceEdit);
@@ -376,8 +367,6 @@ private:
         }
     }
 
-    // --- drawing ---------------------------------------------------------------------------
-    // The skin's preview, fitted into the box, or a note when there is none yet.
     void draw_preview(const DRAWITEMSTRUCT* di) {
         const RECT& r = di->rcItem;
         const int w = r.right - r.left, h = r.bottom - r.top;
@@ -401,8 +390,6 @@ private:
         FrameRect(di->hDC, &r, (HBRUSH)GetStockObject(GRAY_BRUSH));
     }
 
-    // --- layout ----------------------------------------------------------------------------
-    // Height a static's (word-wrapped) text needs at `width`.
     int text_height(HWND ctl, int width) const {
         const std::wstring t = get_text(ctl);
         if (t.empty() || width <= 0) return 0;
@@ -416,19 +403,19 @@ private:
     }
     void layout() {
         RECT rc; GetClientRect(m_wnd, &rc);
-        // Credit lines in a strip under the tabs, bottom left.
         const int lineH = 18, creditH = lineH * 2 + 8;
         rc.bottom = std::max(0, (int)rc.bottom - creditH);
         for (int i = 0; i < 2; ++i)
             MoveWindow(m_credit[i], 8, rc.bottom + 4 + i * lineH, std::max(0, (int)rc.right - 16), lineH, TRUE);
         MoveWindow(m_tab, 0, 0, rc.right, rc.bottom, TRUE);
         RECT disp = rc; TabCtrl_AdjustRect(m_tab, FALSE, &disp);
-        for (HWND page : { m_pageGeneral, m_pageScript, m_pageVariables, m_pageOverrides })
+        for (HWND page : { m_pageGeneral, m_pageScript, m_pageVariables, m_pageOverrides, m_pageDiag })
             MoveWindow(page, disp.left, disp.top, disp.right - disp.left, disp.bottom - disp.top, TRUE);
         layout_general();
         layout_script();
         layout_variables();
         layout_overrides();
+        layout_diagnostics();
     }
     void layout_general() {
         RECT rc; GetClientRect(m_pageGeneral, &rc);
@@ -451,8 +438,6 @@ private:
         y += editH + 10;
         const int noteW = std::max(0, (int)rc.right - pad * 2), noteH = text_height(m_rootNote, noteW);
         MoveWindow(m_rootNote, pad, y, noteW, noteH, TRUE); y += noteH + 8;
-        // The skin's preview in what's left, 4:3 and at most kPreviewMaxW wide, so it never
-        // crowds the settings above.
         const int kPreviewMaxW = 320;
         int ph = std::max(0, std::min((int)rc.bottom - y - pad, kPreviewMaxW * 3 / 4));
         int pw = std::min(noteW, ph * 4 / 3);
@@ -488,7 +473,21 @@ private:
         MoveWindow(m_accentClearBtn, pad, y, 140, editH, TRUE);
     }
 
-    // --- WndProc ---------------------------------------------------------------------------
+    void layout_diagnostics() {
+        RECT rc; GetClientRect(m_pageDiag, &rc);
+        const int pad = 8, labelH = 18, btnH = 24, width = std::max(0, (int)rc.right - pad * 2);
+        int y = pad;
+        const int noteH = text_height(m_diagNote, width);
+        MoveWindow(m_diagNote, pad, y, width, noteH, TRUE); y += noteH + 12;
+        MoveWindow(m_verboseCheck, pad, y, width, labelH + 2, TRUE); y += labelH + 4;
+        MoveWindow(m_verboseNote, pad + 18, y, std::max(0, width - 18), labelH, TRUE); y += labelH + 14;
+        MoveWindow(m_copyDiagBtn, pad, y, 140, btnH, TRUE);
+        MoveWindow(m_openLogBtn, pad + 148, y, 130, btnH, TRUE);
+        MoveWindow(m_reportBtn, pad + 286, y, 140, btnH, TRUE); y += btnH + 8;
+        MoveWindow(m_diagStatus, pad, y, width, labelH, TRUE); y += labelH + 8;
+        MoveWindow(m_logPathLabel, pad, y, width, labelH, TRUE);
+    }
+
     void on_command(WORD id, WORD code) {
         if (m_updating) return;
         switch (id) {
@@ -513,9 +512,13 @@ private:
         case kIdOnTop:
             if (code == BN_CLICKED) { m_model.set_on_top(SendMessageW(m_onTopCheck, BM_GETCHECK, 0, 0) == BST_CHECKED); changed(); }
             break;
+        case kIdVerbose:
+            if (code == BN_CLICKED) { m_model.set_verbose(SendMessageW(m_verboseCheck, BM_GETCHECK, 0, 0) == BST_CHECKED); changed(); }
+            break;
+        case kIdCopyDiag: if (code == BN_CLICKED) copy_diagnostics(); break;
+        case kIdOpenLog: if (code == BN_CLICKED) open_log_folder(); break;
+        case kIdReportIssue: if (code == BN_CLICKED) ui::open_url(new_issue_url()); break;
         case kIdWizard:
-            // The wizard is in the player window, which the Preferences dialog (owned by it) would
-            // keep covering: close the dialog, as its Cancel would.
             if (code != BN_CLICKED) break;
             if (open_layout_wizard()) PostMessageW(GetAncestor(m_wnd, GA_ROOT), WM_CLOSE, 0, 0);
             else MessageBoxW(m_wnd, w(prefs_text::kWizardUnavailable).c_str(), L"Panels UI", MB_ICONINFORMATION);
@@ -536,7 +539,6 @@ private:
             self = reinterpret_cast<PrefsInstance*>(reinterpret_cast<CREATESTRUCTW*>(lp)->lpCreateParams);
             SetWindowLongPtrW(wnd, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(self));
         }
-        // Only the root window (holding the tab control) creates and lays out the controls.
         wchar_t cls[64] = {}; GetClassNameW(wnd, cls, 64);
         const bool isRoot = wcscmp(cls, kRootClass) == 0;
 
@@ -563,8 +565,8 @@ private:
             auto nm = reinterpret_cast<NMHDR*>(lp);
             if (nm->idFrom == kIdTab && nm->code == TCN_SELCHANGE) {
                 int sel = TabCtrl_GetCurSel(self->m_tab);
-                HWND pages[4] = { self->m_pageGeneral, self->m_pageScript, self->m_pageVariables, self->m_pageOverrides };
-                for (int i = 0; i < 4; ++i) ShowWindow(pages[i], i == sel ? SW_SHOW : SW_HIDE);
+                HWND pages[5] = { self->m_pageGeneral, self->m_pageScript, self->m_pageVariables, self->m_pageOverrides, self->m_pageDiag };
+                for (int i = 0; i < 5; ++i) ShowWindow(pages[i], i == sel ? SW_SHOW : SW_HIDE);
                 return 0;
             }
             if (nm->idFrom == kIdVarsList && nm->code == NM_DBLCLK) {
@@ -603,27 +605,27 @@ private:
 
     PrefsModel m_model{ prefs_backend() };
     bool m_updating = false;
-    bool m_dark = false; // foobar2000's Dark Mode, as last applied (apply_theme)
+    bool m_dark = false;
     std::string m_previewPath;
 
     HWND m_wnd = nullptr, m_tab = nullptr;
-    HWND m_credit[2] = {}; // author line, source code URL
-    HWND m_pageGeneral = nullptr, m_pageScript = nullptr, m_pageVariables = nullptr, m_pageOverrides = nullptr;
-    // General
+    HWND m_credit[2] = {};
+    HWND m_pageGeneral = nullptr, m_pageScript = nullptr, m_pageVariables = nullptr, m_pageOverrides = nullptr,
+         m_pageDiag = nullptr;
     HWND m_rootLabel = nullptr, m_rootEdit = nullptr, m_rootBrowseBtn = nullptr,
          m_skinLabel = nullptr, m_skinCombo = nullptr, m_skinWarning = nullptr,
          m_mainLabel = nullptr, m_mainCombo = nullptr,
          m_zoomLabel = nullptr, m_zoomCombo = nullptr, m_onTopCheck = nullptr, m_rootNote = nullptr, m_preview = nullptr,
          m_wizardBtn = nullptr, m_wizardNote = nullptr;
-    // Script
     HWND m_scriptLabel = nullptr, m_scriptEdit = nullptr;
-    // Variables
     HWND m_varsNote = nullptr, m_varsList = nullptr, m_varsRescanBtn = nullptr, m_varsEdit = nullptr;
     int m_editingRow = -1; WNDPROC m_origEditProc = nullptr;
-    // Overrides
     HWND m_ovNote = nullptr, m_fontFaceLabel = nullptr, m_fontFaceEdit = nullptr,
          m_fontSizeLabel = nullptr, m_fontSizeEdit = nullptr, m_fontPickBtn = nullptr,
          m_accentLabel = nullptr, m_accentSwatch = nullptr, m_accentPickBtn = nullptr, m_accentClearBtn = nullptr;
+
+    HWND m_diagNote = nullptr, m_verboseCheck = nullptr, m_verboseNote = nullptr, m_copyDiagBtn = nullptr,
+         m_openLogBtn = nullptr, m_reportBtn = nullptr, m_diagStatus = nullptr, m_logPathLabel = nullptr;
 
     HFONT m_font = nullptr, m_monoFont = nullptr;
     const preferences_page_callback::ptr m_callback;
@@ -641,5 +643,5 @@ public:
 
 static preferences_page_factory_t<PrefsPage> g_prefs_page_factory;
 
-} // namespace
-} // namespace pui
+}
+}

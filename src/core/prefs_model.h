@@ -1,9 +1,3 @@
-// The Preferences page's logic, shared by both platforms: what is being edited (skin selection,
-// main script, zoom, always-on-top, persistent variables, font/accent overrides), what changed
-// since the last apply, and applying it. The Windows page (Win32 controls) and the macOS page
-// (AppKit) are only views over a PrefsModel — a setting added here shows up on both.
-// SDK-free (unit-tested); storage and making changes live go through PrefsBackend
-// (prefs_store.cpp implements it on foobar2000's configuration).
 #pragma once
 #include "../gfx/canvas.h"
 #include "pvars.h"
@@ -14,14 +8,15 @@
 namespace pui {
 
 struct PrefsSettings {
-    std::string root;    // skins root folder ("" = the single skin next to the component)
-    std::string active;  // skin subfolder under root
-    std::string main;    // main-script override, a file name in the skin folder ("" = automatic)
-    int zoom = 0;        // percent, 0 = automatic
+    std::string root;
+    std::string active;
+    std::string main;
+    int zoom = 0;
     bool onTop = false;
-    PvarMap pvars;       // the whole persistent store, incl. the reserved "_prefs_*" overrides
+    bool verbose = false;
+    PvarMap pvars;
     bool operator==(const PrefsSettings& o) const {
-        return root == o.root && active == o.active && main == o.main && zoom == o.zoom && onTop == o.onTop &&
+        return root == o.root && active == o.active && main == o.main && zoom == o.zoom && onTop == o.onTop && verbose == o.verbose &&
                serialize_pvars(pvars) == serialize_pvars(o.pvars);
     }
 };
@@ -29,29 +24,23 @@ struct PrefsSettings {
 struct PrefsBackend {
     virtual ~PrefsBackend() = default;
     virtual PrefsSettings load() = 0;
-    // Persist `now` and make it live: open players reload a changed skin, take changed pvars,
-    // zoom and always-on-top. `before` is what was stored.
     virtual void store(const PrefsSettings& now, const PrefsSettings& before) = 0;
     virtual std::vector<std::string> list_skins(const std::string& root) = 0;
-    // The folder <root>/<active> if it exists, else the component's own.
     virtual std::string skin_dir(const std::string& root, const std::string& active) = 0;
-    // A preview the engine saved of a skin it showed (see SkinEngine), "" if none.
     virtual std::string cached_preview(const std::string& skinDir) { (void)skinDir; return {}; }
+    virtual std::string diagnostics() { return {}; }
+    virtual std::string log_path() { return {}; }
 };
 
-// What the pages say. Both platforms render these, so the Windows and macOS pages use the same
-// wording; only how controls are laid out (and the macOS page applying as you go) differs.
 namespace prefs_text {
-inline constexpr const char* kTabs[] = { "General", "Script", "Variables", "Overrides" };
-// General
+inline constexpr const char* kTabs[] = { "General", "Script", "Variables", "Overrides", "Diagnostics" };
 inline constexpr const char* kRoot = "Skins root folder:";
 inline constexpr const char* kSkin = "Active skin:";
 inline constexpr const char* kMain = "Main script:";
 inline constexpr const char* kZoom = "Zoom:";
-inline constexpr const char* kZoomAutoScaled = "Automatic (display scaling)"; // Windows: follows the system scale
-inline constexpr const char* kZoomAuto100 = "Automatic (100%)";               // macOS: Retina is the canvas's job
+inline constexpr const char* kZoomAutoScaled = "Automatic (display scaling)";
+inline constexpr const char* kZoomAuto100 = "Automatic (100%)";
 inline constexpr const char* kOnTop = "Keep the player window on top of other windows";
-// Like the Default UI's Quick Setup: the layout wizard, in the player window.
 inline constexpr const char* kWizard = "Layout wizard...";
 inline constexpr const char* kWizardNote = "Start again from a ready-made layout.";
 inline constexpr const char* kWizardUnavailable = "The layout wizard runs in the Panels UI player window, which isn't open: "
@@ -59,28 +48,36 @@ inline constexpr const char* kWizardUnavailable = "The layout wizard runs in the
 inline constexpr const char* kOwnFolder = "(the component's own folder)";
 inline constexpr const char* kAutomatic = "(automatic)";
 inline constexpr const char* kNoPreview = "No preview yet: a skin gets one the first time it is shown.";
-// Script
 inline constexpr const char* kScript = "Active skin's main script:";
-// Variables
 inline constexpr const char* kVarsNote = "Persistent variables ($getpvar/$setpvar) the skin uses. Double-click a value to edit it.";
 inline constexpr const char* kVarsFind = "Find the skin's variables";
 inline constexpr const char* kVariable = "Variable";
 inline constexpr const char* kValue = "Value";
-// Overrides
 inline constexpr const char* kOverridesNote = "Fallbacks used when the active skin doesn't set its own font / accent colour. "
                                               "Leave blank to defer to the skin.";
 inline constexpr const char* kFontFace = "Font face:";
 inline constexpr const char* kFontSize = "Size:";
 inline constexpr const char* kAccent = "Accent colour:";
 inline constexpr const char* kClearOverrides = "Clear overrides";
-// Credit watermark at the bottom left of the page, under the tabs
+inline constexpr const char* kDiagNote = "Found a bug? Turn on verbose logging, make the problem happen again, then "
+                                         "copy the diagnostics and paste them into a new GitHub issue. Paths have your "
+                                         "user name replaced; nothing is sent anywhere by itself.";
+inline constexpr const char* kVerbose = "Verbose logging (for bug reports)";
+inline constexpr const char* kVerboseNote = "Without it, only warnings and errors go to the log file.";
+inline constexpr const char* kCopyDiagnostics = "Copy Diagnostics";
+inline constexpr const char* kCopied = "Copied to the clipboard. Paste it into the bug report.";
+inline constexpr const char* kCopyFailed = "Couldn't copy the diagnostics to the clipboard.";
+inline constexpr const char* kOpenLogFolder = "Open Log Folder";
+inline constexpr const char* kShowLog = "Show Log in Finder";
+inline constexpr const char* kReportIssue = "Report an Issue...";
+inline constexpr const char* kLogFile = "Log file:";
+inline constexpr const char* kNoLog = "(not open yet)";
 inline constexpr const char* kAuthor = "Author: Santiago Rodriguez";
 inline constexpr const char* kSourceUrl = "https://github.com/santiagorod92/foo_ui_panels";
-} // namespace prefs_text
+}
 
 class PrefsModel {
 public:
-    // Reserved pvars (hidden from the variables list): the overrides.
     static constexpr const char* kFontFaceKey = "_prefs_font_face";
     static constexpr const char* kFontSizeKey = "_prefs_font_size";
     static constexpr const char* kAccentKey = "_prefs_accent_color";
@@ -88,77 +85,57 @@ public:
 
     explicit PrefsModel(PrefsBackend& b) : m_b(b) {}
 
-    // Reads the stored settings (and the main script's text) as both pending and applied.
     void load();
     bool changed() const;
-    // Stores the pending settings (and writes the script if edited); they become the applied ones.
     void apply();
-    // Pending settings back to defaults: no skins root, automatic main script and zoom, not on
-    // top, no overrides. The variables keep their values (they belong to the skin).
     void reset();
     const PrefsSettings& pending() const { return m_now; }
 
-    // --- skin -----------------------------------------------------------------------------
-    const std::vector<std::string>& skins() const { return m_skins; } // under the pending root
-    // A new root keeps the active skin if it has one of that name, else takes its first skin.
+    const std::vector<std::string>& skins() const { return m_skins; }
     void set_root(const std::string& root);
     void set_active(const std::string& skin);
-    void set_main(const std::string& file); // "" = automatic
-    // A folder someone picked as "the skin": a folder of skins (no main script or
-    // foo_ui_panels.ini of its own, but a subfolder with one) -> it as root, its first skin
-    // active; anything else is the skin itself, even with no script yet -> its parent as root,
-    // it as active. Applied with set_root/set_active.
+    void set_main(const std::string& file);
     void choose_skin_folder(const std::string& folder);
-    // After choose_skin_folder(folder): "" when the pending skin has a main script to run, else
-    // a warning for the person who picked `folder` (kept anyway): why, what a skin folder needs.
     std::string chosen_folder_problem(const std::string& folder) const;
     std::string skin_dir() const;
-    std::vector<std::string> main_choices() const;     // the skin folder's *.txt
-    std::string main_script(std::string* why = nullptr) const; // the path it resolves to, "" = none
-    std::string skin_warning() const;                  // "" when the choice is unambiguous
-    // Under the root field: what the folder is for, and where the skin lives without one.
+    std::vector<std::string> main_choices() const;
+    std::string main_script(std::string* why = nullptr) const;
+    std::string skin_warning() const;
     std::string root_note() const;
 
-    // The pickers' entries and selection — index 0 is "the component's own folder" /
-    // "automatic", then skins() / main_choices().
     std::vector<std::string> skin_labels() const;
     int skin_index() const;
     void set_skin_index(int i);
     std::vector<std::string> main_labels() const;
     int main_index() const;
     void set_main_index(int i);
-    // An image of the skin for the picker: its own (`preview` in foo_ui_panels.ini, else
-    // preview.* / screenshot.* in the folder), else the one the engine saved when it showed it.
     std::string preview_image() const;
     static std::string skin_preview_file(const std::string& skinDir);
 
-    // --- main script text (the Script tab) -------------------------------------------------
     const std::string& script() const { return m_script; }
     const std::string& script_path() const { return m_scriptPath; }
     void set_script(const std::string& text) { m_script = text; }
 
-    // --- window ---------------------------------------------------------------------------
-    static const std::vector<int>& zoom_choices(); // index 0 of a picker = automatic
-    // The zoom picker's entries: `automatic` (prefs_text::kZoomAuto…), then "75%" …
+    static const std::vector<int>& zoom_choices();
     static std::vector<std::string> zoom_labels(const std::string& automatic);
-    int zoom_index() const;                        // nearest choice at or below the setting
+    int zoom_index() const;
     void set_zoom_index(int i);
     void set_on_top(bool on) { m_now.onTop = on; }
+    void set_verbose(bool on) { m_now.verbose = on; }
 
-    // --- overrides ------------------------------------------------------------------------
+    std::string diagnostics() const { return m_b.diagnostics(); }
+    std::string log_path() const { return m_b.log_path(); }
+
     std::string font_face() const { return get(kFontFaceKey); }
     std::string font_size() const { return get(kFontSizeKey); }
     void set_font(const std::string& face, const std::string& size);
-    bool accent(gfx::Color& out) const; // false = none (the skin's own)
+    bool accent(gfx::Color& out) const;
     void set_accent(gfx::Color c);
     void clear_accent();
     void clear_overrides();
 
-    // --- variables ------------------------------------------------------------------------
-    std::vector<std::pair<std::string, std::string>> variables() const; // the skin's (not "_…"), sorted
+    std::vector<std::pair<std::string, std::string>> variables() const;
     void set_variable(const std::string& key, const std::string& value);
-    // Adds the pvars the main script (as edited) and its panel scripts reference but that have no
-    // value yet, so they can be set before the skin first does.
     void rescan_variables();
     static std::vector<std::string> scan_pvar_names(const std::string& script);
 
@@ -173,4 +150,4 @@ private:
     std::string m_script, m_appliedScript, m_scriptPath;
 };
 
-} // namespace pui
+}

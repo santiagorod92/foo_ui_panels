@@ -1,8 +1,3 @@
-// A small titleformat interpreter for the render tests: just enough of foobar2000's language
-// (literal text, 'quotes', %fields%, [conditional sections], $functions and the common core ones)
-// to run whole skin scripts against the SDK-free ScriptRuntime, which handles every Panels UI
-// $function the way skin_hook.cpp does in the player. Not the real engine — scripts that rely on
-// anything it lacks render "[UNKNOWN FUNCTION]", which the golden output then shows.
 #pragma once
 #include "recording_canvas.h"
 #include <algorithm>
@@ -18,13 +13,11 @@ namespace t {
 
 class MiniTf : public FakeEnv {
 public:
-    std::map<std::string, std::string> fields; // %name% -> value (missing: "?", false)
-    std::map<std::string, std::string> vars;   // $put / $get
+    std::map<std::string, std::string> fields;
+    std::map<std::string, std::string> vars;
 
     MiniTf(std::vector<std::string>& log) : FakeEnv(log) {}
 
-    // Runs `script` as the player runs a skin's main script: literal output goes to the text
-    // buffer the runtime draws from, functions as they come.
     void render(pui::ScriptRuntime& rt, const std::string& script) {
         m_rt = &rt;
         std::string buf;
@@ -34,7 +27,6 @@ public:
         m_rt = nullptr;
     }
 
-    // ScriptEnv: snippets are titleformat too.
     std::string eval(const std::string& s) override { std::string o; eval(s, o); return o; }
     void replay(pui::ScriptOut& out, const std::string& s) override { out.write(eval(s)); }
     void run_subscript(pui::ScriptRuntime& rt, const std::string& s) override {
@@ -47,32 +39,29 @@ public:
 private:
     pui::ScriptRuntime* m_rt = nullptr;
 
-    // Evaluates `code` appending to `out`; true when something in it was "true" (a field that
-    // exists, a function that returned true) — what [ ] and $if test.
     bool eval(std::string_view code, std::string& out) {
         bool truth = false;
         for (size_t i = 0; i < code.size();) {
             const char c = code[i];
-            // Line breaks are not output, and a line starting with // is a comment.
             if (c == '\r' || c == '\n') { ++i; continue; }
             if (c == '/' && code.compare(i, 2, "//") == 0 && (i == 0 || code[i - 1] == '\n' || code[i - 1] == '\r')) {
                 const size_t e = code.find('\n', i);
                 i = e == std::string_view::npos ? code.size() : e + 1;
                 continue;
             }
-            if (c == '\'') {                              // 'literal' ('' = a quote)
+            if (c == '\'') {
                 const size_t e = code.find('\'', i + 1);
                 if (e == std::string_view::npos) { out.append(code.substr(i + 1)); break; }
                 if (e == i + 1) out += '\''; else out.append(code.substr(i + 1, e - i - 1));
                 i = e + 1;
-            } else if (c == '%') {                        // %field%
+            } else if (c == '%') {
                 const size_t e = code.find('%', i + 1);
                 if (e == std::string_view::npos) { out.append(code.substr(i)); break; }
                 std::string v;
                 if (field(std::string(code.substr(i + 1, e - i - 1)), v)) truth = true; else v = "?";
                 out += v;
                 i = e + 1;
-            } else if (c == '[') {                        // [section]: dropped unless true
+            } else if (c == '[') {
                 const size_t e = match(code, i, '[', ']');
                 std::string inner;
                 if (eval(code.substr(i + 1, e - i - 1), inner)) { out += inner; truth = true; }
@@ -94,7 +83,6 @@ private:
 
     static bool is_name(char c) { return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '_'; }
 
-    // Index of the bracket closing the one at `at` (quotes skipped); the end when unbalanced.
     static size_t match(std::string_view s, size_t at, char open, char close) {
         int depth = 0;
         for (size_t i = at; i < s.size(); ++i) {
@@ -104,7 +92,6 @@ private:
         }
         return s.size();
     }
-    // Top-level comma-separated arguments (unevaluated).
     static std::vector<std::string_view> split(std::string_view s) {
         std::vector<std::string_view> a;
         if (s.empty()) return a;
@@ -135,10 +122,9 @@ private:
 
     bool call(const std::string& name, const std::vector<std::string_view>& raw, std::string& out) {
         auto A = [&](size_t i) { return i < raw.size() ? arg(raw[i]) : Arg{}; };
-        auto branch = [&](size_t i) { return i < raw.size() ? eval(raw[i], out) : false; }; // straight into the output
+        auto branch = [&](size_t i) { return i < raw.size() ? eval(raw[i], out) : false; };
         auto put = [&](long v) { out += std::to_string(v); return true; };
         const size_t n = raw.size();
-        // The core functions skins use.
         if (name == "if")  return A(0).truth ? branch(1) : branch(2);
         if (name == "if2") { Arg a = A(0); if (a.truth) { out += a.s; return true; } return branch(1); }
         if (name == "if3") { for (size_t i = 0; i + 1 < n; ++i) { Arg a = A(i); if (a.truth) { out += a.s; return true; } } return branch(n - 1); }
@@ -166,7 +152,6 @@ private:
         if (name == "put")   { Arg v = A(1); vars[A(0).s] = v.s; out += v.s; return v.truth; }
         if (name == "puts")  { vars[A(0).s] = A(1).s; return true; }
         if (name == "get")   { auto it = vars.find(A(0).s); if (it == vars.end()) return false; out += it->second; return true; }
-        // Ours: arguments rendered first, as titleformat does before the hook sees them.
         if (m_rt && pui::find_script_function(name)) {
             pui::ScriptArgs a;
             for (auto& r : raw) a.v.push_back(arg(r).s);
@@ -180,4 +165,4 @@ private:
     }
 };
 
-} // namespace t
+}

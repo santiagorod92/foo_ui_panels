@@ -12,8 +12,8 @@ enum { kView, kOpenFile, kShowFolder, kSearch, kCount };
 
 struct Cover {
     metadb_handle_ptr track;
-    std::string file;   // the image file on disk ("" = art from tags / a stream)
-    std::string native; // the track's own file ("" = not a local file)
+    std::string file;
+    std::string native;
     gfx::ImagePtr img;
 };
 
@@ -42,7 +42,6 @@ std::string url_encode(const std::string& s) {
     return out;
 }
 
-// The cover at full size in its own window (up to 800 px a side, resizable), black around it.
 class CoverWindow : public ui::View {
 public:
     explicit CoverWindow(gfx::ImagePtr img) : m_img(std::move(img)) {}
@@ -59,7 +58,6 @@ private:
     gfx::ImagePtr m_img;
 };
 
-// Open viewers, until their window closes.
 struct Viewer { std::unique_ptr<CoverWindow> view; std::unique_ptr<ui::ViewHost> host; };
 std::map<int, Viewer> g_viewers;
 int g_nextViewer = 0;
@@ -69,7 +67,6 @@ void show_viewer(SkinEngine* engine, const Cover& c) {
     const int id = g_nextViewer++;
     Viewer& v = g_viewers[id];
     v.view = std::make_unique<CoverWindow>(c.img);
-    // At most 800 px a side (the window is in skin units, so zoom makes it bigger still).
     const double s = std::min(1.0, 800.0 / std::max(c.img->width(), c.img->height()));
     const int w = std::max(100, (int)(c.img->width() * s)), h = std::max(100, (int)(c.img->height() * s));
     pfc::string8 title;
@@ -82,7 +79,7 @@ void show_viewer(SkinEngine* engine, const Cover& c) {
     if (!v.host) g_viewers.erase(id);
 }
 
-} // namespace
+}
 
 bool add_cover_menu_items(ui::Menu& menu, int firstId) {
     const Cover c = now_playing_cover();
@@ -103,7 +100,7 @@ bool run_cover_menu_item(SkinEngine* engine, int id, int firstId) {
     if (c.track.is_empty()) return true;
     switch (id - firstId) {
     case kView: show_viewer(engine, c); break;
-    case kOpenFile: if (!c.file.empty()) ui::open_file(c.file); break; // the default image viewer
+    case kOpenFile: if (!c.file.empty()) ui::open_file(c.file); break;
     case kShowFolder: if (!c.native.empty()) ui::reveal_in_file_manager(c.native); break;
     case kSearch: {
         static titleformat_object::ptr tf;
@@ -117,4 +114,4 @@ bool run_cover_menu_item(SkinEngine* engine, int id, int firstId) {
     return true;
 }
 
-} // namespace pui
+}

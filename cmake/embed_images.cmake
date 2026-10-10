@@ -1,6 +1,3 @@
-# Embeds every res/**/*.png into a C++ source: pui::find_builtin_image() (src/core/builtin_images.h).
-# Runs at configure time; the PNGs are configure dependencies, so adding or changing one reconfigures.
-#   pui_embed_images(<res dir> <output .cpp>)
 function(pui_embed_images res_dir out)
   file(GLOB_RECURSE files RELATIVE "${res_dir}" CONFIGURE_DEPENDS "${res_dir}/*.png")
   list(SORT files)
@@ -21,7 +18,6 @@ function(pui_embed_images res_dir out)
     "const BuiltinImage* find_builtin_image(const std::string& name) {\n"
     "    for (const BuiltinImage* b = kImages; b->name; ++b) if (name == b->name) return b;\n"
     "    return nullptr;\n}\n\n} // namespace pui\n")
-  # Rewritten only on change, so it doesn't recompile on every reconfigure.
   if(EXISTS "${out}")
     file(READ "${out}" old)
   endif()

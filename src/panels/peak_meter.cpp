@@ -1,24 +1,25 @@
 #include "peak_meter.h"
 #include "../core/skin_engine.h"
 #include "../core/image_cache.h"
+#include "../core/log.h"
 #include <algorithm>
 #include <cmath>
 
 namespace pui {
 
 namespace {
-constexpr double kWindow = 0.05;   // seconds of audio per reading
+constexpr double kWindow = 0.05;
 constexpr int kSegW = 4, kSegGap = 1, kBarGap = 2;
 constexpr unsigned kMaxChannels = 8;
-} // namespace
+}
 
 PeakMeter::PeakMeter(SkinEngine* engine) : m_engine(engine) {
-    try { visualisation_manager::get()->create_stream(m_vis, 0); } catch (...) {}
+    log::guarded("meter", "visualisation stream", [&] { visualisation_manager::get()->create_stream(m_vis, 0); });
 }
 
 void PeakMeter::on_attached() {
     refresh_cfg();
-    host()->set_timer(1, 100); // theme colour + backdrop
+    host()->set_timer(1, 100);
 }
 
 void PeakMeter::refresh_cfg() {
@@ -42,8 +43,6 @@ void PeakMeter::paint(gfx::Canvas& cv) {
     cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color());
     if (cfg.backdrop) draw_image_region(cv, *cfg.backdrop, cfg.bx, cfg.by, W, H);
 
-    // Per-channel peak of the last kWindow seconds; nothing playing reads as silence, so the
-    // bars fall away instead of freezing.
     std::vector<double> db;
     audio_chunk_impl chunk;
     double t = 0;
@@ -83,4 +82,4 @@ void PeakMeter::paint(gfx::Canvas& cv) {
     }
 }
 
-} // namespace pui
+}

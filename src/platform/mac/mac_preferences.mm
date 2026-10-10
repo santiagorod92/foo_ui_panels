@@ -1,13 +1,10 @@
-// Preferences page (Display > Panels UI (reborn)), macOS view. All logic is PrefsModel
-// (src/core/prefs_model.h), shared with the Windows page — the same four tabs: General (skins root,
-// active skin with a preview, main script, zoom, always on top), Script (the main script, saved
-// with its button), Variables (the skin's persistent variables) and Overrides (font / accent
-// fallbacks). macOS preferences apply as you change them (there is no Apply button).
 #import <Cocoa/Cocoa.h>
 #include "../../fb2k.h"
 #include "../../core/prefs_model.h"
 #include "../../core/prefs_store.h"
 #include "../../core/skin_paths.h"
+#include "../../core/diagnostics.h"
+#include "../../ui/view.h"
 #include <algorithm>
 #include <cmath>
 #include <string>
@@ -15,12 +12,10 @@
 
 namespace {
 
-
 NSString* ns(const std::string& s) { return [NSString stringWithUTF8String:s.c_str()] ?: @""; }
 NSString* ns(const char* s) { return [NSString stringWithUTF8String:s] ?: @""; }
 namespace text = pui::prefs_text;
 
-// A popup's entries and selection, from the model's picker lists.
 void fill_popup(NSPopUpButton* p, const std::vector<std::string>& labels, int sel) {
     [p removeAllItems];
     for (auto& l : labels) [p addItemWithTitle:ns(l)];
@@ -53,15 +48,14 @@ NSStackView* column(NSArray<NSView*>* views) {
     return s;
 }
 
-} // namespace
+}
 
 @interface FooUIPanelsPrefsController : NSViewController <NSTableViewDataSource, NSTableViewDelegate, NSTextFieldDelegate>
 @end
 
 @implementation FooUIPanelsPrefsController {
     std::unique_ptr<pui::PrefsModel> _model;
-    std::vector<std::pair<std::string, std::string>> _vars; // the table's rows
-    // General
+    std::vector<std::pair<std::string, std::string>> _vars;
     NSTextField* _rootField;
     NSPopUpButton* _skinPopup;
     NSPopUpButton* _mainPopup;
@@ -71,15 +65,15 @@ NSStackView* column(NSArray<NSView*>* views) {
     NSPopUpButton* _zoomPopup;
     NSButton* _onTopCheck;
     NSTextField* _rootNote;
-    // Script
     NSTextView* _scriptView;
     NSTextField* _scriptPathLabel;
-    // Variables
     NSTableView* _varsTable;
-    // Overrides
     NSTextField* _fontFace;
     NSTextField* _fontSize;
     NSColorWell* _accentWell;
+    NSButton* _verboseCheck;
+    NSTextField* _diagStatus;
+    NSTextField* _logPath;
 }
 
 - (void)loadView {
@@ -88,13 +82,13 @@ NSStackView* column(NSArray<NSView*>* views) {
 
     NSTabView* tabs = [[NSTabView alloc] initWithFrame:NSMakeRect(0, 0, 640, 440)];
     for (NSArray* t in @[ @[ ns(text::kTabs[0]), [self generalTab] ], @[ ns(text::kTabs[1]), [self scriptTab] ],
-                          @[ ns(text::kTabs[2]), [self variablesTab] ], @[ ns(text::kTabs[3]), [self overridesTab] ] ]) {
+                          @[ ns(text::kTabs[2]), [self variablesTab] ], @[ ns(text::kTabs[3]), [self overridesTab] ],
+                          @[ ns(text::kTabs[4]), [self diagnosticsTab] ] ]) {
         NSTabViewItem* item = [[NSTabViewItem alloc] initWithIdentifier:t[0]];
         item.label = t[0];
         item.view = t[1];
         [tabs addTabViewItem:item];
     }
-    // Credit watermark under the tabs, bottom left.
     NSTextField* credit = [NSTextField labelWithString:
         [NSString stringWithFormat:@"%@\n%@", ns(text::kAuthor), ns(text::kSourceUrl)]];
     credit.textColor = [NSColor tertiaryLabelColor];
@@ -118,7 +112,6 @@ NSStackView* column(NSArray<NSView*>* views) {
     [self refresh];
 }
 
-// --- tabs ------------------------------------------------------------------------------------
 - (NSView*)generalTab {
     _rootField = [NSTextField labelWithString:@""];
     _rootField.selectable = YES;
@@ -140,7 +133,6 @@ NSStackView* column(NSArray<NSView*>* views) {
     _zoomPopup.target = self; _zoomPopup.action = @selector(zoomChanged:);
     fill_popup(_zoomPopup, pui::PrefsModel::zoom_labels(text::kZoomAuto100), 0);
     _onTopCheck = [NSButton checkboxWithTitle:ns(text::kOnTop) target:self action:@selector(onTopChanged:)];
-    // Like the Default UI's Quick Setup. (The row is too narrow beside the preview for the note.)
     NSButton* wizardRow = [NSButton buttonWithTitle:ns(text::kWizard) target:self action:@selector(openWizard:)];
     wizardRow.toolTip = ns(text::kWizardNote);
 
@@ -201,7 +193,7 @@ NSStackView* column(NSArray<NSView*>* views) {
 - (NSView*)variablesTab {
     NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSZeroRect];
     _varsTable = [[NSTableView alloc] initWithFrame:NSZeroRect];
-    for (NSString* name in @[ @"Variable", @"Value" ]) { // identifiers; titles from prefs_text
+    for (NSString* name in @[ @"Variable", @"Value" ]) {
         NSTableColumn* c = [[NSTableColumn alloc] initWithIdentifier:name];
         c.title = ns([name isEqualToString:@"Value"] ? text::kValue : text::kVariable);
         c.width = [name isEqualToString:@"Value"] ? 300 : 200;
@@ -244,7 +236,18 @@ NSStackView* column(NSArray<NSView*>* views) {
     return column(@[ note(ns(text::kOverridesNote)), grid, clear ]);
 }
 
-// --- model -> UI -------------------------------------------------------------------------------
+- (NSView*)diagnosticsTab {
+    _verboseCheck = [NSButton checkboxWithTitle:ns(text::kVerbose) target:self action:@selector(verboseChanged:)];
+    NSButton* copy = [NSButton buttonWithTitle:ns(text::kCopyDiagnostics) target:self action:@selector(copyDiagnostics:)];
+    NSButton* show = [NSButton buttonWithTitle:ns(text::kShowLog) target:self action:@selector(showLog:)];
+    NSButton* report = [NSButton buttonWithTitle:ns(text::kReportIssue) target:self action:@selector(reportIssue:)];
+    NSStackView* buttons = [NSStackView stackViewWithViews:@[ copy, show, report ]];
+    _diagStatus = note(@"");
+    _logPath = note(@"");
+    _logPath.selectable = YES;
+    return column(@[ note(ns(text::kDiagNote)), _verboseCheck, note(ns(text::kVerboseNote)), buttons, _diagStatus, _logPath ]);
+}
+
 - (void)refresh {
     const pui::PrefsSettings& s = _model->pending();
     _rootField.stringValue = s.root.empty() ? @"(none: the component's own folder)" : ns(s.root);
@@ -261,6 +264,9 @@ NSStackView* column(NSArray<NSView*>* views) {
 
     [_zoomPopup selectItemAtIndex:_model->zoom_index()];
     _onTopCheck.state = s.onTop ? NSControlStateValueOn : NSControlStateValueOff;
+    _verboseCheck.state = s.verbose ? NSControlStateValueOn : NSControlStateValueOff;
+    const std::string log = _model->log_path();
+    _logPath.stringValue = ns(std::string(text::kLogFile) + " " + (log.empty() ? text::kNoLog : log));
 
     _scriptView.string = ns(_model->script());
     _scriptPathLabel.stringValue = ns(_model->script_path());
@@ -270,18 +276,16 @@ NSStackView* column(NSArray<NSView*>* views) {
 
     _fontFace.stringValue = ns(_model->font_face());
     _fontSize.stringValue = ns(_model->font_size());
-    pui::gfx::Color c(0, 140, 220); // the engine's default accent
+    pui::gfx::Color c(0, 140, 220);
     _model->accent(c);
     _accentWell.color = [NSColor colorWithSRGBRed:c.r / 255.0 green:c.g / 255.0 blue:c.b / 255.0 alpha:1];
 }
 
-// Every change applies right away.
 - (void)commit {
     _model->apply();
     [self refresh];
 }
 
-// --- General -----------------------------------------------------------------------------------
 - (void)chooseRoot:(id)sender {
     NSOpenPanel* p = [NSOpenPanel openPanel];
     p.canChooseDirectories = YES;
@@ -310,11 +314,20 @@ NSStackView* column(NSArray<NSView*>* views) {
     [a runModal];
 }
 
-// --- Script ------------------------------------------------------------------------------------
+- (void)verboseChanged:(id)sender { _model->set_verbose(_verboseCheck.state == NSControlStateValueOn); [self commit]; }
+- (void)copyDiagnostics:(id)sender {
+    const bool ok = pui::ui::copy_to_clipboard(_model->diagnostics());
+    _diagStatus.stringValue = ns(ok ? text::kCopied : text::kCopyFailed);
+}
+- (void)showLog:(id)sender {
+    const std::string log = _model->log_path();
+    if (!log.empty()) pui::ui::reveal_in_file_manager(log);
+}
+- (void)reportIssue:(id)sender { pui::ui::open_url(pui::new_issue_url()); }
+
 - (void)saveScript:(id)sender { _model->set_script(utf8(_scriptView.string)); [self commit]; }
 - (void)revertScript:(id)sender { _scriptView.string = ns(_model->script()); }
 
-// --- Variables ---------------------------------------------------------------------------------
 - (NSInteger)numberOfRowsInTableView:(NSTableView*)tv { return (NSInteger)_vars.size(); }
 
 - (id)tableView:(NSTableView*)tv objectValueForTableColumn:(NSTableColumn*)col row:(NSInteger)row {
@@ -334,7 +347,6 @@ NSStackView* column(NSArray<NSView*>* views) {
 
 - (void)rescanVars:(id)sender { _model->rescan_variables(); [self commit]; }
 
-// --- Overrides ---------------------------------------------------------------------------------
 - (void)controlTextDidEndEditing:(NSNotification*)n {
     if (n.object != _fontFace && n.object != _fontSize) return;
     _model->set_font(utf8(_fontFace.stringValue), utf8(_fontSize.stringValue));
@@ -346,7 +358,7 @@ NSStackView* column(NSArray<NSView*>* views) {
     if (!c) return;
     _model->set_accent(pui::gfx::Color((int)std::lround(c.redComponent * 255), (int)std::lround(c.greenComponent * 255),
                                        (int)std::lround(c.blueComponent * 255)));
-    _model->apply(); // no refresh: the well is still being dragged
+    _model->apply();
 }
 
 - (void)clearAccent:(id)sender { _model->clear_accent(); [self commit]; }
@@ -366,4 +378,4 @@ public:
 
 FB2K_SERVICE_FACTORY(preferences_page_panels);
 
-} // namespace
+}

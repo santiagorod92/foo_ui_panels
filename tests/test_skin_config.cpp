@@ -8,7 +8,6 @@
 using namespace pui;
 namespace fs = std::filesystem;
 
-// A fresh empty folder under the system temp dir, removed again at scope exit.
 struct TempDir {
     fs::path path;
     TempDir() {
@@ -79,7 +78,7 @@ TEST("resolve_main_script_with: override > ini > the only .txt") {
     CHECK_EQ(resolve_main_script_with(d.str(), cfg, "", nullptr), d.str() + "/b.txt");
     CHECK_EQ(resolve_main_script_with(d.str(), cfg, "a.txt", nullptr), d.str() + "/a.txt");
 
-    why.clear(); // a stale override is reported, then the ini still decides
+    why.clear();
     CHECK_EQ(resolve_main_script_with(d.str(), cfg, "gone.txt", &why), d.str() + "/b.txt");
     CHECK(why.find("gone.txt") != std::string::npos);
 }

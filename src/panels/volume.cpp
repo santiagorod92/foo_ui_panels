@@ -9,8 +9,7 @@ void Volume::set_from_x(int x) {
     const int W = host()->bounds().w;
     if (W <= 0) return;
     float f = (float)x / W; if (f < 0) f = 0; if (f > 1) f = 1;
-    playback_control::get()->set_volume(f * 100.0f - 100.0f); // dB: -100..0
-    // The canvas redraws the bar, then refresh_bars() repaints us from the new snapshot.
+    playback_control::get()->set_volume(f * 100.0f - 100.0f);
     if (m_engine && m_engine->main_window()) m_engine->main_window()->invalidate();
 }
 
@@ -27,20 +26,15 @@ void Volume::on_mouse_up(const ui::MouseEvent& e) {
 }
 
 void Volume::paint(gfx::Canvas& cv) {
-    // The skin script draws this bar itself (rail art, fill, knob — from the playback/volume
-    // fields); show exactly what the canvas rendered beneath us and only handle the mouse here.
-    // The own drawing below is just a fallback until the first canvas snapshot exists.
     if (m_engine && m_engine->draw_canvas_snapshot(cv, *host())) return;
     const int W = cv.width(), H = cv.height();
 
-    float vol = playback_control::get()->get_volume();      // -100..0
+    float vol = playback_control::get()->get_volume();
     float frac = (vol + 100.0f) / 100.0f; if (frac < 0) frac = 0; if (frac > 1) frac = 1;
     int fw = (int)(W * frac);
 
     gfx::Color accent(0, 140, 220); if (m_engine) m_engine->theme_color(accent);
-    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, m_engine ? m_engine->color("volume", "background", gfx::Color(12, 12, 14)) : gfx::Color(12, 12, 14)); // dark groove
-    // Level bar: the skin's `asset.bar_fill` (else a theme-colour gradient), plus its
-    // `asset.volume_knob` centred on the level, at its natural size, if it has one.
+    cv.fill_rect(gfx::Rect{ 0, 0, W, H }, m_engine ? m_engine->color("volume", "background", gfx::Color(12, 12, 14)) : gfx::Color(12, 12, 14));
     const int bh = 4, by = (H - bh) / 2;
     bool drew = false;
     const std::string fill = m_engine ? m_engine->asset("bar_fill") : std::string();
@@ -52,4 +46,4 @@ void Volume::paint(gfx::Canvas& cv) {
         draw_image(cv, knob, fw - kw / 2, (H - kh) / 2, 0, 0);
 }
 
-} // namespace pui
+}

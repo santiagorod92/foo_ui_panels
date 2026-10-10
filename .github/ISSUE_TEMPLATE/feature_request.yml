@@ -1,0 +1,26 @@
+name: Feature request
+description: Suggest something Panels UI (reborn) could do, or a skin function it should support.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What would you like to do?
+      description: The thing you're trying to do, and what gets in the way today.
+    validations:
+      required: true
+  - type: textarea
+    id: idea
+    attributes:
+      label: How could it work?
+      description: Your idea of the feature. Mention if it's for Windows, macOS or both.
+    validations:
+      required: false
+  - type: textarea
+    id: skin
+    attributes:
+      label: Skin or script involved
+      description: For a missing $function or panel type, which skin uses it and a snippet of the script that calls it.
+      render: text
+    validations:
+      required: false

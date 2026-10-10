@@ -1,5 +1,6 @@
 #include "library_tree.h"
 #include "../core/skin_engine.h"
+#include "../core/log.h"
 #include "../core/navidrome_library_api.h"
 #include <algorithm>
 #include <map>
@@ -38,7 +39,7 @@ void LibraryTree::on_destroy() {
 }
 
 void LibraryTree::on_visibility(bool shown) {
-    if (shown && m_loaded) refresh_tree(); // playlists may have changed while hidden
+    if (shown && m_loaded) refresh_tree();
 }
 
 LibraryTree::Artist& LibraryTree::artist_for(const std::string& name) {
@@ -87,6 +88,8 @@ void LibraryTree::start_remote_load() {
         try { ok = api->list_albums(sink, *abort, err); } catch (...) { err = "Navidrome library request failed."; }
         auto shared = std::make_shared<std::vector<RemoteAlbum>>(std::move(sink.all));
         std::string errs = ok ? std::string() : std::string(err.c_str());
+        if (!ok) log::warn("navidrome", "album list request failed: " + errs);
+        else log::info("navidrome", "album list loaded");
         fb2k::inMainThread([=]() {
             if (!alive->load() || self->m_gen != gen) return;
             self->m_remote_loading = false; self->m_remote_err = errs;
@@ -177,7 +180,6 @@ void LibraryTree::select_row(int row) {
     invalidate();
 }
 
-// Remembers the expansion by key, so it survives the tree being rebuilt.
 void LibraryTree::toggle(int item) {
     if (!m_tree.toggle(item)) return;
     if (m_tree.items[item].expanded) m_expandedKeys.insert(item_key(item)); else m_expandedKeys.erase(item_key(item));
@@ -198,7 +200,7 @@ void LibraryTree::paint(gfx::Canvas& cv) {
         const TreeItem& it = m_tree.items[m_tree.rows[r]];
         const int x = kPad + it.depth * kIndent;
         if (m_tree.rows[r] == m_sel) cv.fill_rect_alpha(gfx::Rect{ 0, y, W, kRowH }, accent, 150);
-        if (!it.children.empty()) { // [+] / [-] expander
+        if (!it.children.empty()) {
             const int bx = x, by = y + (kRowH - 9) / 2;
             cv.frame_rect(gfx::Rect{ bx, by, 9, 9 }, lines);
             cv.line(bx + 2, by + 4, bx + 7, by + 4, text);
@@ -207,7 +209,6 @@ void LibraryTree::paint(gfx::Canvas& cv) {
         cv.draw_text(it.label, gfx::Rect{ x + 14, y, W - x - 14 - kPad, kRowH },
                      gfx::kSingleLine | gfx::kVCenter | gfx::kEndEllipsis, text);
     }
-    // Thin scroll position indicator.
     const ScrollThumb th = scroll_thumb(m_scroll, (int)m_tree.rows.size() * kRowH, H);
     if (th.visible) cv.fill_rect_alpha(gfx::Rect{ W - 5, th.y, 4, th.h }, lines, 200);
 }
@@ -232,7 +233,7 @@ void LibraryTree::on_mouse_down(const ui::MouseEvent& e) {
     if (!it.children.empty() && e.x >= x - 2 && e.x < x + 12) { toggle(item); return; }
     if (e.double_click) {
         const int k = it.kind;
-        if (k == kAlbum || k == kPlaylist) activate(item); // no expand toggle for these
+        if (k == kAlbum || k == kPlaylist) activate(item);
         else toggle(item);
     }
 }
@@ -254,7 +255,7 @@ bool LibraryTree::on_key_down(int key, unsigned) {
     switch (key) {
     case ui::kKeyEnter: {
         const int k = it.kind;
-        if (k == kAlbum || k == kPlaylist || k == kArtist) activate(m_sel); // Enter plays the artist
+        if (k == kAlbum || k == kPlaylist || k == kArtist) activate(m_sel);
         else toggle(m_sel);
         return true;
     }
@@ -285,8 +286,6 @@ void LibraryTree::play_album(const Album& al, bool replace) {
     }
 }
 
-// Enter on an artist: clear the active playlist, add everything by them, start playing —
-// the same thing Enter does in foo_navidrome's own browser.
 void LibraryTree::play_artist(const Artist& ar, bool replace) {
     if (!ar.remote_id.empty()) {
         auto api = navidrome_api();
@@ -315,7 +314,7 @@ void LibraryTree::activate(int item) {
 }
 
 void LibraryTree::context_menu(int item, int x, int y) {
-    const TreeItem n = m_tree.items[item]; // a copy: the menu may rebuild the tree
+    const TreeItem n = m_tree.items[item];
     if (n.kind != kAlbum && n.kind != kPlaylist && n.kind != kArtist) return;
     auto mi = [](const char* label, int id) { ui::MenuItem m; m.label = label; m.id = id; return m; };
     ui::Menu menu;
@@ -332,4 +331,4 @@ void LibraryTree::context_menu(int item, int x, int y) {
     else if (cmd == 4 || cmd == 5) play_artist(m_artists[n.a], cmd == 4);
 }
 
-} // namespace pui
+}

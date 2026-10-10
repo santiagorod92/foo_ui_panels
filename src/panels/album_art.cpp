@@ -14,8 +14,6 @@ gfx::ImagePtr AlbumArt::current_image() const {
     metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
     gfx::ImagePtr img;
     if (np.is_valid()) {
-        // Same folder-image pattern the other cover views use, then the album-art pipeline
-        // (embedded art, navidrome:// …); a miss repaints via the engine's art-ready callback.
         static service_ptr_t<titleformat_object> tf;
         if (tf.is_empty()) titleformat_compiler::get()->compile_safe(tf, "$replace(%path%,%filename_ext%,*folder*.*)");
         pfc::string8 path;
@@ -39,7 +37,6 @@ void AlbumArt::on_timer(int id) {
     invalidate();
 }
 
-// Fit inside the panel, centred, aspect kept.
 static void draw_fitted(gfx::Canvas& cv, const gfx::Image& img, int W, int H, int alpha) {
     const double s = std::min((double)W / img.width(), (double)H / img.height());
     const float dw = (float)(img.width() * s), dh = (float)(img.height() * s);
@@ -55,7 +52,6 @@ void AlbumArt::paint(gfx::Canvas& cv) {
 
     gfx::ImagePtr img = current_image();
     if (img != m_cur) {
-        // A different cover: fade it in over the one shown until now (if any).
         m_prev = m_cur; m_cur = img;
         m_fadeStart = m_prev || m_cur ? tick_ms() : 0;
         if (m_fadeStart) host()->set_timer(kFadeTimer, 16);
@@ -76,4 +72,4 @@ void AlbumArt::on_mouse_up(const ui::MouseEvent& e) {
     run_cover_menu_item(m_engine, ui::popup_menu(host(), e.x, e.y, m), 1);
 }
 
-} // namespace pui
+}

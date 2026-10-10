@@ -1,11 +1,3 @@
-// View > Panels UI: player-level commands as foobar2000 main-menu commands, so every one of them
-// can get a keyboard shortcut (Preferences > Keyboard Shortcuts) and shows up in the skin's own
-// MENU button. Platform-free: the commands act on the live engines (SkinEngine::live()).
-//
-//   View > Panels UI > Mini mode / Zoom in / Zoom out / Reset zoom / Reload skin / Layout wizard
-//                      (+ Always on top on macOS; on Windows that's the core's View > Always on Top)
-//                    > Skin > <one entry per skin folder under the skins root>
-//                    > Skin commands > <the active skin's `command.<label>` config keys>
 #include "skin_engine.h"
 #include "skin_paths.h"
 #include "ui_logic.h"
@@ -15,22 +7,16 @@ namespace pui {
 
 namespace {
 
-// {B2D74E19-5C3A-4F86-9E17-0A6C8D2F4B53}
 const GUID g_group_panels = { 0xb2d74e19, 0x5c3a, 0x4f86, { 0x9e, 0x17, 0x0a, 0x6c, 0x8d, 0x2f, 0x4b, 0x53 } };
-// {C7A15F3E-2D84-4B69-8F01-5E3B9A7C6D24}
 const GUID g_group_skins = { 0xc7a15f3e, 0x2d84, 0x4b69, { 0x8f, 0x01, 0x5e, 0x3b, 0x9a, 0x7c, 0x6d, 0x24 } };
-// {D4E82A61-7B9F-4C35-A6D0-1F8E3C5B9A72}
 const GUID g_group_skin_cmds = { 0xd4e82a61, 0x7b9f, 0x4c35, { 0xa6, 0xd0, 0x1f, 0x8e, 0x3c, 0x5b, 0x9a, 0x72 } };
 
 FB2K_DECLARE_MAINMENU_GROUP_POPUP(g_group_panels, mainmenu_groups::view, mainmenu_commands::sort_priority_dontcare, "Panels UI");
 FB2K_DECLARE_MAINMENU_GROUP_POPUP(g_group_skins, g_group_panels, mainmenu_commands::sort_priority_base + 1, "Skin");
 FB2K_DECLARE_MAINMENU_GROUP_POPUP(g_group_skin_cmds, g_group_panels, mainmenu_commands::sort_priority_base + 2, "Skin commands");
 
-// The engine of the player window (the first one: one per window, and there's one player).
 SkinEngine* engine() { return SkinEngine::live().empty() ? nullptr : SkinEngine::live().front(); }
 
-// GUID from a name, for commands whose list comes from the disk/config (a shortcut bound to one
-// keeps working as long as it keeps its name).
 GUID guid_for(const std::string& kind, const std::string& name) {
     uint8_t h[16];
     name_hash128("foo_ui_panels/" + kind + "/" + name, h);
@@ -42,12 +28,10 @@ GUID guid_for(const std::string& kind, const std::string& name) {
     return g;
 }
 
-// --- View > Panels UI ------------------------------------------------------------------------
 class panels_commands : public mainmenu_commands {
     enum Cmd { kMini, kZoomIn, kZoomOut, kZoomReset, kReload, kProblems, kWizard, kOnTop };
     struct Entry { Cmd cmd; GUID id; const char* name; const char* desc; };
     static const std::vector<Entry>& entries() {
-        // {E1A4…} family: fixed GUIDs, one per command.
         static const std::vector<Entry> e = {
             { kMini, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x02 } }, "Mini mode",
               "Switches between the skin's compact layout and the full window (skins that declare one)." },
@@ -64,7 +48,6 @@ class panels_commands : public mainmenu_commands {
             { kWizard, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x08 } }, "Layout wizard...",
               "Start from a ready-made layout, or pick a skin folder." },
 #ifdef __APPLE__
-            // The Windows core has its own View > Always on Top (same setting); the macOS one doesn't.
             { kOnTop, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x01 } }, "Always on top",
               "Keeps the player window above other windows." },
 #endif
@@ -123,9 +106,6 @@ public:
 };
 FB2K_SERVICE_FACTORY(panels_commands);
 
-// --- View > Panels UI > Skin -----------------------------------------------------------------
-// One radio item per subfolder of the skins root (Preferences > Display > Panels UI). Picking
-// one makes it the active skin and loads it right away.
 class skin_list_commands : public mainmenu_commands {
 public:
     t_uint32 get_command_count() override { refresh(); return (t_uint32)m_skins.size(); }
@@ -146,7 +126,7 @@ public:
         if (i >= m_skins.size()) return;
         if (m_skins[i] != active_skin()) {
             set_active_skin(m_skins[i]);
-            set_main_script_override(""); // script names belong to the previous skin
+            set_main_script_override("");
         }
         SkinEngine::reload_all();
     }
@@ -156,7 +136,6 @@ private:
 };
 FB2K_SERVICE_FACTORY(skin_list_commands);
 
-// --- View > Panels UI > Skin commands --------------------------------------------------------
 class skin_commands : public mainmenu_commands {
 public:
     t_uint32 get_command_count() override {
@@ -181,5 +160,5 @@ private:
 };
 FB2K_SERVICE_FACTORY(skin_commands);
 
-} // namespace
-} // namespace pui
+}
+}

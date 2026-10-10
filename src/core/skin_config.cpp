@@ -15,12 +15,12 @@ bool is_file(const std::string& path) {
     std::error_code ec;
     return std::filesystem::is_regular_file(fs_path(path), ec);
 }
-} // namespace
+}
 
 void SkinConfig::load(const std::string& dir) {
     m_values.clear();
     std::string text = read_file(dir + "/" + kFileName);
-    if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3); // UTF-8 BOM
+    if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
     size_t pos = 0;
     while (pos < text.size()) {
         size_t nl = text.find('\n', pos);
@@ -97,7 +97,6 @@ std::string resolve_main_script_with(const std::string& dir, const SkinConfig& c
         if (is_file(dir + "/" + named)) return dir + "/" + named;
         if (why) *why = "main script '" + named + "' (" + SkinConfig::kFileName + ") not found";
     }
-    // Automatic: the only .txt in the folder's root (per-panel scripts live in a subfolder).
     const std::vector<std::string> found = main_script_candidates(dir);
     if (found.size() == 1) return dir + "/" + found[0];
     if (why && why->empty()) {
@@ -108,4 +107,4 @@ std::string resolve_main_script_with(const std::string& dir, const SkinConfig& c
     return {};
 }
 
-} // namespace pui
+}

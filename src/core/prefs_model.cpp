@@ -23,7 +23,7 @@ void PrefsModel::apply() {
     const bool skinChanged = m_now.root != m_applied.root || m_now.active != m_applied.active || m_now.main != m_applied.main;
     m_b.store(m_now, m_applied);
     m_applied = m_now;
-    if (skinChanged) load_script(); // the file the Script tab edits may be another one now
+    if (skinChanged) load_script();
 }
 
 void PrefsModel::reset() {
@@ -32,12 +32,12 @@ void PrefsModel::reset() {
     m_now.main.clear();
     m_now.zoom = 0;
     m_now.onTop = false;
+    m_now.verbose = false;
     clear_overrides();
     refresh_skins();
     load_script();
 }
 
-// --- skin --------------------------------------------------------------------------------
 void PrefsModel::refresh_skins() { m_skins = m_b.list_skins(m_now.root); }
 
 void PrefsModel::set_root(const std::string& root) {
@@ -50,7 +50,7 @@ void PrefsModel::set_root(const std::string& root) {
 
 void PrefsModel::set_active(const std::string& skin) {
     m_now.active = skin;
-    set_main(""); // file names belong to the previous skin
+    set_main("");
 }
 
 void PrefsModel::set_main(const std::string& file) {
@@ -66,8 +66,6 @@ void PrefsModel::choose_skin_folder(const std::string& folderIn) {
         return !main_script_candidates(dir).empty() ||
                std::filesystem::is_regular_file(fs_path(dir + "/" + SkinConfig::kFileName), ec);
     };
-    // A folder of skins only when one of its subfolders looks like a skin; anything else is the
-    // skin itself, script or not yet (its images/, panels/... aren't skins).
     if (!looks_like_skin(folder)) {
         const std::vector<std::string> subs = m_b.list_skins(folder);
         if (std::any_of(subs.begin(), subs.end(), [&](const std::string& s) { return looks_like_skin(folder + "/" + s); })) {
@@ -102,7 +100,6 @@ std::string PrefsModel::root_note() const {
            m_b.skin_dir("", "") + ". Main script: the skin's top-level .txt to run (automatic when there is only one).";
 }
 
-// Index i of a picker whose entry 0 means "" and entries 1.. are `values`.
 static int index_in(const std::vector<std::string>& values, const std::string& v) {
     if (v.empty()) return 0;
     auto it = std::find(values.begin(), values.end(), v);
@@ -161,7 +158,6 @@ void PrefsModel::load_script() {
     m_script = m_appliedScript = m_scriptPath.empty() ? std::string() : read_file(m_scriptPath);
 }
 
-// --- window ------------------------------------------------------------------------------
 const std::vector<int>& PrefsModel::zoom_choices() {
     static const std::vector<int> z = { 75, 90, 100, 110, 125, 150, 175, 200, 250, 300 };
     return z;
@@ -185,7 +181,6 @@ void PrefsModel::set_zoom_index(int i) {
     m_now.zoom = (i <= 0 || i > (int)z.size()) ? 0 : z[(size_t)i - 1];
 }
 
-// --- overrides ---------------------------------------------------------------------------
 void PrefsModel::set_font(const std::string& face, const std::string& size) {
     auto put = [&](const char* k, const std::string& v) { if (v.empty()) m_now.pvars.erase(k); else m_now.pvars[k] = v; };
     put(kFontFaceKey, face);
@@ -209,11 +204,10 @@ void PrefsModel::clear_overrides() {
     for (const char* k : { kFontFaceKey, kFontSizeKey, kAccentKey }) m_now.pvars.erase(k);
 }
 
-// --- variables ---------------------------------------------------------------------------
 std::vector<std::pair<std::string, std::string>> PrefsModel::variables() const {
     std::vector<std::pair<std::string, std::string>> out;
     for (auto& [k, v] : m_now.pvars)
-        if (!k.empty() && k[0] != '_') out.emplace_back(k, v); // "_…": the component's own bookkeeping
+        if (!k.empty() && k[0] != '_') out.emplace_back(k, v);
     return out;
 }
 
@@ -256,4 +250,4 @@ void PrefsModel::rescan_variables() {
         if (!is_reserved(name) && !m_now.pvars.count(name)) m_now.pvars[name] = "";
 }
 
-} // namespace pui
+}

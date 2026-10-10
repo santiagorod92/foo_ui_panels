@@ -1,4 +1,3 @@
-// gfx::Canvas over a GDI device context (text/shapes via GDI, images via GDI+).
 #pragma once
 #include "win_sdk.h"
 #include "../../gfx/canvas.h"
@@ -9,10 +8,6 @@ namespace pui::gfx {
 
 class GdiCanvas : public Canvas {
 public:
-    // Draws into `dc` (usually a memory DC holding a w x h DEVICE-pixel bitmap). The DC's
-    // selected font is restored on destruction. scale != 1 (the zoom): callers draw in skin
-    // units and a GDI world transform (GDI+: its own transform) maps them to device pixels —
-    // width()/height() are then the device size / scale.
     GdiCanvas(HDC dc, int w, int h, double scale = 1.0);
     ~GdiCanvas() override;
     HDC dc() const { return m_dc; }
@@ -44,23 +39,21 @@ public:
     ImagePtr snapshot(const Rect& r) override;
 
 private:
-    // The GDI+ half of draw_image (the DC's world transform is identity meanwhile).
     void draw_image_gdip(Gdiplus::Bitmap& bmp, const RectF& dst, const RectF& src,
                          int alpha, bool flip_v, Interp interp);
     HDC m_dc;
     int m_dpi;
     double m_scale = 1.0;
-    int m_lw, m_lh; // logical (skin-unit) size
+    int m_lw, m_lh;
     int m_oldMode = 0;
     XFORM m_oldXform{};
-    HFONT m_font = nullptr;     // cached (owned by the font cache, never deleted here)
+    HFONT m_font = nullptr;
     HGDIOBJ m_oldFont = nullptr;
 };
 
 inline COLORREF to_colorref(Color c) { return RGB(c.r, c.g, c.b); }
 inline Color from_colorref(COLORREF c) { return Color(GetRValue(c), GetGValue(c), GetBValue(c)); }
 
-// Release cached fonts (component shutdown).
 void gdi_fonts_shutdown();
 
-} // namespace pui::gfx
+}

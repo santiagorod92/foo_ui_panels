@@ -6,7 +6,6 @@
 using namespace pui;
 
 namespace {
-// Skins in a temp folder; settings in memory.
 struct FakeBackend : PrefsBackend {
     PrefsSettings stored;
     int stores = 0;
@@ -37,7 +36,7 @@ struct Skins {
     }
     ~Skins() { std::error_code ec; std::filesystem::remove_all(dir, ec); }
 };
-} // namespace
+}
 
 TEST("prefs: load, edit, changed, apply") {
     Skins s;
@@ -49,7 +48,7 @@ TEST("prefs: load, edit, changed, apply") {
     CHECK(!m.changed());
     CHECK_EQ(m.skins().size(), (size_t)2);
     CHECK_EQ(m.script(), std::string("$getpvar(Colour)$button(0,0,0,0,0,0,a,b,'PVAR:SET:showPanel:2')"));
-    m.set_zoom_index(3); // 75, 90, [100]
+    m.set_zoom_index(3);
     CHECK_EQ(m.pending().zoom, 100);
     CHECK_EQ(m.zoom_index(), 3);
     CHECK(m.changed());
@@ -57,6 +56,12 @@ TEST("prefs: load, edit, changed, apply") {
     CHECK(!m.changed());
     CHECK_EQ(b.stores, 1);
     CHECK_EQ(b.stored.zoom, 100);
+    m.set_verbose(true);
+    CHECK(m.changed());
+    m.apply();
+    CHECK(b.stored.verbose);
+    m.reset();
+    CHECK(!m.pending().verbose);
 }
 
 TEST("prefs: skin choice — root keeps or replaces the active skin, main script resets") {
@@ -66,17 +71,17 @@ TEST("prefs: skin choice — root keeps or replaces the active skin, main script
     m.load();
     CHECK(m.skins().empty());
     m.set_root(s.dir + "/lib");
-    CHECK_EQ(m.pending().active, std::string("alpha")); // first one
+    CHECK_EQ(m.pending().active, std::string("alpha"));
     m.set_active("beta");
     CHECK_EQ(m.main_choices().size(), (size_t)2);
-    CHECK(!m.skin_warning().empty());          // two scripts, no config: ambiguous
+    CHECK(!m.skin_warning().empty());
     m.set_main("two.txt");
     CHECK_EQ(m.script(), std::string("y"));
     CHECK(m.skin_warning().empty());
     CHECK(m.preview_image().find("preview.png") != std::string::npos);
-    m.set_root(s.dir + "/lib");               // same root: beta stays
+    m.set_root(s.dir + "/lib");
     CHECK_EQ(m.pending().active, std::string("beta"));
-    CHECK_EQ(m.pending().main, std::string()); // but the main script is automatic again
+    CHECK_EQ(m.pending().main, std::string());
 }
 
 TEST("prefs: chosen skin folder — a skin, a folder of skins, ambiguous, nothing to run") {
@@ -85,20 +90,20 @@ TEST("prefs: chosen skin folder — a skin, a folder of skins, ambiguous, nothin
     FakeBackend b; b.root = s.dir;
     PrefsModel m(b);
     m.load();
-    m.choose_skin_folder(s.dir + "/lib/alpha/");     // the skin itself
+    m.choose_skin_folder(s.dir + "/lib/alpha/");
     CHECK_EQ(m.pending().root, s.dir + "/lib");
     CHECK_EQ(m.pending().active, std::string("alpha"));
     CHECK(m.chosen_folder_problem("x").empty());
-    m.choose_skin_folder(s.dir + "/lib");            // a folder of skins: first one
+    m.choose_skin_folder(s.dir + "/lib");
     CHECK(m.chosen_folder_problem("x").empty());
-    m.choose_skin_folder(s.dir + "/lib/beta");       // two .txt: ambiguous, named as such
+    m.choose_skin_folder(s.dir + "/lib/beta");
     CHECK(m.chosen_folder_problem(s.dir + "/lib/beta").find("2 .txt files") != std::string::npos);
-    m.choose_skin_folder(s.dir + "/empty");          // no script anywhere: the skin itself, kept
+    m.choose_skin_folder(s.dir + "/empty");
     CHECK_EQ(m.pending().root, s.dir);
     CHECK_EQ(m.pending().active, std::string("empty"));
     const std::string p = m.chosen_folder_problem(s.dir + "/empty");
     CHECK(p.find("no main script to run") != std::string::npos);
-    CHECK(p.find(s.dir + "/empty\n") != std::string::npos); // the folder picked, not its subfolder
+    CHECK(p.find(s.dir + "/empty\n") != std::string::npos);
 }
 
 TEST("prefs: script edits are written on apply") {
@@ -125,20 +130,20 @@ TEST("prefs: overrides and variables") {
     gfx::Color c;
     CHECK(m.accent(c) && c == gfx::Color(1, 2, 3));
     CHECK_EQ(m.pending().pvars.at(PrefsModel::kAccentKey), std::string("1-2-3"));
-    CHECK(m.variables().empty()); // reserved + bookkeeping pvars are hidden
+    CHECK(m.variables().empty());
     m.rescan_variables();
     auto vars = m.variables();
     CHECK_EQ(vars.size(), (size_t)2);
     CHECK_EQ(vars[0].first, std::string("Colour"));
     CHECK_EQ(vars[1].first, std::string("showPanel"));
-    m.set_variable("_prefs_font_face", "nope"); // reserved: ignored
+    m.set_variable("_prefs_font_face", "nope");
     CHECK_EQ(m.font_face(), std::string("Verdana"));
     m.set_font("", "");
     CHECK(m.font_face().empty());
     m.reset();
     CHECK(!m.accent(c));
     CHECK(m.pending().root.empty());
-    CHECK_EQ(m.variables().size(), (size_t)2); // the skin's variables stay
+    CHECK_EQ(m.variables().size(), (size_t)2);
 }
 
 TEST("prefs: scan_pvar_names finds functions and button actions") {
@@ -154,7 +159,7 @@ TEST("prefs: picker entries and selection by index") {
     PrefsModel m(b);
     m.load();
     const auto own = m.skin_labels();
-    CHECK(own == std::vector<std::string>({ prefs_text::kOwnFolder })); // just the component's own folder
+    CHECK(own == std::vector<std::string>({ prefs_text::kOwnFolder }));
     CHECK_EQ(m.skin_index(), 0);
     m.set_root(s.dir + "/lib");
     CHECK(m.skin_labels() == std::vector<std::string>({ prefs_text::kOwnFolder, "alpha", "beta" }));
@@ -166,9 +171,9 @@ TEST("prefs: picker entries and selection by index") {
     m.set_main_index(2);
     CHECK_EQ(m.pending().main, std::string("two.txt"));
     CHECK_EQ(m.main_index(), 2);
-    m.set_main_index(99);                                  // out of range: automatic
+    m.set_main_index(99);
     CHECK_EQ(m.pending().main, std::string());
-    m.set_skin_index(0);                                   // the component's own folder
+    m.set_skin_index(0);
     CHECK_EQ(m.pending().active, std::string());
     CHECK_EQ(m.skin_index(), 0);
     CHECK(m.root_note().find(s.dir + "/own") != std::string::npos);

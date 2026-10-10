@@ -8,15 +8,12 @@
 #include "prefs_store.h"
 #include "skin_paths.h"
 #include "skin_templates.h"
+#include "log.h"
 #include <cstdio>
 #include <cstring>
 
-// SkinEngine: what a skin button (or a View > Panels UI > Skin command) does, clicks and hover,
-// rating writes, the tray menu and dropped files.
-
 namespace pui {
 
-// Tag-write filter: sets (or clears) one meta field on a track. Used by TAG:SET:rating:N.
 class meta_set_filter : public file_info_filter {
 public:
     meta_set_filter(const char* field, const char* value) : m_field(field), m_value(value) {}
@@ -32,7 +29,7 @@ private:
 void SkinEngine::add_files(const std::vector<std::string>& paths, t_size at) {
     if (paths.empty()) return;
     pfc::list_t<const char*> urls;
-    for (auto& p : paths) urls.add_item(p.c_str()); // process_locations_async copies them
+    for (auto& p : paths) urls.add_item(p.c_str());
     auto notify = process_locations_notify::create([at](metadb_handle_list_cref items) {
         auto pm = playlist_manager::get();
         t_size pl = pm->get_active_playlist();
@@ -75,9 +72,6 @@ void SkinEngine::show_tray_menu() {
     }
 }
 
-// Main-menu commands by lower-cased full path ("playback/random", "library/album list"),
-// built once: the group chain comes from mainmenu_group(_popup) display names (menu_label).
-// Components can't register commands after startup, so no invalidation.
 struct MenuCommands { std::vector<std::string> paths; std::vector<GUID> guids; };
 static const MenuCommands& menu_commands() {
     static MenuCommands mc;
@@ -113,23 +107,16 @@ static const MenuCommands& menu_commands() {
     return mc;
 }
 
-// Run a skin button action ("Playback/Random", "Library/Album List", "New Playlist", …) through
-// the main-menu command best_menu_match() picks for it.
 static bool run_action(const std::string& action) {
     const MenuCommands& mc = menu_commands();
     const int i = best_menu_match(mc.paths, action);
     if (i >= 0 && mainmenu_commands::g_execute(mc.guids[(size_t)i])) return true;
-    console::printf("Panels UI: no command for action '%s'", action.c_str());
+    log::console(log::Level::Warn, "action", "no command for action '" + action + "'");
     return false;
 }
 
 bool SkinEngine::run_button_action(const std::string& action) {
-    // `action.remap.<action> = <action>`: a skin action replaced by another — e.g. a step of a
-    // cycle that led to a view the native panels don't provide.
     const std::string a = m_st.cfg.str("action.remap." + action, action);
-    // Transport buttons — handle via playback_control directly. (Going through the main menu by
-    // leaf name is ambiguous: "Random" matches both Playback/Random AND the Random playback ORDER,
-    // so the play-random button would wrongly change the order.)
     auto pc = playback_control::get();
     if (a == "Previous")          { pc->previous(); return true; }
     if (a == "Next")              { pc->next(); return true; }
@@ -137,7 +124,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
     if (a == "Play" || a == "Pause" || a == "play" || a == "pause") { pc->play_or_pause(); return true; }
     if (a == "Playback/Random")   { pc->start(playback_control::track_command_rand, false); return true; }
 
-    // PVAR:SET:key:value — set a setup variable, persist, and re-layout (mode/theme switch).
     if (a.compare(0, 9, "PVAR:SET:") == 0) {
         std::string rest = a.substr(9);
         size_t c = rest.find(':');
@@ -148,8 +134,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
         }
         return true;
     }
-    // PVAR:TOGGLE:key — flip a 0/1 setup variable (for skin commands bound to a shortcut,
-    // where PVAR:SET can't know the current state).
     if (a.compare(0, 12, "PVAR:TOGGLE:") == 0) {
         const std::string key = unquote(a.substr(12));
         if (!key.empty()) {
@@ -160,8 +144,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
         }
         return true;
     }
-    // WINDOWSIZE:w:h[:halign:valign] — resize the top-level player window, optionally anchored
-    // at a corner/edge (halign LEFT/RIGHT, valign TOP/BOTTOM) instead of the default top-left.
     if (a.compare(0, 11, "WINDOWSIZE:") == 0) {
         std::vector<std::string> tok; std::string rest = a.substr(11), cur;
         for (char ch : rest) { if (ch == ':') { tok.push_back(cur); cur.clear(); } else cur += ch; }
@@ -171,22 +153,14 @@ bool SkinEngine::run_button_action(const std::string& action) {
             int h = atoi(unquote(tok[1]).c_str());
             std::string halign = tok.size() >= 3 ? tok[2] : std::string();
             std::string valign = tok.size() >= 4 ? tok[3] : std::string();
-            // w/h are a CLIENT size (computed from %_width%/%_height%, which is always
-            // client-space); halign/valign name which corner/edge of the CURRENT window stays
-            // fixed while it grows/shrinks — e.g. fooAvA's RIGHT:TOP keeps the top-right corner
-            // (where its own min/mini/exit buttons sit) in place instead of the window drifting
-            // left as it shrinks. Default (no flags, or an unrecognised value) keeps top-left.
             if (m_main && w > 0 && h > 0) m_main->resize_client(w, h, halign, valign);
         }
         return true;
     }
-    // POPUP:<file.ava> — open a PanelsUI script (settings/about) in a floating window.
     if (a.compare(0, 6, "POPUP:") == 0) {
         const std::string file = unquote(a.substr(6));
         std::string sc = read_panel_script(file);
         if (sc.empty()) {
-            // A button that does nothing looks broken: say which file is missing (the console
-            // has it too, but nobody looks there after a click).
             ui::message_box(nullptr, "Panels UI",
                             "This skin button opens a window whose script is missing:\n" +
                             panels_dir() + "/" + file + ".txt");
@@ -197,15 +171,12 @@ bool SkinEngine::run_button_action(const std::string& action) {
             if (!m_popup) m_popup = std::make_unique<PopupView>(this);
             m_popup->set_script(sc.c_str());
             if (m_popupHost) {
-                m_popupHost->invalidate(); // already open: refresh (the platform raises it)
+                m_popupHost->invalidate();
                 m_popupHost->focus();
             } else {
-                // Size: `popup.size.<file>`, else `popup.size` ("W H"), else 400x500 — a popup
-                // script lays itself out for one size, which only the skin knows.
                 std::vector<int> sz = m_st.cfg.nums("popup.size." + file);
                 if (sz.size() != 2) sz = m_st.cfg.nums("popup.size");
                 if (sz.size() != 2 || sz[0] <= 0 || sz[1] <= 0) sz = { 400, 500 };
-                // Window title from the script's own name ("FOOAvA_settings.ava" -> "FOOAvA settings").
                 std::string title = file;
                 if (title.size() > 4 && pfc::stricmp_ascii(title.c_str() + title.size() - 4, ".ava") == 0)
                     title.resize(title.size() - 4);
@@ -213,13 +184,10 @@ bool SkinEngine::run_button_action(const std::string& action) {
                 m_popupHost = ui::create_popup_window(*m_main, m_popup.get(), sz[0], sz[1], title,
                                                       [this] { m_popupHost.reset(); });
             }
-            // Stops the skin's own 1Hz settings-button onboarding blink (see below).
             complete_onboarding();
         }
         return true;
     }
-    // Player-level toggles, so a skin can put them on its own buttons too (the same commands
-    // as View > Panels UI): ONTOP:TOGGLE|ON|OFF, ZOOM:IN|OUT|RESET, MINIMODE:TOGGLE.
     if (a.compare(0, 6, "ONTOP:") == 0) {
         const std::string v = a.substr(6);
         set_always_on_top(v == "ON" ? true : v == "OFF" ? false : !always_on_top());
@@ -232,11 +200,8 @@ bool SkinEngine::run_button_action(const std::string& action) {
         return true;
     }
     if (a == "MINIMODE:TOGGLE") { toggle_mini_mode(); return true; }
-    // PREFERENCES — this component's Preferences page. URL:<address> — the browser.
     if (a == "PREFERENCES") { show_preferences_page(); return true; }
     if (a.compare(0, 4, "URL:") == 0) { ui::open_url(unquote(a.substr(4))); return true; }
-    // SKIN:CHOOSE_FOLDER — pick a skin (or a folder of skins) and load it: the welcome screen's
-    // button, shown when there is no skin yet.
     if (a == "SKIN:CHOOSE_FOLDER") {
         if (!m_main) return true;
         PrefsModel prefs(prefs_backend());
@@ -245,9 +210,7 @@ bool SkinEngine::run_button_action(const std::string& action) {
                                                   prefs.pending().root);
         if (dir.empty()) return true;
         prefs.choose_skin_folder(dir);
-        apply_skin_choice(prefs); // saved and reloaded everywhere, whatever is (not yet) in it
-        // Nothing to run there yet: say why rather than silently staying on this screen. Several
-        // candidate scripts: Preferences picks one.
+        apply_skin_choice(prefs);
         const std::string problem = prefs.chosen_folder_problem(dir);
         if (!problem.empty()) {
             ui::message_box(nullptr, "Panels UI", problem);
@@ -255,8 +218,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
         }
         return true;
     }
-    // WIZARD:OPEN / WIZARD:CLOSE — the layout wizard; SKIN:TEMPLATE:<id> — its cards: the layout
-    // is written out as a skin folder of its own (skin_templates.h) and becomes the skin.
     if (a == "WIZARD:OPEN") { show_layout_wizard(); return true; }
     if (a == "WIZARD:CLOSE") { close_layout_wizard(); return true; }
     if (a.compare(0, 14, "SKIN:TEMPLATE:") == 0) {
@@ -272,13 +233,10 @@ bool SkinEngine::run_button_action(const std::string& action) {
         apply_skin_choice(prefs);
         return true;
     }
-    // MENU — the logo button: classic File/Edit/View/Playback/Library/Help menu, popped up at the cursor.
     if (a == "MENU") {
         if (m_main) m_main->show_main_menu();
         return true;
     }
-    // Title-bar playlist switcher: arrows cycle the active playlist (wrapping), the name opens
-    // a menu of all playlists.
     if (a == "Previous playlist" || a == "Next playlist") {
         auto pm = playlist_manager::get();
         const t_size n = pm->get_playlist_count();
@@ -305,7 +263,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
         repaint_all();
         return true;
     }
-    // MENUBAR:toggle — flip the menubar pvar and tell the top-level window to show/hide its menu.
     if (a == "MENUBAR:toggle") {
         int cur = m_st.pvars.count("menubar") ? atoi(m_st.pvars["menubar"].c_str()) : 1;
         int nv = cur ? 0 : 1; m_st.pvars["menubar"] = std::to_string(nv); save_pvars();
@@ -313,8 +270,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
         repaint_all();
         return true;
     }
-    // Playback order by name ("Default", "Repeat (track)", "Shuffle (tracks)", …) — set it on
-    // playlist_manager directly so the order buttons stay in sync with the player.
     {
         auto pm = playlist_manager::get();
         const t_size n = pm->playback_order_get_count();
@@ -323,7 +278,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
                 pm->playback_order_set_active(i); repaint_all(); return true;
             }
     }
-    // TAG:SET:field:value — write a tag on the now-playing track (e.g. the rating stars).
     if (a.compare(0, 8, "TAG:SET:") == 0) {
         std::string rest = a.substr(8); size_t c = rest.find(':');
         if (c != std::string::npos) {
@@ -331,8 +285,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
             metadb_handle_ptr track; playback_control::get()->get_now_playing(track);
             if (track.is_valid()) {
                 if (field == "rating") {
-                    // set_rating() routes navidrome:// tracks through foo_navidrome's own API
-                    // instead of the file-tag write below, which fails for them (no real file).
                     set_rating(track, atoi(value.c_str()));
                 } else {
                     metadb_handle_list list; list.add_item(track);
@@ -351,11 +303,6 @@ bool SkinEngine::run_button_action(const std::string& action) {
 
 bool SkinEngine::handle_click(int x, int y) {
     if (m_problemMarker.contains(x, y)) { open_main_script_editor(); return true; }
-    // fooAvA stacks multiple $button calls at the SAME rect to chain multiple actions off one
-    // click (e.g. the onepanel toggle: an invisible PVAR:SET button plus a visible WINDOWSIZE
-    // button, same x/y/w/h) — run every match, not just the first, or the later ones never fire.
-    // Collect first: an action can pump messages (a menu, a resize) and repaint, which rebuilds
-    // m_st.buttons under the loop.
     std::vector<std::string> actions;
     for (const auto& b : m_st.buttons) if (button_hit(b, x, y)) actions.push_back(b.action);
     for (const auto& a : actions) run_button_action(a);
@@ -378,15 +325,17 @@ void SkinEngine::set_rating(const metadb_handle_ptr& track, int stars) {
     if (track.is_empty()) return;
     if (stars < 0) stars = 0; if (stars > 5) stars = 5;
 
-    // navidrome:// tracks have no real file to tag — metadb_io_v2 fails with "Tagging of this
-    // file format is not supported". foo_navidrome (if installed) exposes a service that pushes
-    // the rating to the server instead; use it when the track is one of its.
     service_enum_t<navidrome::navidrome_rating_api> e;
     service_ptr_t<navidrome::navidrome_rating_api> api;
     while (e.next(api)) {
-        if (api->is_navidrome_track(track)) { api->set_rating_async(track, stars); return; }
+        if (api->is_navidrome_track(track)) {
+            log::info("rating", "navidrome track rated " + std::to_string(stars));
+            api->set_rating_async(track, stars);
+            return;
+        }
     }
 
+    log::info("rating", std::string("RATING tag set to ") + std::to_string(stars) + " on " + track->get_path());
     char v[8] = ""; if (stars > 0) sprintf(v, "%d", stars);
     metadb_handle_list list; list.add_item(track);
     service_ptr_t<file_info_filter> f = new service_impl_t<meta_set_filter>("RATING", v);
@@ -397,8 +346,8 @@ void SkinEngine::apply_skin_choice(PrefsModel& prefs) {
     const bool wasWizard = m_wizard;
     const std::string before = m_st.base;
     m_wizard = false;
-    prefs.apply(); // a different skin reloads every player
-    if (wasWizard && m_st.base == before) reload_skin(); // the same one: still showing the wizard
+    prefs.apply();
+    if (wasWizard && m_st.base == before) reload_skin();
 }
 
-} // namespace pui
+}
