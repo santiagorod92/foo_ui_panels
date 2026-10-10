@@ -8,7 +8,6 @@ void PopupView::set_script(const char* script) {
 }
 
 void PopupView::paint(gfx::Canvas& cv) {
-    // The settings script paints its own opaque background; start from black.
     cv.fill_rect(gfx::Rect{ 0, 0, cv.width(), cv.height() }, gfx::Color());
     metadb_handle_ptr track;
     playback_control::get()->get_now_playing(track);
@@ -20,11 +19,11 @@ void PopupView::on_mouse_down(const ui::MouseEvent& e) {
     for (const auto& b : m_buttons) {
         if (button_hit(b, e.x, e.y)) {
             std::string act = b.action;
-            m_engine->run_button_action(act); // repaints main UI on a pvar change
-            invalidate();                     // and reflect the toggle here
+            m_engine->run_button_action(act);
+            invalidate();
             return;
         }
     }
 }
 
-} // namespace pui
+}

@@ -1,0 +1,32 @@
+name: Skin compatibility
+description: A Panels UI skin from the 0.9.x days doesn't load or draw like it used to.
+labels: ["skin"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Old skins call functions and panels from plugins that no longer exist. The
+        **Diagnostics** tab in *Preferences › Display › Panels UI (reborn)* lists the script
+        problems the engine found; **Copy Diagnostics** and paste it below.
+        `make skin-lint LINT_DIR=<skin folder>` gives the same list without foobar2000.
+  - type: input
+    id: skin
+    attributes:
+      label: Skin
+      description: Name, version and where to get it (a link). Please don't attach skins whose license forbids redistribution.
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What's wrong?
+      description: What the skin should look like (an old screenshot helps) and what it looks like now.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Paste the output of **Copy Diagnostics** here.
+    validations:
+      required: true

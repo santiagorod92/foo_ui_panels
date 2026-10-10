@@ -1,7 +1,7 @@
 # foo_ui_panels — reborn for foobar2000 v2
 
 Goal: reimplement the discontinued **Panels UI** (`foo_ui_panels`, last seen ~fb2k 0.9.5.2)
-as a native component for **foobar2000 v2 — Windows x64 and macOS (universal)**. Original was
+as a native component for **foobar2000 v2 — Windows x64 + ARM64 (ARM64EC) and macOS (universal)**. Original was
 closed-source — this is a ground-up reimplementation aiming for skin compatibility, not a recompile.
 
 ## Established facts

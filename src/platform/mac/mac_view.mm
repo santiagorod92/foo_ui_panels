@@ -1,5 +1,3 @@
-// macOS implementation of the ui:: layer (src/ui/view.h): every native panel is a ui::View
-// hosted in a flipped (top-left origin) NSView, painted through an offscreen CGCanvas.
 #import <Cocoa/Cocoa.h>
 #include "../../fb2k.h"
 #include "mac_view.h"
@@ -71,13 +69,12 @@ NSColor* color_of(gfx::Color c) {
 
 class MacViewHost;
 
-} // namespace
+}
 
-// ---------------------------------------------------------------------------------------------
 @interface FooUIPanelsView : NSView
-@property (nonatomic, assign) void* host; // MacViewHost*
+@property (nonatomic, assign) void* host;
 @property (nonatomic, strong) NSCursor* cursor;
-@property (nonatomic, assign) CGFloat zoom; // root/popup views: bounds = frame / zoom (0 = 1)
+@property (nonatomic, assign) CGFloat zoom;
 - (void)applyZoom;
 @end
 
@@ -103,10 +100,8 @@ public:
         m_ns.host = this;
         m_ns.cursor = cursor_of(opts.cursor);
         m_ns.wantsLayer = YES;
-        // Unregistered views pass a file drag on to the nearest registered ancestor (the root
-        // canvas), so only views that take files ask for them.
         if (opts.accept_files) [m_ns registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
-        if (!opts.accessible_name.empty()) { // what VoiceOver calls the panel
+        if (!opts.accessible_name.empty()) {
             m_ns.accessibilityElement = YES;
             m_ns.accessibilityRole = NSAccessibilityGroupRole;
             m_ns.accessibilityLabel = ns(opts.accessible_name);
@@ -146,11 +141,9 @@ public:
         m_windowDelegate = [FooUIPanelsWindowDelegate new];
         auto cb = std::make_shared<std::function<void()>>(std::move(onClosed));
         m_windowDelegate.onClose = ^{
-            // After the close has finished: the callback deletes this host.
             dispatch_async(dispatch_get_main_queue(), ^{ if (*cb) (*cb)(); });
         };
         m_window.delegate = m_windowDelegate;
-        // Centre on the owner window.
         if (NSWindow* ow = owner.window) {
             NSRect of = ow.frame, wf = m_window.frame;
             [m_window setFrameOrigin:NSMakePoint(NSMidX(of) - wf.size.width / 2, NSMidY(of) - wf.size.height / 2)];
@@ -160,7 +153,6 @@ public:
         [m_window makeKeyAndOrderFront:nil];
     }
 
-    // --- ViewHost ---
     void invalidate() override { [m_ns setNeedsDisplay:YES]; }
     void set_bounds(const gfx::Rect& r, bool to_top) override {
         m_ns.frame = NSMakeRect(r.x, r.y, r.w, r.h);
@@ -189,7 +181,7 @@ public:
         [it->second invalidate];
         m_timers.erase(it);
     }
-    void capture_mouse(bool) override {} // AppKit delivers drags to the view that got mouseDown
+    void capture_mouse(bool) override {}
     void focus() override {
         if (m_window) [m_window makeKeyAndOrderFront:nil];
         [m_ns.window makeFirstResponder:m_ns];
@@ -212,16 +204,12 @@ public:
     }
     void* native() const override { return (__bridge void*)m_ns; }
 
-    // --- called by FooUIPanelsView ---
     View* view() const { return m_view; }
     bool live() const { return m_view->host() == this; }
     void paint() {
         NSRect b = m_ns.bounds;
         const int w = (int)b.size.width, h = (int)b.size.height;
         if (w <= 0 || h <= 0 || !live()) return;
-        // Retina and the zoom: render at the pixel density this view really ends up at (the
-        // window's backing scale times every bounds scaling above it); the canvas still works
-        // in skin units.
         double scale = [m_ns convertSizeToBacking:NSMakeSize(1, 1)].width;
         if (!(scale > 0)) scale = m_ns.window ? m_ns.window.backingScaleFactor : 1.0;
         gfx::CGCanvas cv(w, h, scale);
@@ -229,7 +217,7 @@ public:
         CGImageRef img = cv.copy_image();
         if (!img) return;
         CGContextRef ctx = NSGraphicsContext.currentContext.CGContext;
-        gfx::draw_cgimage(ctx, img, CGRectMake(0, 0, w, h), false); // flipped view: y-down already
+        gfx::draw_cgimage(ctx, img, CGRectMake(0, 0, w, h), false);
         CGImageRelease(img);
     }
 
@@ -253,14 +241,13 @@ private:
     std::map<int, NSTimer*> m_timers;
     NSTimer* m_frameTimer = nil;
     bool m_popup = false;
-    bool m_ring = false; // keyboard focus ring (set_focus_ring)
+    bool m_ring = false;
 };
 
 MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 
-} // namespace
+}
 
-// ---------------------------------------------------------------------------------------------
 @implementation FooUIPanelsView {
     NSTrackingArea* _tracking;
 }
@@ -269,7 +256,6 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (BOOL)acceptsFirstMouse:(NSEvent*)e { return YES; }
 - (BOOL)wantsUpdateLayer { return NO; }
 - (void)drawRect:(NSRect)dirty { if (auto* h = host_of(self)) h->paint(); }
-// Moved to a display with another pixel density: re-render at the new backingScaleFactor.
 - (void)viewDidChangeBackingProperties { [super viewDidChangeBackingProperties]; [self setNeedsDisplay:YES]; }
 - (void)applyZoom {
     const CGFloat z = self.zoom > 0 ? self.zoom : 1;
@@ -313,8 +299,6 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)mouseMoved:(NSEvent*)e { [self move:e]; }
 - (void)mouseDragged:(NSEvent*)e { [self move:e]; }
 - (void)mouseExited:(NSEvent*)e { if (auto* h = host_of(self); h && h->live()) h->view()->on_mouse_leave(); }
-// Nothing makes a plain NSView the first responder on its own, and without that the view never
-// sees keyDown: — so a press takes the focus itself (press_takes_focus).
 - (void)press:(NSEvent*)e button:(MouseButton)b {
     auto* h = host_of(self);
     if (!h) return;
@@ -334,7 +318,7 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)scrollWheel:(NSEvent*)e {
     auto* h = host_of(self); if (!h || !h->live()) return;
     CGFloat d = e.scrollingDeltaY;
-    if (e.hasPreciseScrollingDeltas) d /= 10.0; // trackpad: pixels -> roughly wheel notches
+    if (e.hasPreciseScrollingDeltas) d /= 10.0;
     if (d == 0) return;
     NSPoint p = [self local:e];
     h->view()->on_wheel((int)p.x, (int)p.y, (float)d);
@@ -344,7 +328,6 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
     if (h && dispatch_key(*h->view(), h->live(), h->options(), map_key(e), mods_of(e))) return;
     [super keyDown:e];
 }
-// NSDraggingDestination: files from Finder (registered in MacViewHost when accept_files).
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)s {
     auto* h = host_of(self);
     return h && h->live() ? NSDragOperationCopy : NSDragOperationNone;
@@ -381,7 +364,6 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 - (void)windowWillClose:(NSNotification*)n { if (self.onClose) { auto cb = self.onClose; self.onClose = nil; cb(); } }
 @end
 
-// ---------------------------------------------------------------------------------------------
 namespace {
 
 class MacTextField : public TextField {
@@ -451,21 +433,19 @@ int run_menu(NSMenu* m, FooUIPanelsMenuTarget* target, NSView* view, NSPoint pt)
     return (int)target.chosen;
 }
 
-// "Edit code..." windows, by key.
 struct Editor {
     NSWindow* window; NSTextView* text; FooUIPanelsWindowDelegate* delegate;
     std::function<bool(const std::string&)> apply;
     NSTextField* status = nil;
-    std::string original; // as opened: Revert goes back to it
-    std::string check;    // the last check_script() summary
+    std::string original;
+    std::string check;
 };
 std::map<std::string, std::shared_ptr<Editor>> g_editors;
 
-// Colours the script in the text view (token byte ranges mapped to UTF-16 indices).
 void highlight_editor(NSTextView* tv) {
     const std::string u = tv.string.UTF8String ?: "";
-    if (u.size() > pui::kEditorHighlightMax) return; // a huge script stays plain (as on Windows)
-    std::vector<NSUInteger> at; // UTF-16 index of every UTF-8 byte
+    if (u.size() > pui::kEditorHighlightMax) return;
+    std::vector<NSUInteger> at;
     at.reserve(u.size() + 1);
     NSUInteger idx = 0;
     for (size_t i = 0; i < u.size();) {
@@ -508,7 +488,7 @@ void recheck_editor(Editor& ed) {
     update_editor_status(ed);
 }
 
-} // namespace
+}
 
 @interface FooUIPanelsEditorActions : NSObject <NSTextViewDelegate>
 @property (nonatomic, assign) std::string* key;
@@ -565,11 +545,11 @@ void set_root_zoom(ViewHost& root, double zoom) {
     NSSize b = v.bounds.size;
     if (auto* h = host_of(v); h && h->live()) h->view()->on_resize((int)b.width, (int)b.height);
     [v setNeedsDisplay:YES];
-    for (NSView* sub in v.subviews) [sub setNeedsDisplay:YES]; // re-render at the new density
+    for (NSView* sub in v.subviews) [sub setNeedsDisplay:YES];
 }
 
 double zoom_factor() { return zoom_factor_for(zoom_setting(), 96); }
-} // namespace mac
+}
 
 std::unique_ptr<ViewHost> create_child_view(MainWindow& root, View* view, const ViewOptions& opts) {
     auto h = std::make_unique<MacViewHost>(view, opts);
@@ -589,7 +569,6 @@ std::unique_ptr<TextField> create_text_field(ViewHost& owner, TextFieldDelegate*
 }
 
 std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name) {
-    // Our own element is "Panels UI" — never host it inside itself.
     if (!name || strcasecmp(name, "Panels UI") == 0) return nullptr;
     NSString* want = ns(name).lowercaseString;
     service_enum_t<ui_element_mac> e;
@@ -714,6 +693,24 @@ void reveal_in_file_manager(const std::string& path) {
         [[NSWorkspace sharedWorkspace] activateFileViewerSelectingURLs:@[ [NSURL fileURLWithPath:p] ]];
 }
 
+bool copy_to_clipboard(const std::string& text) {
+    NSPasteboard* pb = [NSPasteboard generalPasteboard];
+    [pb clearContents];
+    return [pb setString:ns(text) forType:NSPasteboardTypeString];
+}
+
+std::string os_version() {
+    NSOperatingSystemVersion v = [NSProcessInfo processInfo].operatingSystemVersion;
+    return std::to_string(v.majorVersion) + "." + std::to_string(v.minorVersion) + "." + std::to_string(v.patchVersion);
+}
+
+std::string wine_version() { return {}; }
+
+std::string home_dir() {
+    NSString* h = NSHomeDirectory();
+    return h.fileSystemRepresentation ? h.fileSystemRepresentation : "";
+}
+
 void open_text_editor(MainWindow&, const std::string& key, const std::string& title,
                       const std::string& text, std::function<bool(const std::string&)> apply) {
     auto it = g_editors.find(key);
@@ -753,7 +750,6 @@ void open_text_editor(MainWindow&, const std::string& key, const std::string& ti
     FooUIPanelsEditorActions* act = [FooUIPanelsEditorActions new];
     act.key = new std::string(key);
     tv.delegate = act;
-    // Cmd+S applies, Cmd+Return is OK, Esc cancels.
     struct { NSString* t; SEL s; NSString* key; NSEventModifierFlags mods; } btns[] = {
         { @"Cancel", @selector(cancel:), @"\e", 0 },
         { @"OK", @selector(ok:), @"\r", NSEventModifierFlagCommand },
@@ -774,7 +770,6 @@ void open_text_editor(MainWindow&, const std::string& key, const std::string& ti
     [content addSubview:revert];
     ed->window = w; ed->text = tv; ed->status = status;
     ed->delegate = [FooUIPanelsWindowDelegate new];
-    // Keep the actions object alive with the window; forget the editor when it closes.
     std::string k = key;
     __block FooUIPanelsEditorActions* keep = act;
     ed->delegate.onClose = ^{ keep = nil; dispatch_async(dispatch_get_main_queue(), ^{ g_editors.erase(k); }); };
@@ -788,16 +783,13 @@ void open_text_editor(MainWindow&, const std::string& key, const std::string& ti
 
 void close_text_editor(const std::string& key) {
     auto it = g_editors.find(key);
-    if (it != g_editors.end()) [it->second->window close]; // windowWillClose forgets the entry
+    if (it != g_editors.end()) [it->second->window close];
 }
 
-} // namespace pui::ui
+}
 
 namespace pui {
 
-// Skins live in a user-writable folder next to the foobar2000 profile
-// (~/Library/foobar2000-v2/foo_ui_panels): the component bundle itself is replaced on update
-// and may be read-only.
 std::string component_dir() {
     pfc::string8 native;
     try { filesystem::g_get_native_path(core_api::get_profile_path(), native); } catch (...) {}
@@ -806,4 +798,4 @@ std::string component_dir() {
     return d;
 }
 
-} // namespace pui
+}

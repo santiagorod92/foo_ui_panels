@@ -1,10 +1,3 @@
-// macclick — post synthetic mouse events to drive the macOS UI in dev/testing, the way
-// tools/wclick.c drives the Wine build. Screen coordinates, points, origin top-left.
-//   macclick move <x> <y>          move the cursor (hover)
-//   macclick click <x> <y>         left click
-//   macclick dblclick <x> <y>      left double click
-//   macclick drag <x> <y> <x2> <y2>  press at x,y, move to x2,y2 in steps, release
-// Build: clang -framework ApplicationServices -framework Foundation -o /tmp/macclick tools/macclick.m
 #import <Foundation/Foundation.h>
 #import <ApplicationServices/ApplicationServices.h>
 
@@ -25,7 +18,6 @@ int main(int argc, const char** argv) {
         CGPoint q = CGPointMake(atof(argv[4]), atof(argv[5]));
         post(kCGEventLeftMouseDown, p, kCGMouseButtonLeft, 1);
         usleep(80000);
-        // Step it: a window drag loop follows the moves, and a single jump can be missed.
         const int steps = 20;
         for (int i = 1; i <= steps; ++i) {
             CGPoint m = CGPointMake(p.x + (q.x - p.x) * i / steps, p.y + (q.y - p.y) * i / steps);

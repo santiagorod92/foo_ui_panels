@@ -9,10 +9,6 @@ namespace {
 
 using Part = SkinTemplate::Part;
 
-// --- the templates' shared pieces ----------------------------------------------------------------
-// Plain Panels UI script (titleformat + the engine's functions). Line breaks are ignored and
-// lines starting with // are comments, so these stay readable in the written-out main.txt.
-
 std::string header(const char* name) {
     return std::string("// ") + name + R"PUI( — a Panels UI skin made by the layout wizard (View › Panels UI › Layout wizard…).
 // It is yours to change. This file lays out the window and is run again on every repaint; saved
@@ -49,7 +45,6 @@ $font(Segoe UI,9)
 $drawstring($if(%isplaying%,$if(%ispaused%,Paused,Playing)   %codec%[   %bitrate% kbps]   %playback_time%[ / %length%],Stopped),10,$eval(%_height% - 19),$eval(%_width% - 20),18,150-155-165)
 )PUI";
 
-// What's playing, in a column `w` wide at (x, y): title, artist, album (date).
 std::string now_playing(const std::string& x, const std::string& y, const std::string& w) {
     auto at = [&](int dy) { return "$eval(" + y + " + " + std::to_string(dy) + ")"; };
     return "\n// ---- What's playing ----------------------------------------------------------------------------\n"
@@ -60,7 +55,6 @@ std::string now_playing(const std::string& x, const std::string& y, const std::s
            "$drawstring($if(%isplaying%,%album%[ '('%date%')'])," + x + "," + at(40) + "," + w + ",18,120-125-135)\n";
 }
 
-// A 1px vertical separator at x, between the toolbar and the status bar.
 std::string separator(const std::string& x) {
     return "$drawrect(" + x + ",40,1,$eval(%_height% - 62),brushcolor-45-48-56 pencolor-null)\n";
 }
@@ -83,7 +77,6 @@ color.volume.background = 52 55 64
 std::vector<SkinTemplate> build() {
     std::vector<SkinTemplate> t;
 
-    // Default: the Default UI's classic look — cover and what's playing beside the playlist.
     t.push_back({ "playlist-cover", "Playlist and cover", "Album art and track info beside the playlist.",
         { { 0, 0, 100, 9, Part::Toolbar }, { 2, 12, 26, 34, Part::Cover }, { 30, 9, 70, 86, Part::Playlist },
           { 0, 95, 100, 5, Part::Status } },
@@ -126,7 +119,6 @@ std::vector<SkinTemplate> build() {
             "$panel(Playlist,Single Column Playlist,0,40,%_width%,$eval(%_height% - 62))\n" + kStatus,
         ini("Playlist") });
 
-    // The cover as large as the window allows (S), lyrics beside it, a spectrum along the bottom.
     const std::string S = "$min($eval(%_height% - 230),$eval(%_width% / 2 - 24))";
     t.push_back({ "now-playing", "Now playing", "A large cover, synced lyrics and a spectrum.",
         { { 0, 0, 100, 9, Part::Toolbar }, { 2, 12, 40, 56, Part::Cover }, { 45, 10, 53, 64, Part::Lyrics },
@@ -142,7 +134,6 @@ std::vector<SkinTemplate> build() {
     return t;
 }
 
-// The thumbnail's colour for each part.
 const char* part_color(Part p) {
     switch (p) {
     case Part::Toolbar:  return "58-62-72";
@@ -157,7 +148,7 @@ const char* part_color(Part p) {
     return "60-60-60";
 }
 
-} // namespace
+}
 
 const std::vector<SkinTemplate>& skin_templates() {
     static const std::vector<SkinTemplate> t = build();
@@ -170,8 +161,6 @@ const SkinTemplate* find_skin_template(const std::string& id) {
 }
 
 std::string layout_wizard_script() {
-    // Three cards a row: width CW, thumbnail height PH (2:1), card height CH. $eval groups with
-    // {}: foobar2000's titleformat doesn't nest bare parentheses inside a function's arguments.
     const std::string CW = "{{%_width% - 88} / 3}", PH = "{" + CW + " / 2}", CH = "{" + PH + " + 72}";
     std::string s = R"PUI(
 $drawrect(0,0,%_width%,%_height%,brushcolor-22-24-30 pencolor-null)
@@ -193,13 +182,10 @@ $textbutton(250,100,110,32,Close,,WIZARD:CLOSE)
         const std::string X = "{28 + " + col + " * {" + CW + " + 16}}", Y = "{150 + " + row + " * {" + CH + " + 16}}";
         auto e = [](const std::string& expr) { return "$eval(" + expr + ")"; };
         s += "\n// " + std::string(t.name) + "\n";
-        // The card (lighter while hovered) is the button.
         s += "$button2(" + e(X) + "," + e(Y) + ",0,0," + e(CW) + "," + e(CH) +
              ",'$drawroundrect(0,0," + e(CW) + "," + e(CH) + ",8,8,34-37-45)'" +
              ",'$drawroundrect(0,0," + e(CW) + "," + e(CH) + ",8,8,46-50-62)'" +
              ",SKIN:TEMPLATE:" + t.id + ",'TOOLTIP:" + t.summary + "')\n";
-        // Thumbnail: a screenshot of the layout (res/wizard/<id>.png, built in), drawn over a
-        // sketch of it — the window, then each part, in percent of it — that shows if it's missing.
         const std::string TX = "{" + X + " + 12}", TY = "{" + Y + " + 12}", TW = "{" + CW + " - 24}", TH = "{" + PH + " - 8}";
         s += "$drawrect(" + e(TX) + "," + e(TY) + "," + e(TW) + "," + e(TH) + ",brushcolor-24-25-30 pencolor-70-74-86)\n";
         for (const auto& b : t.thumbnail) {
@@ -236,4 +222,4 @@ std::string install_skin_template(const SkinTemplate& t, const std::string& pare
     return {};
 }
 
-} // namespace pui
+}

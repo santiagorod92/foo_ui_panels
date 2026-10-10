@@ -18,20 +18,15 @@
 #include "../panels/quick_search.h"
 #include "../panels/library_tree.h"
 
-// The engine object: hosted-panel registry, mini mode, theme/asset lookups, shared frames.
-// The rest of SkinEngine lives in skin_hook.cpp (running scripts), skin_actions.cpp (button
-// actions) and skin_files.cpp (loading, hot reload, pvar storage).
-
 namespace pui {
 
-// --- SkinEngine ------------------------------------------------------------
 SkinEngine::PlayEvents::PlayEvents(SkinEngine* e)
     : play_callback_impl_base(flag_on_playback_new_track | flag_on_playback_stop | flag_on_playback_seek |
                               flag_on_playback_pause | flag_on_playback_edited |
                               flag_on_playback_dynamic_info_track | flag_on_volume_change),
       m_e(e) {}
 
-static std::vector<SkinEngine*> g_live; // engines with a window (main thread)
+static std::vector<SkinEngine*> g_live;
 
 const std::vector<SkinEngine*>& SkinEngine::live() { return g_live; }
 
@@ -137,8 +132,6 @@ void SkinEngine::focus_next_panel(const std::string& from, bool back) {
     stops[(size_t)next].host->set_focus_ring(true);
 }
 
-// The slot for panel `name`, created on first use. A name re-used for another panel type
-// replaces the old panel.
 SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, const Placement& p) {
     auto it = m_panels.find(name);
     if (it != m_panels.end() && it->second.kind == kind) return &it->second;
@@ -149,7 +142,7 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     switch (kind) {
     case Kind::TrackDisplay: {
         auto td = std::make_unique<TrackDisplay>(this, name);
-        std::string sc = read_panel_script(name); // real fooAvA per-panel script
+        std::string sc = read_panel_script(name);
         if (!sc.empty()) td->set_script(sc.c_str());
         s.view = std::move(td);
         break;
@@ -171,10 +164,8 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
         const char* dui = map_type(p.type);
         if (!dui) return nullptr;
         s.embedded = ui::create_embedded_ui_element(*m_main, dui);
-        // Nothing installed can host it: keep an empty slot (show/place are no-ops) so the
-        // lookup isn't retried on every paint, and say so once.
         if (!s.embedded)
-            report_once("Panels UI: panel '" + name + "' (" + p.type +
+            report_once("panel '" + name + "' (" + p.type +
                         "): no installed UI element can host it, left empty");
         break;
     }
@@ -191,15 +182,9 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     return &m_panels.emplace(name, std::move(s)).first->second;
 }
 
-// Create/position/show the hosted panel for one $panel() placement, offset by (offsetX,offsetY)
-// — 0,0 for the master canvas (render()'s own loop), or a native panel's own position within
-// the main window when the placement came from that panel's per-panel script instead
-// (host_child_panel below). Shared so both paths get the exact same per-type dispatch.
 void SkinEngine::dispatch_placement(const Placement& p, int offsetX, int offsetY) {
     int x = p.x + offsetX, y = p.y + offsetY;
     const bool child = m_childShown.count(p.name) != 0;
-    // Native panels (no DUI equivalent) get our own view. A panel a per-panel script hosts
-    // (child) is raised above its host panel; top-level ones keep their z-order.
     PanelZ z;
     const Kind kind = panel_kind(p.type, &z);
     const bool top = z == PanelZ::Top || (z == PanelZ::Child && child);
@@ -208,15 +193,6 @@ void SkinEngine::dispatch_placement(const Placement& p, int offsetX, int offsetY
     if (!s) return;
     int w = p.w, h = p.h;
     if (kind == Kind::Spectrum) {
-        // Always our native themed bars. An installed DUI "Spectrum"-named element (e.g.
-        // foo_vis_spectrum_analyzer) was previously preferred when present, but hosting it
-        // without real DUI host services behind it renders a blank window.
-        // A skin can stack two strips: the analyser and, below it, an inverted reflection — any
-        // strip shorter than `spectrum.mirror_below` px (0 = none) takes that role (see
-        // Spectrum::paint). `spectrum.grow` makes each strip taller (a reflection grows downward,
-        // staying adjacent) and `spectrum.raise` lifts them, for skins whose original analyser
-        // drew differently from the placement. Raised to the top: a panel created later (e.g. a
-        // cover overlay) would otherwise sit in front of an existing spectrum and hide it.
         const bool mirror = p.h < m_st.cfg.num("spectrum.mirror_below", 0);
         static_cast<Spectrum*>(s->view.get())->set_mirror(mirror);
         const int grow = m_st.cfg.num("spectrum.grow", 0);
@@ -249,7 +225,7 @@ void SkinEngine::add_script_problem(const std::string& label, const std::string&
     auto& list = m_problems[label];
     if (std::none_of(list.begin(), list.end(), [&](const ScriptProblem& p) { return p.msg == msg; }))
         list.push_back({ msg, serious });
-    report_once("Panels UI: " + label + ": " + msg);
+    report_once("" + label + ": " + msg);
 }
 
 gfx::Rect SkinEngine::draw_problem_marker(gfx::Canvas& cv, int w, int h, const std::string& label, bool bottom) {
@@ -278,7 +254,6 @@ void SkinEngine::repaint_all() {
         if (s.host && s.host->visible()) s.host->invalidate();
 }
 
-// The folder the config's `images` names (relative to the skin), else the skin folder itself.
 static std::string images_dir(const std::string& base, const SkinConfig& cfg) {
     std::string d = cfg.str("images");
     for (auto& c : d) if (c == '\\') c = '/';
@@ -287,8 +262,6 @@ static std::string images_dir(const std::string& base, const SkinConfig& cfg) {
 }
 
 std::string SkinEngine::background_path() const {
-    // `background.image_pvar`: pvar holding the wallpaper file (relative to `images`);
-    // `background.enabled_pvar` (optional): pvar that must be 1 for it to show.
     const std::string onKey = m_st.cfg.str("background.enabled_pvar"), imgKey = m_st.cfg.str("background.image_pvar");
     if (imgKey.empty()) return {};
     if (!onKey.empty()) {
@@ -303,7 +276,6 @@ std::string SkinEngine::background_path() const {
 }
 
 int SkinEngine::background_alpha() const {
-    // `background.alpha_pvar` (0..255), else `background.alpha` (default opaque).
     const std::string key = m_st.cfg.str("background.alpha_pvar");
     auto it = key.empty() ? m_st.pvars.end() : m_st.pvars.find(key);
     return (it != m_st.pvars.end() && !it->second.empty()) ? atoi(it->second.c_str())
@@ -358,9 +330,6 @@ bool SkinEngine::draw_canvas_background(gfx::Canvas& cv, const ui::ViewHost& hos
     std::string path = background_path();
     if (path.empty() || !m_main) return false;
     gfx::Rect prc = m_main->client_rect(), b = host.bounds();
-    // Same rect the canvas script draws its wallpaper into — the client area below
-    // `background.top` px — shifted by this panel's own offset within the window so the visible
-    // slice lines up pixel-for-pixel.
     const int top = m_st.cfg.num("background.top", 0);
     return draw_image(cv, path, -b.x, top - b.y, prc.w, prc.h - top, background_alpha());
 }
@@ -388,7 +357,7 @@ void SkinEngine::store_panel_frame(const std::string& name, gfx::ImagePtr frame,
 gfx::ImagePtr SkinEngine::backdrop_for(const gfx::Rect& r, int& originX, int& originY) const {
     std::lock_guard<std::mutex> lk(m_framesMx);
     for (auto& [name, f] : m_frames) {
-        auto slot = m_panels.find(name); // a hidden panel's last frame is stale
+        auto slot = m_panels.find(name);
         if (slot == m_panels.end() || !slot->second.host || !slot->second.host->visible()) continue;
         const gfx::Rect& b = f.bounds;
         if (!f.img || b.right() <= r.x || b.x >= r.right() || b.bottom() <= r.y || b.y >= r.bottom()) continue;
@@ -404,13 +373,10 @@ void SkinEngine::refresh_bars() {
         if (s.host && (s.kind == Kind::Seekbar || s.kind == Kind::Volume)) s.host->invalidate();
 }
 
-
 bool SkinEngine::theme_color(gfx::Color& out) const {
     const std::string key = m_st.cfg.str("theme.accent_pvar");
     auto it = key.empty() ? m_st.pvars.end() : m_st.pvars.find(key);
     if (it == m_st.pvars.end() || it->second.empty()) {
-        // Skin doesn't expose its own accent pvar — fall back to the Preferences-page global
-        // accent override (reserved pvar "_prefs_accent_color", same "r-g-b" format).
         it = m_st.pvars.find("_prefs_accent_color");
         if (it == m_st.pvars.end() || it->second.empty()) return false;
     }
@@ -418,4 +384,4 @@ bool SkinEngine::theme_color(gfx::Color& out) const {
     return true;
 }
 
-} // namespace pui
+}

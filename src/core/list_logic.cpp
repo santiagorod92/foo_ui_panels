@@ -7,8 +7,6 @@
 
 namespace pui {
 
-// --- scrolling ---------------------------------------------------------------------------------
-
 int clamp_scroll(int scroll, int content_h, int view_h) {
     const int maxs = std::max(0, content_h - view_h);
     return std::max(0, std::min(scroll, maxs));
@@ -36,8 +34,6 @@ double ease_toward(double cur, double target, double rate, double snap, bool& se
     settled = false;
     return cur + d * rate;
 }
-
-// --- keyboard navigation -----------------------------------------------------------------------
 
 int list_nav(int key, int cur, int count, int page) {
     if (count <= 0) return -1;
@@ -94,8 +90,6 @@ int typeahead_find(size_t n, size_t focus, size_t typed_len, const std::function
     return -1;
 }
 
-// --- grouped list ------------------------------------------------------------------------------
-
 void GroupedRows::set_groups(const std::vector<size_t>& sizes) {
     m_start.clear();
     m_count = 0;
@@ -125,7 +119,7 @@ size_t GroupedRows::group_of(int idx) const {
 }
 
 size_t GroupedRows::group_at(int y) const {
-    size_t lo = 0, hi = m_start.size(); // first group whose top is below y, in [lo, hi]
+    size_t lo = 0, hi = m_start.size();
     while (lo < hi) {
         const size_t mid = (lo + hi) / 2;
         if (group_top(mid) <= y) lo = mid + 1; else hi = mid;
@@ -175,8 +169,6 @@ int star_at(const StarStrip& s, int x) {
     if (x < s.x || x >= s.x + s.w || s.w <= 0) return 0;
     return std::clamp((x - s.x) * 5 / s.w + 1, 1, 5);
 }
-
-// --- tree --------------------------------------------------------------------------------------
 
 int TreeRows::add(int parent, std::string label, int kind, int a, int b) {
     TreeItem it;
@@ -239,14 +231,12 @@ int fixed_row_at(int y, int scroll, int row_h, int rows) {
     return r >= 0 && r < rows ? r : -1;
 }
 
-// --- album grid --------------------------------------------------------------------------------
-
 GridLayout album_grid(int client_w, int case_w, int case_h) {
     GridLayout g;
     if (case_w <= 0 || case_h <= 0) case_w = case_h = 1;
     g.cols = std::max(1, std::min(8, (client_w - g.margin * 2 + g.gutter) / (100 + g.gutter)));
     g.cellW = (client_w - g.margin * 2 - (g.cols - 1) * g.gutter) / g.cols;
-    g.cellH = (g.cellW - 10) * case_h / case_w + 10 + 32; // case (or square cover) + label lines
+    g.cellH = (g.cellW - 10) * case_h / case_w + 10 + 32;
     return g;
 }
 
@@ -262,7 +252,7 @@ int GridLayout::item_at(int x, int y, int count) const {
     if (gx < 0 || gy < 0) return -1;
     const int col = gx / (cellW + gutter), row = gy / (cellH + gutter);
     if (col >= cols) return -1;
-    if (gx % (cellW + gutter) > cellW || gy % (cellH + gutter) > cellH) return -1; // a gutter
+    if (gx % (cellW + gutter) > cellW || gy % (cellH + gutter) > cellH) return -1;
     const int idx = row * cols + col;
     return idx < count ? idx : -1;
 }
@@ -274,8 +264,6 @@ int GridLayout::reveal(int scroll, int idx, int view_h) const {
     if (bottom > scroll + view_h) return bottom - view_h + margin;
     return scroll;
 }
-
-// --- cover flow --------------------------------------------------------------------------------
 
 CoverFlow CoverFlow::fit(int w, int h) {
     CoverFlow f;
@@ -306,4 +294,4 @@ bool coverflow_step(float& pos, int target) {
     return false;
 }
 
-} // namespace pui
+}

@@ -1,23 +1,31 @@
 #!/usr/bin/env bash
-# Cross-build foo_ui_panels.dll (Windows x64) on Linux via clang-cl + xwin.
-# Prereqs: clang-cl, lld-link, cmake, ninja, and `cargo install xwin && xwin --accept-license splat --output ~/.xwin`
-#
-# The foobar2000 SDK is NOT part of this repo: it lives next to the checkout, the same sibling
-# layout foo_navidrome uses (and shares, when both are cloned side by side):
-#
-#   <parent>/
-#     foobar2000/{SDK,foobar2000_component_client,shared,...}
-#     pfc/
-#     foo_ui_panels/        <- this repo
-#
-# If it's missing, it is fetched from reupen/foobar2000-sdk-unmodified (the unmodified official
-# SDK mirror). Override the location with SDK_ROOT=/path, the xwin splat with XWIN=/path.
+usage() {
+  cat <<'USAGE'
+Usage: ./build.sh
+Cross-builds foo_ui_panels.dll (Windows) on Linux with clang-cl + lld-link + xwin.
+  WIN_ARCH=x64      (default) -> build/foo_ui_panels.dll
+  WIN_ARCH=arm64ec  Windows on ARM, native -> build-arm64ec/foo_ui_panels.dll
+  SDK_ROOT=/path    parent of foobar2000/{SDK,shared,...} + pfc/ (default: the checkout's parent;
+                    fetched from reupen/foobar2000-sdk-unmodified when missing)
+  XWIN=/path        xwin splat (default ~/.xwin)
+Prereqs: clang-cl, lld-link, cmake, ninja, and
+  cargo install xwin && xwin --accept-license --arch x86_64,aarch64 splat --output ~/.xwin
+USAGE
+}
+case "${1:-}" in -h|--help) usage; exit 0 ;; esac
+
 set -euo pipefail
 cd "$(dirname "$0")"
 
 SDK_ROOT="${SDK_ROOT:-$(cd .. && pwd)}"
 XWIN="${XWIN:-$HOME/.xwin}"
 export XWIN
+WIN_ARCH="${WIN_ARCH:-x64}"
+case "$WIN_ARCH" in
+  x64) BUILD_DIR=build ;;
+  arm64ec) BUILD_DIR=build-arm64ec ;;
+  *) echo "WIN_ARCH must be x64 or arm64ec (got '$WIN_ARCH')" >&2; exit 1 ;;
+esac
 
 if [ ! -d "$SDK_ROOT/foobar2000/SDK" ] || [ ! -d "$SDK_ROOT/pfc" ]; then
   echo "foobar2000 SDK not found under $SDK_ROOT - fetching reupen/foobar2000-sdk-unmodified ..."
@@ -31,8 +39,6 @@ if [ ! -d "$SDK_ROOT/foobar2000/SDK" ] || [ ! -d "$SDK_ROOT/pfc" ]; then
   [ -e "$SDK_ROOT/pfc" ] || mv "$staging/sdk/pfc" "$SDK_ROOT/pfc"
 fi
 
-# --- Fix Windows-SDK case-sensitivity: SDK sources #include caps-cased headers
-# (e.g. <SDKDDKVer.h>) but xwin lowercases filenames. Symlink the cased names. ---
 grep -rhoE '#include <[^>]+>' "$SDK_ROOT/pfc" "$SDK_ROOT/foobar2000/SDK" \
      "$SDK_ROOT/foobar2000/foobar2000_component_client" src 2>/dev/null \
   | sed -E 's/#include <([^>]+)>/\1/' | grep -E '[A-Z]' | sort -u \
@@ -43,9 +49,10 @@ grep -rhoE '#include <[^>]+>' "$SDK_ROOT/pfc" "$SDK_ROOT/foobar2000/SDK" \
         ln -s "$(basename "$real")" "$(dirname "$real")/$base" || true
     done
 
-cmake -S . -B build -G Ninja \
+cmake -S . -B "$BUILD_DIR" -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=cmake/clang-cl-win64.cmake \
   -DCMAKE_BUILD_TYPE=Release \
+  -DWIN_ARCH="$WIN_ARCH" \
   -DSDK_ROOT="$SDK_ROOT"
-ninja -C build
-echo "built: build/foo_ui_panels.dll"
+ninja -C "$BUILD_DIR"
+echo "built: $BUILD_DIR/foo_ui_panels.dll ($WIN_ARCH)"

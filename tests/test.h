@@ -1,5 +1,3 @@
-// Minimal unit-test harness (no third-party dependency): TEST(name) registers a case, CHECK /
-// CHECK_EQ record failures and keep going. Run by `make test` (tests/run.cpp is the main()).
 #pragma once
 #include <cstdio>
 #include <functional>
@@ -24,7 +22,7 @@ inline void fail(const char* file, int line, const std::string& what) {
     std::fprintf(stderr, "  %s:%d: %s\n", file, line, what.c_str());
 }
 
-} // namespace t
+}
 
 #define T_CAT2(a, b) a##b
 #define T_CAT(a, b) T_CAT2(a, b)

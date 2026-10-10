@@ -1,6 +1,3 @@
-// UTF-8 <-> std::filesystem::path, and small whole-file helpers. foobar2000 strings are UTF-8;
-// on Windows a path built from a narrow std::string would be read in the ANSI code page, so
-// always go through fs_path().
 #pragma once
 #include <chrono>
 #include <cstdio>
@@ -16,7 +13,6 @@ constexpr char kPathSep = '\\';
 constexpr char kPathSep = '/';
 #endif
 
-// Milliseconds on a monotonic clock (for "hold until" style timeouts).
 inline unsigned long long tick_ms() {
     return (unsigned long long)std::chrono::duration_cast<std::chrono::milliseconds>(
         std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -40,7 +36,6 @@ inline FILE* fs_open(const std::string& utf8, const char* mode) {
 #endif
 }
 
-// Whole file as bytes; empty string if it can't be read.
 inline std::string read_file(const std::string& utf8) {
     FILE* f = fs_open(utf8, "rb");
     if (!f) return {};
@@ -59,4 +54,4 @@ inline bool write_file(const std::string& utf8, const std::string& data) {
     return ok;
 }
 
-} // namespace pui
+}

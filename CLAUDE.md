@@ -1,12 +1,13 @@
 # foo_ui_panels — reborn (foobar2000 v2)
 
 Ground-up reimplementation of discontinued **Panels UI** (`foo_ui_panels`, ~fb2k 0.9.5.2)
-for **foobar2000 v2 — Windows x64 + macOS (universal)**. Original closed-source — skin compatibility goal, not recompile.
+for **foobar2000 v2 — Windows x64 + ARM64EC, macOS (universal)**. Original closed-source — skin compatibility goal, not recompile.
 See `DESIGN.md` for roadmap/facts, `FORMAT.md` for legacy type→DUI mapping.
 
 ## Working rule: every change is cross-platform
 Port started 2026-09-29 (foo_navidrome's rule, its CLAUDE.md "Working rule"): every feature/fix
-lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundle + `x64/` DLL.
+lands on BOTH platforms, all builds + CI legs green, release zip = `mac/` bundle + `x64/` +
+`arm64ec/` DLLs.
 - Logic (script engine, panels, models, actions) is platform-free C++ in `src/core` /
   `src/panels`, drawing via `gfx::Canvas` and windowing via `ui::View`/`ui::ViewHost`/
   `ui::MainWindow` + the `ui::` service functions. No `HWND`/`HDC`/Cocoa there — only
@@ -66,6 +67,15 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 - Remote: `origin` → github.com/santiagorod92/foo_ui_panels (private). Branch `main`.
 - **Commits: author Santiago Rodriguez <santiagom9992@gmail.com> ONLY — no Co-Authored-By trailer.**
 - **Don't push per-step.** Iterate locally; push only at end of an iteration round or on request.
+- **No code comments**: `src/`, `tests/` (not `tests/golden`, `tests/skins` data), `scripts/`,
+  `tools/`, `cmake/`, `CMakeLists.txt`, `build.sh`, the `Makefile` and `.github/workflows` +
+  `.github/actions` carry no comments (stripped 2026-10-10, same rule as foo_navidrome) — don't add
+  any when writing or changing code: no `//`, `/* */`, `#`, `<!-- -->`, doc blocks or trailing
+  notes, including inside code embedded in heredocs/strings (generated headers, `bash -c`
+  bodies). A non-obvious *why* goes in this CLAUDE.md (gotchas) or the commit message; script
+  help goes in its `usage()` heredoc. String-literal data (skin scripts in raw strings such as
+  `skin_templates.cpp`/`builtin_skin.cpp`, the ini text in `tools/extract_fooava.py`) and the
+  markdown inside `.github/ISSUE_TEMPLATE/` form values aren't comments — leave them.
 - **Every new feature/fix that changes user-visible behaviour updates `README.md` in the same
   change** (*What's implemented*, *Roadmap*, *Installation*, *Works with foo_navidrome*… as
   relevant) — the README is the public doc and must stay in sync with the code.
@@ -113,6 +123,16 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   (test-only titleformat subset) and every canvas op compared with `tests/golden/*.txt`;
   `UPDATE_GOLDEN=1 make test` regenerates. `tests/skins/synthetic` must call every script function
   (a test checks) and lint clean (CI). It's ours — `.gitignore` re-includes it past `skins/`.
+- Logging/diagnostics: `src/core/log.{h,cpp}` (SDK-free, tested) — `pui::log::info/warn/error/note`
+  to `foo_ui_panels.log` in the profile (INFO only with *Verbose logging*, 2 MB rotation to `.1`,
+  session banner, 400-line ring kept for diagnostics even when not written); `log::console(level,…)`
+  also prints "Panels UI: …" to the fb2k console — use it instead of `console::print`.
+  `log::guarded(tag, what, fn)` logs exceptions. `src/core/diagnostics.{h,cpp}` (SDK-free, tested)
+  builds the Copy Diagnostics report (home dir → `~`, user name → `<user>`);
+  `diagnostics_collect.cpp` fills it (`SkinEngine::describe`, installed components) and starts the
+  log (`start_logging()`, from `initquit` and the first `load_skin`, whichever runs first — the UI
+  module initialises before `initquit`). Prefs › Diagnostics tab on both platforms; platform bits
+  are `ui::copy_to_clipboard/os_version/wine_version/home_dir`. Issue forms in `.github/ISSUE_TEMPLATE/`.
 - `src/core/ui_settings.{h,cpp}` — zoom setting + always-on-top (the core's standard config
   object, applied via `config_object_notify`); `main_menu.cpp` — View › Panels UI commands.
 - Zoom: engine/views always work in skin units. Windows hosts convert with `pui::win::zoom()`
@@ -163,8 +183,10 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   to the Panels UI windows, screenshot it, edit pvars in config.sqlite, restart with a DLL).
 
 ## Build (Arch Linux cross-compile)
-- Prereqs: `clang-cl`, `lld-link`, `cmake`, `ninja`; `cargo install xwin && xwin --accept-license splat --output ~/.xwin`.
+- Prereqs: `clang-cl`, `lld-link`, `cmake`, `ninja`; `cargo install xwin && xwin --accept-license --arch x86_64,aarch64 splat --output ~/.xwin`.
 - Build: `./build.sh` (or `make build`) → `build/foo_ui_panels.dll` (PE32+ x64, exports `foobar2000_get_interface`).
+  `WIN_ARCH=arm64ec ./build.sh` (`make build-arm64ec`) → `build-arm64ec/` (Windows on ARM, native).
+  xwin must be splatted `--arch x86_64,aarch64`. No ARM runtime test env (Wine is x86) — CI only builds it.
 - macOS: `./scripts/mac-build.sh` (`make mac-build`) → `build-mac/foo_ui_panels.component`
   (universal; per-arch trees in `build-mac/<arch>`). `make check-portable` = core/panels compile
   with the host clang, no Windows headers.
@@ -204,6 +226,10 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
   `@semantic-release/git`/`changelog` plugins). `release-mac` passes `PUI_VERSION` itself. A PR
   squash-merged as `ci:`/`docs:`/`chore:` skips the release gate: dispatch the workflow by hand
   if earlier release-worthy commits are still unreleased.
+- `CHANGELOG.md` is kept by hand (no plugin can write it: `main` is protected): a release PR adds
+  its version's section (Highlights / New / Changed / Fixed / For contributors, user wording), and
+  after the release the GitHub release notes are replaced with that section (`gh release edit
+  v<ver> --notes-file`) — the generated notes only list commit subjects.
 - Shared CI setup: `.github/actions/fetch-sdk` (SDK sibling layout) and
   `.github/actions/setup-build` (that + clang-cl/xwin).
 - `notify-n8n` job → n8n workflow (infra-foundations `n8n/`) that uploads to foobar2000.org
@@ -213,10 +239,14 @@ lands on BOTH platforms, both builds + CI legs green, release zip = `mac/` bundl
 
 ### Cross-build gotchas (handled in build.sh/toolchain, don't re-discover)
 - Static release CRT only: xwin ships no debug CRT → toolchain forces `/MT` Release.
+- ARM64EC (clang-cl, LLVM 22): links the aarch64 splat (ARM64X CRT) + the **x64** static UCRT
+  (aarch64's has no EC objects); `src/platform/win/arm64ec_compat.h` (force-included) stubs pfc's
+  `__rdtsc`/`__cpuid`; `/U__x86_64__` (clang defines it, MSVC doesn't); `-fno-builtin` (libm
+  intrinsic libcalls get no exit thunk → `undefined symbol: #log10`).
 - Header case-sensitivity: SDK includes cased headers; xwin lowercases — build.sh symlinks cased names.
 - Include order in main.cpp: `WIN32_LEAN_AND_MEAN`+`<winsock2.h>` before `<windows.h>`, then
   `<objbase.h>` (COM `interface` macro) + `<mmsystem.h>` (`timeGetTime`).
-- Link `shared-x64.lib` (fb2k `shared.dll` import lib, at `../foobar2000/shared/`).
+- Link `shared-x64.lib` / `shared-ARM64EC.lib` (fb2k `shared.dll` import libs, at `../foobar2000/shared/`).
 - libPPUI rich controls deferred to Phase 2+ (needs WTL+ATL, not in xwin).
 
 ## Deploy/test (Wine)

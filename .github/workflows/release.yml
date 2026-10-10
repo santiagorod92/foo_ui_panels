@@ -1,30 +1,14 @@
 name: Release
 
-# semantic-release once Build has passed on a push to main: conventional commits -> semver
-# bump, v<version> tag, GitHub release (its notes are the changelog) with
-# foo_ui_panels_<version>.fb2k-component attached (built by scripts/release-build.sh from
-# .releaserc.json's prepareCmd). Then notify-n8n hands the release to the n8n
-# workflow that publishes it on foobar2000.org (same flow as foo_navidrome).
-#
-# main is protected (changes only through pull requests), so nothing here pushes to it: no
-# release commit, no CHANGELOG.md/version write-back — only the tag and the release. Every
-# job that builds stamps the version itself (scripts/release-build.sh / the mac job below).
-
-# Chained to Build (workflow_run) instead of running next to it on the same push: a release is
-# only cut from a commit whose Windows + macOS builds and unit tests passed. workflow_run always
-# runs this file from main with main's permissions, and only Build runs on main pushes trigger
-# it (never pull requests, so never code from a fork).
 on:
   workflow_run:
     workflows: [Build]
     types: [completed]
     branches: [main]
-  # Manual run: the gate below only looks at a push's top commit, so a release-worthy commit
-  # pushed under a docs:/test:/ci: one is only released by dispatching this workflow.
   workflow_dispatch:
 
 permissions:
-  actions: read          # release-package downloads this run's mac artifact with gh
+  actions: read
   contents: write
   issues: write
   pull-requests: write
@@ -33,8 +17,6 @@ concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
-# actions/checkout runs `git init`, which prints a "Using 'master' as the name for the initial
-# branch" hint on every checkout unless init.defaultBranch is set.
 env:
   GIT_CONFIG_COUNT: 1
   GIT_CONFIG_KEY_0: init.defaultBranch
@@ -43,9 +25,6 @@ env:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    # Manual dispatch always runs. Otherwise: only after a successful Build of a push to main,
-    # and not for commit types .releaserc.json treats as "no release" (no point in a full build
-    # to no-op) — judged by the push's top commit only.
     if: >-
       github.event_name == 'workflow_dispatch' || (
       github.event.workflow_run.conclusion == 'success' &&
@@ -62,7 +41,6 @@ jobs:
       !startsWith(github.event.workflow_run.head_commit.message, 'ci:') &&
       !startsWith(github.event.workflow_run.head_commit.message, 'ci(') )
 
-    # Written to $GITHUB_OUTPUT by scripts/release-build.sh; empty when no release was cut.
     outputs:
       released_version: ${{ steps.semantic_release.outputs.released_version }}
 
@@ -70,12 +48,9 @@ jobs:
       - name: Checkout foo_ui_panels
         uses: actions/checkout@v7
         with:
-          # The commit Build just passed on (dispatch: main's head). If main has moved on since,
-          # semantic-release sees the branch is ahead and skips; the newer commit's own Build
-          # run triggers its release.
           ref: ${{ github.event.workflow_run.head_sha || github.sha }}
-          fetch-depth: 0          # semantic-release needs full history + tags
-          persist-credentials: true # it pushes the release tag (tags aren't branch-protected)
+          fetch-depth: 0
+          persist-credentials: true
           path: foo_ui_panels
 
       - name: Set up cross-build
@@ -102,11 +77,6 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: npx semantic-release
 
-  # --------------------------------------------------------------------------
-  # macOS bundle for the release just cut: built natively (universal) from the release tag, with
-  # PUI_VERSION set to the released version (scripts/version.sh prefers it), then merged into the
-  # release's .fb2k-component next to the Windows DLL (mac/ + x64/, foo_navidrome's layout).
-  # --------------------------------------------------------------------------
   release-mac:
     needs: release
     if: needs.release.outputs.released_version != ''
@@ -122,7 +92,7 @@ jobs:
         uses: ./foo_ui_panels/.github/actions/fetch-sdk
 
       - name: Install ninja
-        run: command -v ninja >/dev/null || brew install ninja  # the runner image usually has it
+        run: command -v ninja >/dev/null || brew install ninja
 
       - name: Build (universal)
         working-directory: foo_ui_panels
@@ -130,7 +100,6 @@ jobs:
           PUI_VERSION: ${{ needs.release.outputs.released_version }}
         run: ./scripts/mac-build.sh
 
-      # A zip, not the bare bundle: upload-artifact drops file modes.
       - name: Zip bundle
         working-directory: foo_ui_panels/build-mac
         run: ditto -c -k --keepParent foo_ui_panels.component foo_ui_panels-mac.zip
@@ -154,8 +123,6 @@ jobs:
         with:
           ref: v${{ needs.release.outputs.released_version }}
 
-      # gh, not actions/download-artifact: that action's bundled deps print a Node
-      # "Buffer() is deprecated" warning on every run.
       - name: Download the macOS bundle
         run: gh run download "${{ github.run_id }}" -R "${{ github.repository }}" -n foo_ui_panels-mac
 
@@ -166,22 +133,12 @@ jobs:
           gh release download "v${VERSION}" --pattern "$ASSET" --dir win
           unzip -q "win/$ASSET" -d win/x
           unzip -q foo_ui_panels-mac.zip -d mac
-          python3 scripts/package.py "$ASSET" --dll win/x/x64/foo_ui_panels.dll --mac mac/foo_ui_panels.component
-          gh release upload "v${VERSION}" "$ASSET" --clobber
+          python3 scripts/package.py "$ASSET" --dll win/x/x64/foo_ui_panels.dll \
+            --arm64ec win/x/arm64ec/foo_ui_panels.dll --mac mac/foo_ui_panels.component
+          gh release upload "v${VERSION}" \
+            "$ASSET#foo_ui_panels ${VERSION} (multi-arch: Windows x64 + ARM64, macOS universal; foobar2000 v2)" \
+            --clobber
 
-  # --------------------------------------------------------------------------
-  # Hand the release to the n8n workflow that publishes it to the foobar2000.org
-  # components admin panel (n8n holds the site login and the component id; this
-  # step only sends public release metadata). Runs on the self-hosted homelab
-  # runner (infra-foundations github_runner role) so the webhook resolves on the
-  # LAN, bypassing Cloudflare.
-  #
-  # Opt-in until that side exists: set the repo variable FOOBAR_ORG_PUBLISH=true
-  # once (1) the component exists on foobar2000.org and its n8n workflow is
-  # imported, (2) this repo has a homelab runner registered, and (3) the secrets
-  # N8N_FOOBAR_RELEASE_WEBHOOK_URL / N8N_FOOBAR_RELEASE_WEBHOOK_SECRET are set.
-  # Without it the job is skipped instead of waiting forever for a runner.
-  # --------------------------------------------------------------------------
   notify-n8n:
     needs: [release, release-package]
     if: needs.release.outputs.released_version != '' && vars.FOOBAR_ORG_PUBLISH == 'true'
@@ -197,7 +154,6 @@ jobs:
           set -euo pipefail
           ASSET="foo_ui_panels_${VERSION}.fb2k-component"
 
-          # The homelab runner has no `gh` CLI - fetch release metadata via the API.
           RELEASE_JSON=$(curl -sf \
             -H "Authorization: Bearer ${GH_TOKEN}" \
             -H "Accept: application/vnd.github+json" \
@@ -207,9 +163,6 @@ jobs:
             '.assets[] | select(.name == $name) | .url')
           CHANGELOG=$(printf '%s' "$RELEASE_JSON" | jq -r .body)
 
-          # foobar2000.org's changelog field only takes plain "* item" bullets
-          # (/componentsadmin/help-changelog) - strip semantic-release's markdown
-          # (version header, ### sections, per-item commit links).
           CHANGELOG_CLEAN=$(printf '%s' "$CHANGELOG" | perl -0pe '
             s/^## \[.*?\].*\n//m;
             s/^### /\n/mg;

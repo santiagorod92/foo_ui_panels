@@ -40,7 +40,6 @@ std::string format_lrc_time(double t) {
     return buf;
 }
 
-// LRC (or plain) text -> lines. Lines with no [mm:ss.xx] tag are kept only for plain lyrics.
 bool parse_lyrics(std::string text, std::vector<LyricLine>& lines, bool& synced) {
     if (text.compare(0, 3, "\xEF\xBB\xBF") == 0) text.erase(0, 3);
     lines.clear(); synced = false;
@@ -70,7 +69,6 @@ bool parse_lyrics(std::string text, std::vector<LyricLine>& lines, bool& synced)
         }
         if (meta && ts.empty()) continue;
         std::string body = line.substr(p);
-        // Inline word timestamps <mm:ss.xx> come out of the text, remembered by position.
         std::string clean;
         std::vector<LyricWord> stamps;
         for (size_t i = 0; i < body.size(); ++i) {
@@ -87,7 +85,6 @@ bool parse_lyrics(std::string text, std::vector<LyricLine>& lines, bool& synced)
         size_t lead = 0;
         while (lead < clean.size() && (unsigned char)clean[lead] <= ' ') ++lead;
         for (auto w : stamps) {
-            // Positions into the trimmed text; a stamp before spaces belongs to the next word.
             size_t pos = w.pos > lead ? w.pos - lead : 0;
             while (pos < out.text.size() && out.text[pos] == ' ') ++pos;
             if (pos >= out.text.size()) { out.end = w.t; continue; }
@@ -95,8 +92,6 @@ bool parse_lyrics(std::string text, std::vector<LyricLine>& lines, bool& synced)
             else out.words.push_back({ pos, w.t });
         }
         if (!ts.empty()) {
-            // Word stamps are absolute for the first [tag]; repeats of the line (one per extra
-            // tag) shift them along with it.
             for (double t : ts) {
                 LyricLine c = out;
                 const double shift = t - ts[0] - offset;
@@ -129,8 +124,6 @@ bool parse_lyrics(std::string text, std::vector<std::pair<double, std::string>>&
     return true;
 }
 
-// ---- karaoke -------------------------------------------------------------------------------
-
 KaraokeTiming karaoke_timing(const LyricLine& line, double next_t, bool estimate) {
     KaraokeTiming k;
     if (line.t < 0 || line.text.empty()) return k;
@@ -142,8 +135,6 @@ KaraokeTiming karaoke_timing(const LyricLine& line, double next_t, bool estimate
         return k;
     }
     if (!estimate) return k;
-    // No word stamps: spread the words over the line by length. A line rarely takes longer to
-    // sing than ~70 ms a character; the next line's start caps it (gaps are instrumental).
     std::vector<size_t> starts;
     for (size_t i = 0; i < line.text.size(); ++i)
         if (line.text[i] != ' ' && (i == 0 || line.text[i - 1] == ' ')) starts.push_back(i);
@@ -166,8 +157,6 @@ double karaoke_progress(const KaraokeTiming& k, size_t i, double pos) {
 std::vector<KaraokePiece> layout_karaoke(const std::string& text, const std::vector<LyricWord>& words,
                                          int max_w, const std::function<int(std::string_view)>& measure,
                                          int* rows_out) {
-    // Pieces: maximal runs of non-space text not crossing a segment start. A run of spaces
-    // between them is where a row may break.
     struct Raw { size_t start, len; int seg, w; bool space_before; };
     std::vector<Raw> raw;
     auto seg_at = [&](size_t pos) {
@@ -190,9 +179,8 @@ std::vector<KaraokePiece> layout_karaoke(const std::string& text, const std::vec
         i = j;
     }
     const int spaceW = measure(" ");
-    // Greedy wrap by words (a word = pieces joined without a space).
     std::vector<KaraokePiece> out;
-    std::vector<std::pair<size_t, size_t>> rowRanges; // [first, last) into out
+    std::vector<std::pair<size_t, size_t>> rowRanges;
     std::vector<int> rowW;
     int row = 0, x = 0;
     size_t rowFirst = 0;
@@ -219,8 +207,6 @@ std::vector<KaraokePiece> layout_karaoke(const std::string& text, const std::vec
     if (rows_out) *rows_out = (int)rowRanges.size();
     return out;
 }
-
-// ---- tap-to-sync ---------------------------------------------------------------------------
 
 void LrcSync::begin(const std::vector<std::string>& lines) {
     m_lines.clear();
@@ -268,7 +254,6 @@ std::string LrcSync::to_lrc(const std::string& artist, const std::string& title,
     return o;
 }
 
-
 std::string url_encode(const std::string& s) {
     static const char* hex = "0123456789ABCDEF";
     std::string o;
@@ -286,7 +271,6 @@ static void utf8_append(std::string& o, unsigned cp) {
     else { o += (char)(0xF0 | (cp >> 18)); o += (char)(0x80 | ((cp >> 12) & 63)); o += (char)(0x80 | ((cp >> 6) & 63)); o += (char)(0x80 | (cp & 63)); }
 }
 
-// First non-null string value of `"key":` in the JSON text (also works on the search array).
 bool json_string(const std::string& j, const char* key, std::string& out) {
     std::string k = std::string("\"") + key + "\"";
     size_t from = 0;
@@ -295,7 +279,7 @@ bool json_string(const std::string& j, const char* key, std::string& out) {
         if (p == std::string::npos) return false;
         p += k.size(); from = p;
         while (p < j.size() && (j[p] == ' ' || j[p] == ':' || j[p] == '\n' || j[p] == '\t')) ++p;
-        if (p >= j.size() || j[p] != '"') continue; // null
+        if (p >= j.size() || j[p] != '"') continue;
         ++p; out.clear();
         while (p < j.size() && j[p] != '"') {
             if (j[p] == '\\' && p + 1 < j.size()) {
@@ -305,8 +289,6 @@ bool json_string(const std::string& j, const char* key, std::string& out) {
                 case 't': out += '\t'; break;
                 case 'r': break;
                 case 'u': {
-                    // \uXXXX, a surrogate pair as two of them. Malformed input (truncated, a lone
-                    // or mismatched surrogate) becomes U+FFFD instead of reading past the body.
                     auto hex4 = [&](size_t at, unsigned& v) {
                         if (at + 4 > j.size()) return false;
                         v = 0;
@@ -337,8 +319,6 @@ bool json_string(const std::string& j, const char* key, std::string& out) {
     }
 }
 
-
-// `"key": true` anywhere in the JSON text.
 bool json_true(const std::string& j, const char* key) {
     const std::string k = std::string("\"") + key + "\"";
     for (size_t p = j.find(k); p != std::string::npos; p = j.find(k, p + 1)) {
@@ -349,4 +329,4 @@ bool json_true(const std::string& j, const char* key) {
     return false;
 }
 
-} // namespace pui
+}

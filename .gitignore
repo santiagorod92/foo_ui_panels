@@ -1,6 +1,7 @@
 # build output
 build/
 build-mac/
+build-arm64ec/
 *.dll
 *.lib
 *.pdb

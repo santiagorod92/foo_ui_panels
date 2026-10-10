@@ -7,7 +7,6 @@ namespace pui {
 static const char* kResultsPlaylist = "Search results";
 enum { kTimerDebounce = 1, kDebounceMs = 350 };
 
-// The skin config's `color.quick_search.<role>` / `color.<role>`, else `def`.
 gfx::Color QuickSearch::col(const char* role, gfx::Color def) const {
     return m_engine ? m_engine->color("quick_search", role, def) : def;
 }
@@ -26,7 +25,7 @@ void QuickSearch::on_attached() {
 void QuickSearch::paint(gfx::Canvas& cv) {
     gfx::Rect r{ 0, 0, cv.width(), cv.height() };
     cv.fill_rect(r, col("background", gfx::Color(26, 27, 32)));
-    cv.frame_rect(r, col("frame", gfx::Color(90, 96, 110))); // 1px frame drawn by the panel, edit inset inside it
+    cv.frame_rect(r, col("frame", gfx::Color(90, 96, 110)));
 }
 
 void QuickSearch::on_resize(int w, int h) {
@@ -38,7 +37,7 @@ void QuickSearch::on_timer(int id) {
 }
 
 void QuickSearch::on_visibility(bool shown) {
-    if (shown && m_edit) m_edit->focus(); // fresh open: type right away
+    if (shown && m_edit) m_edit->focus();
 }
 
 void QuickSearch::on_focus() {
@@ -55,8 +54,6 @@ void QuickSearch::on_escape() {
     if (m_engine) m_engine->run_button_action("PVAR:SET:showsr:0");
 }
 
-// Everything the user could be looking for: the Media Library plus whatever sits in playlists
-// (tracks streamed from foo_navidrome only become metadb entries once queued).
 void QuickSearch::run_search() {
     host()->kill_timer(kTimerDebounce);
     std::string query = m_edit ? m_edit->text() : std::string();
@@ -70,7 +67,7 @@ void QuickSearch::run_search() {
     t_size resultsIdx = pfc_infinite;
     for (t_size i = 0, n = pm->get_playlist_count(); i < n; ++i) {
         pfc::string8 nm; pm->playlist_get_name(i, nm);
-        if (nm == kResultsPlaylist) { resultsIdx = i; continue; } // don't search our own results
+        if (nm == kResultsPlaylist) { resultsIdx = i; continue; }
         metadb_handle_list items; pm->playlist_get_all_items(i, items);
         all.add_items(items);
     }
@@ -90,4 +87,4 @@ void QuickSearch::run_search() {
     if (m_engine) m_engine->repaint_all();
 }
 
-} // namespace pui
+}

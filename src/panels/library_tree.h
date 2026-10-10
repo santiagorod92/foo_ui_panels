@@ -1,8 +1,3 @@
-// Native replacement for the legacy "Playlist switcher" panel (fooAvA's "P" button): a tree of
-// the music you can play — Playlists, then Artist > Album — built from the Media Library plus
-// everything foo_navidrome publishes (navidrome_library_api.h). Double-click an album to play
-// it, double-click a playlist to switch to it, right-click for Play / Add to playlist.
-// Self-drawn (no native tree control), so it looks the same on every platform.
 #pragma once
 #include "../ui/view.h"
 #include "../core/list_logic.h"
@@ -31,36 +26,35 @@ public:
 
 private:
     struct Album {
-        std::string name, id; // id: Navidrome album id (remote) — empty for local albums
+        std::string name, id;
         bool remote = false;
         std::vector<metadb_handle_ptr> items;
     };
     struct Artist { std::string name, remote_id; std::vector<Album> albums; };
-    // TreeItem::kind; a/b: playlist index, or artist (+ album) index into m_artists.
     enum Kind { kLoading, kPlaylists, kPlaylist, kArtist, kAlbum };
     struct RemoteAlbum { std::string artist, album, id, artist_id; };
 
     void load_local();
     void start_remote_load();
     void merge_remote(std::vector<RemoteAlbum>&& add);
-    void finish_data();          // sort + refresh
-    void refresh_tree();         // rebuild the items from the data (keeps expansion/selection)
-    int  row_at(int y) const;    // visible row index at view-y, or -1
-    void select_row(int row);    // select + scroll into view
+    void finish_data();
+    void refresh_tree();
+    int  row_at(int y) const;
+    void select_row(int row);
     void clamp_scroll();
     void toggle(int item);
-    void activate(int item);     // double-click / Enter
+    void activate(int item);
     void context_menu(int item, int x, int y);
     void play_album(const Album& al, bool replace);
     void play_artist(const Artist& ar, bool replace);
     Artist& artist_for(const std::string& name);
-    std::string item_key(int item) const; // stable identity across refreshes
+    std::string item_key(int item) const;
 
     SkinEngine* m_engine = nullptr;
     std::vector<Artist> m_artists;
     TreeRows m_tree;
-    int m_sel = -1;    // selected item index
-    int m_scroll = 0;  // px
+    int m_sel = -1;
+    int m_scroll = 0;
     std::set<std::string> m_expandedKeys;
     bool m_loaded = false, m_remote_loading = false;
     std::string m_remote_err;
@@ -69,4 +63,4 @@ private:
     unsigned m_gen = 0;
 };
 
-} // namespace pui
+}

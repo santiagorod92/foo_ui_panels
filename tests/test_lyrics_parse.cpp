@@ -80,7 +80,7 @@ TEST("json_string: surrogate pairs and malformed \\u") {
     CHECK_EQ(out, std::string("\xF0\x9F\x8E\xB5"));
     CHECK(json_string(R"({"k":"\ud83c x"})", "k", out));
     CHECK_EQ(out, std::string("\xEF\xBF\xBD x"));
-    CHECK(json_string(R"({"k":"x\u12")", "k", out)); // truncated escape at the end of the body
+    CHECK(json_string(R"({"k":"x\u12")", "k", out));
     CHECK_EQ(out.substr(0, 4), std::string("x\xEF\xBF\xBD"));
 }
 
@@ -143,32 +143,30 @@ TEST("karaoke_timing: word stamps, estimate, off") {
     CHECK(near(karaoke_progress(k, 0, 10.5), 0.5));
     CHECK(near(karaoke_progress(k, 1, 12.5), 0.5));
     CHECK(near(karaoke_progress(k, 1, 20), 1) && near(karaoke_progress(k, 1, 5), 0));
-    line.end = 12; // the trailing stamp beats the next line
+    line.end = 12;
     CHECK(near(karaoke_timing(line, 14, false).end, 12));
 
-    LyricLine plain; plain.t = 0; plain.text = "aaaa bbbb cccc dddd eeee ffff"; // 29 chars -> 2.03 s
+    LyricLine plain; plain.t = 0; plain.text = "aaaa bbbb cccc dddd eeee ffff";
     CHECK(karaoke_timing(plain, 30, false).words.empty());
     auto e = karaoke_timing(plain, 30, true);
     CHECK(e.words.size() == 6 && near(e.end, 29 * 0.07) && near(e.words[0].t, 0));
-    CHECK(near(karaoke_timing(plain, 1.5, true).end, 1.5)); // capped by the next line
+    CHECK(near(karaoke_timing(plain, 1.5, true).end, 1.5));
     LyricLine untimed; untimed.text = "x";
     CHECK(karaoke_timing(untimed, 5, true).words.empty());
 }
 
 TEST("layout_karaoke: wraps at spaces, splits at segments, centres rows") {
-    auto measure = [](std::string_view s) { return (int)s.size() * 10; }; // 10 px a byte
+    auto measure = [](std::string_view s) { return (int)s.size() * 10; };
     int rows = 0;
-    // "Hello" stamped as Hel|lo, then "big world": 3 + 2 pieces on row 0 fit 100 px? "Hello big" = 90.
     auto p = layout_karaoke("Hello big world", { { 0, 0 }, { 3, 1 }, { 6, 2 }, { 10, 3 } }, 100, measure, &rows);
     CHECK_EQ(rows, 2);
     CHECK_EQ(p.size(), (size_t)4);
     if (p.size() == 4) {
         CHECK(p[0].start == 0 && p[0].len == 3 && p[0].seg == 0 && p[0].row == 0 && p[0].x == 5);
-        CHECK(p[1].start == 3 && p[1].len == 2 && p[1].seg == 1 && p[1].x == 35); // no gap inside a word
-        CHECK(p[2].start == 6 && p[2].seg == 2 && p[2].x == 65);                  // after a space
+        CHECK(p[1].start == 3 && p[1].len == 2 && p[1].seg == 1 && p[1].x == 35);
+        CHECK(p[2].start == 6 && p[2].seg == 2 && p[2].x == 65);
         CHECK(p[3].start == 10 && p[3].row == 1 && p[3].x == 25 && p[3].seg == 3);
     }
-    // Text before the first stamp is segment -1; an over-long word gets its own row.
     p = layout_karaoke("ab cdefghijklmn", { { 3, 0 } }, 50, measure, &rows);
     CHECK_EQ(rows, 2);
     if (p.size() == 2) CHECK(p[0].seg == -1 && p[1].row == 1 && p[1].x == 0);
@@ -180,7 +178,7 @@ TEST("LrcSync: stamps skip blanks, never go back, undo, to_lrc") {
     CHECK(s.active() && s.next() == 1);
     CHECK(s.stamp(5));
     CHECK_EQ(s.next(), (size_t)3);
-    CHECK(s.stamp(4)); // earlier than the previous stamp: clamped
+    CHECK(s.stamp(4));
     CHECK(near(s.time(3), 5));
     CHECK_EQ(s.undo(), 3);
     CHECK(s.next() == 3 && s.time(3) < 0);

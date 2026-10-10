@@ -32,7 +32,6 @@ UINT dt_flags(unsigned f) {
 
 RECT to_rect(const Rect& r) { return RECT{ r.x, r.y, r.x + r.w, r.y + r.h }; }
 
-// --- GDI+ -----------------------------------------------------------------
 ULONG_PTR g_gdipToken = 0;
 bool g_gdipStarted = false;
 std::mutex g_gdipMx;
@@ -44,7 +43,6 @@ void ensure_gdiplus() {
     if (Gdiplus::GdiplusStartup(&g_gdipToken, &in, nullptr) == Gdiplus::Ok) g_gdipStarted = true;
 }
 
-// A decoded file/memory image.
 class GdipImage : public Image {
 public:
     explicit GdipImage(std::unique_ptr<Gdiplus::Bitmap> b) : m_bmp(std::move(b)) {}
@@ -61,8 +59,6 @@ public:
     }
     Gdiplus::Bitmap* bitmap() const { return m_bmp.get(); }
     ~GdipImage() override { if (m_dib) DeleteObject(m_dib); }
-    // The pixels as a premultiplied top-down DIB, made on first use — what a 1:1 draw blends with
-    // GDI's AlphaBlend instead of GDI+ (whose per-draw colour matrix for a constant alpha is slow).
     HBITMAP dib() const {
         std::call_once(m_dibOnce, [this] {
             const UINT w = m_bmp->GetWidth(), h = m_bmp->GetHeight();
@@ -88,10 +84,6 @@ private:
     mutable HBITMAP m_dib = nullptr;
 };
 
-// A copy of canvas pixels (top-down 32bpp DIB). Drawn with StretchDIBits, which reads the bits
-// directly — no DC selection — so a render thread may draw it while the UI thread makes another.
-// Taken from a zoomed canvas it keeps the device pixels (pw x ph) but reports its size in skin
-// units (w x h): callers crop it in skin units, draw_image scales the crop back by `scale`.
 class DibImage : public Image {
 public:
     DibImage(int w, int h, int pw, int ph, double scale)
@@ -121,7 +113,6 @@ private:
     std::vector<uint32_t> m_px;
 };
 
-// --- font cache: the skin re-selects the same handful of fonts every frame ---
 std::map<std::string, HFONT> g_fonts;
 std::mutex g_fontMx;
 
@@ -147,21 +138,21 @@ bool same_face(const wchar_t* got, const std::wstring& want) {
     return !got[i] && i == want.size();
 }
 
-} // namespace
+}
 
 ImagePtr resample_image(const Image& img, int pw, int ph) {
     ensure_gdiplus();
     Gdiplus::Bitmap* src = nullptr;
     if (auto* g = dynamic_cast<const GdipImage*>(&img)) src = g->bitmap();
     if (!src || pw <= 0 || ph <= 0) return nullptr;
-    auto out = std::make_unique<Gdiplus::Bitmap>(pw, ph, PixelFormat32bppPARGB); // GDI+'s fastest to draw
+    auto out = std::make_unique<Gdiplus::Bitmap>(pw, ph, PixelFormat32bppPARGB);
     if (out->GetLastStatus() != Gdiplus::Ok) return nullptr;
     {
         Gdiplus::Graphics g(out.get());
         g.SetInterpolationMode(Gdiplus::InterpolationModeHighQualityBicubic);
         g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
         Gdiplus::ImageAttributes ia;
-        ia.SetWrapMode(Gdiplus::WrapModeTileFlipXY); // no darkened edges from sampling outside
+        ia.SetWrapMode(Gdiplus::WrapModeTileFlipXY);
         g.DrawImage(src, Gdiplus::Rect(0, 0, pw, ph), 0, 0, (INT)src->GetWidth(), (INT)src->GetHeight(),
                     Gdiplus::UnitPixel, &ia);
     }
@@ -191,7 +182,6 @@ bool encode_png_file(const Image& img, const std::string& utf8_path, int maxWidt
     return out.Save(widen(utf8_path).c_str(), &kPng, nullptr) == Gdiplus::Ok;
 }
 
-// --- decoding (gfx::decode_image_*) -----------------------------------------
 ImagePtr decode_image_file(const std::string& utf8_path) {
     ensure_gdiplus();
     auto bmp = std::make_unique<Gdiplus::Bitmap>(widen(utf8_path).c_str());
@@ -209,7 +199,7 @@ ImagePtr decode_image_memory(const void* data, size_t size) {
     if (CreateStreamOnHGlobal(hg, TRUE, &stream) == S_OK) {
         auto b = std::make_unique<Gdiplus::Bitmap>(stream);
         if (b->GetLastStatus() == Gdiplus::Ok) out = std::make_shared<GdipImage>(std::move(b));
-        stream->Release(); // owns hg now (TRUE above), releases it too
+        stream->Release();
     } else {
         GlobalFree(hg);
     }
@@ -227,12 +217,7 @@ void gdi_fonts_shutdown() {
     g_fonts.clear();
 }
 
-// --- GdiCanvas -----------------------------------------------------------------
 GdiCanvas::GdiCanvas(HDC dc, int w, int h, double scale) : m_dc(dc) {
-    // The skin's design size, same as the macOS canvas: foobar2000 is DPI-aware, so at 150%
-    // scaling LOGPIXELSY is 144 — point-sized fonts grew 1.5x while every coordinate the skin
-    // lays them out in stayed in 96-dpi pixels, and text overflowed its boxes. Display scaling
-    // is the zoom's job instead (the world transform below), which scales layout and text alike.
     m_dpi = 96;
     m_scale = scale > 0.01 ? scale : 1.0;
     m_lw = (int)std::ceil(w / m_scale);
@@ -271,7 +256,7 @@ void GdiCanvas::fill_rect_alpha(const Rect& r, Color c, int alpha) {
     HBITMAP bmp = CreateDIBSection(md, &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
     if (bits) { unsigned char* px = (unsigned char*)bits; px[0] = c.b; px[1] = c.g; px[2] = c.r; px[3] = 255; }
     HGDIOBJ ob = SelectObject(md, bmp);
-    BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)alpha, 0 }; // const alpha, no per-pixel
+    BLENDFUNCTION bf = { AC_SRC_OVER, 0, (BYTE)alpha, 0 };
     AlphaBlend(m_dc, r.x, r.y, r.w, r.h, md, 0, 0, 1, 1, bf);
     SelectObject(md, ob); DeleteObject(bmp); DeleteDC(md);
 }
@@ -323,8 +308,6 @@ bool GdiCanvas::set_font(const FontSpec& spec) {
     HGDIOBJ old = SelectObject(m_dc, f);
     if (!m_oldFont) m_oldFont = old;
     m_font = f;
-    // GDI silently swaps in an arbitrary default for a face it can't find: report whether the
-    // DC actually got the requested one.
     wchar_t got[LF_FACESIZE]; got[0] = 0;
     GetTextFaceW(m_dc, LF_FACESIZE, got);
     return same_face(got, face);
@@ -370,7 +353,6 @@ bool GdiCanvas::text_coverage(std::string_view text, const Rect& r, unsigned fla
     std::wstring w = widen(text);
     DrawTextW(md, w.c_str(), (int)w.size(), &tr, dt_flags(flags));
     SelectObject(md, of);
-    // Coverage = max channel (ClearType renders coloured fringes).
     const uint32_t* px = (const uint32_t*)mbits;
     mask.assign((size_t)W * H, 0);
     for (size_t i = 0; i < mask.size(); ++i) {
@@ -408,7 +390,6 @@ void GdiCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcI
     Gdiplus::Bitmap* bmp = nullptr;
     if (auto* g = dynamic_cast<const GdipImage*>(&img)) {
         bmp = g->bitmap();
-        // Drawn 1:1 in device pixels, unflipped, whole: GDI's AlphaBlend (see GdipImage::dib).
         const int iw = img.width(), ih = img.height();
         const long dx = std::lround(dst.x * m_scale), dy = std::lround(dst.y * m_scale);
         if (!flip_v && src.x == 0 && src.y == 0 && (int)src.w == iw && (int)src.h == ih &&
@@ -429,13 +410,9 @@ void GdiCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcI
             }
         }
     } else if (auto* d = dynamic_cast<const DibImage*>(&img)) {
-        // Snapshots are cropped in skin units but hold device pixels: scale the crop.
         const double ds = d->scale();
         src = RectF{ (float)(src.x * ds), (float)(src.y * ds), (float)(src.w * ds), (float)(src.h * ds) };
-        // Canvas snapshots: plain copies go straight through GDI.
         if (alpha >= 255 && !flip_v) {
-            // Point the DIB header at the source rows only (ySrc = 0 over the full header
-            // height sidesteps StretchDIBits' bottom-up/top-down ySrc ambiguity).
             int sy = std::clamp((int)std::lround(src.y), 0, d->pixel_height());
             int sh = std::min((int)std::lround(src.h), d->pixel_height() - sy);
             if (sh <= 0) return;
@@ -454,8 +431,6 @@ void GdiCanvas::draw_image(const Image& img, const RectF& dst, const RectF& srcI
     }
     if (!bmp) return;
 
-    // Whether GDI+ picks up the DC's world transform differs between implementations (Wine's
-    // does): draw with an identity DC transform and give GDI+ the zoom itself.
     if (m_scale != 1.0) ModifyWorldTransform(m_dc, nullptr, MWT_IDENTITY);
     draw_image_gdip(*bmp, dst, src, alpha, flip_v, interp);
     if (m_scale != 1.0) {
@@ -475,7 +450,7 @@ void GdiCanvas::draw_image_gdip(Gdiplus::Bitmap& bmpRef, const RectF& dst, const
     } else {
         g.SetInterpolationMode(Gdiplus::InterpolationModeBilinear);
         g.SetPixelOffsetMode(Gdiplus::PixelOffsetModeHalf);
-        ia.SetWrapMode(Gdiplus::WrapModeTileFlipXY); // no edge bleed between adjacent strips
+        ia.SetWrapMode(Gdiplus::WrapModeTileFlipXY);
         pia = &ia;
     }
     if (alpha < 255) {
@@ -484,8 +459,6 @@ void GdiCanvas::draw_image_gdip(Gdiplus::Bitmap& bmpRef, const RectF& dst, const
         cm.m[3][3] = alpha / 255.0f;
         ia.SetColorMatrix(&cm); pia = &ia;
     }
-    // Destination parallelogram: top-left, top-right, bottom-left of the source mapped to dst
-    // (swapped vertically for flip_v, so the cached bitmap is never mutated).
     Gdiplus::PointF p[3];
     if (flip_v) {
         p[0] = Gdiplus::PointF(dst.x, dst.y + dst.h);
@@ -501,8 +474,6 @@ void GdiCanvas::draw_image_gdip(Gdiplus::Bitmap& bmpRef, const RectF& dst, const
 
 ImagePtr GdiCanvas::snapshot(const Rect& r) {
     if (r.empty()) return nullptr;
-    // Copy the DEVICE pixels under r (no resampling at any zoom): the source DC's transform
-    // would otherwise squeeze the copy down to skin units.
     const int px = (int)std::lround(r.x * m_scale), py = (int)std::lround(r.y * m_scale);
     const int pw = std::max(1, (int)std::lround(r.w * m_scale)), ph = std::max(1, (int)std::lround(r.h * m_scale));
     auto img = std::make_shared<DibImage>(r.w, r.h, pw, ph, m_scale);
@@ -524,4 +495,4 @@ ImagePtr GdiCanvas::snapshot(const Rect& r) {
     return img;
 }
 
-} // namespace pui::gfx
+}

@@ -17,32 +17,26 @@ namespace pui {
 namespace {
 using Clock = std::chrono::steady_clock;
 
-// Decoded images by key (a file path as the skin wrote it — wildcards unresolved — or an
-// in-memory key). Main thread only. Bounded: least-recently-used images are dropped once the
-// decoded total passes kBudget (a large album grid would otherwise keep every cover it ever
-// showed). A miss is cached too, but only until `retry`: art added later (a new folder.jpg, a
-// tag edit) shows up without a restart, and a broken path isn't re-probed on every paint.
 struct Entry {
     gfx::ImagePtr img;
     size_t bytes = 0;
     uint64_t used = 0;
-    Clock::time_point retry; // misses only
+    Clock::time_point retry;
 };
 std::unordered_map<std::string, Entry> g_cache;
 size_t g_bytes = 0;
 uint64_t g_clock = 0;
-constexpr size_t kBudget = 256u << 20;            // decoded bytes kept
-constexpr auto kMissTtl = std::chrono::seconds(30); // file / in-memory misses
-constexpr auto kArtMissTtl = std::chrono::minutes(5); // album-art pipeline misses (may be remote)
-constexpr auto kNowPlayingRetry = std::chrono::seconds(1); // waiting on the now-playing loader
+constexpr size_t kBudget = 256u << 20;
+constexpr auto kMissTtl = std::chrono::seconds(30);
+constexpr auto kArtMissTtl = std::chrono::minutes(5);
+constexpr auto kNowPlayingRetry = std::chrono::seconds(1);
 constexpr int kNowPlayingRetries = 5;
-std::map<std::string, int> g_retryCount; // now-playing art misses so far, per art key
+std::map<std::string, int> g_retryCount;
 
 size_t image_bytes(const gfx::ImagePtr& img) {
     return img ? (size_t)img->width() * (size_t)img->height() * 4 : 0;
 }
 
-// Hit (or a miss not yet due for a retry) -> true, with `out` set. Expired misses are dropped.
 bool cache_get(const std::string& key, gfx::ImagePtr& out) {
     auto it = g_cache.find(key);
     if (it == g_cache.end()) return false;
@@ -60,8 +54,6 @@ void cache_drop(const std::string& key) {
     g_cache.erase(it);
 }
 
-// Over budget: drop the least recently used images down to 3/4 of it in one pass, so a grid
-// scrolling through new covers doesn't pay a full scan per insert.
 void cache_evict() {
     if (g_bytes <= kBudget) return;
     std::vector<std::pair<uint64_t, const std::string*>> order;
@@ -70,7 +62,7 @@ void cache_evict() {
     std::sort(order.begin(), order.end());
     std::vector<std::string> victims;
     size_t bytes = g_bytes;
-    for (size_t i = 0; i + 1 < order.size() && bytes > kBudget / 4 * 3; ++i) { // keep the newest
+    for (size_t i = 0; i + 1 < order.size() && bytes > kBudget / 4 * 3; ++i) {
         bytes -= g_cache[*order[i].second].bytes;
         victims.push_back(*order[i].second);
     }
@@ -92,9 +84,6 @@ gfx::ImagePtr cache_put(const std::string& key, gfx::ImagePtr img, Clock::durati
 
 std::function<void()> g_onArtReady;
 
-// Art the centralized now-playing loader delivered, tied to the track it belongs to. Its
-// current() lags a track change (still returns the PREVIOUS track's art until the async load
-// finishes), so it must never be read blind — see resolve_cover.
 std::string g_npPath;
 album_art_data_ptr g_npData;
 bool g_npRegistered = false;
@@ -107,7 +96,6 @@ struct NowPlayingArtNotify : now_playing_album_art_notify {
         if (!data.is_valid() || !playback_control::get()->get_now_playing(np)) return;
         g_npPath = np->get_path();
         g_npData = data;
-        // Replace whatever this track cached before (a stale or "no art yet" entry).
         std::string key = art_key(np);
         g_retryCount.erase(key);
         if (cache_put(key, gfx::decode_image_memory(data->data(), data->size()), kArtMissTtl) && g_onArtReady)
@@ -116,10 +104,6 @@ struct NowPlayingArtNotify : now_playing_album_art_notify {
 };
 NowPlayingArtNotify g_npNotify;
 
-// Album-art queries run off the UI thread: an extractor can be slow (a large embedded tag) or
-// remote (foo_navidrome fetches over HTTP), and querying from paint froze the whole window.
-// Few at a time — a grid asks for every visible cover at once — and the rest are asked again
-// by the repaint each finished one triggers.
 std::set<std::string> g_artPending;
 int g_artInflight = 0;
 constexpr int kMaxArtInflight = 4;
@@ -138,7 +122,6 @@ void request_art(const std::string& key, const metadb_handle_ptr& track, bool no
     fb2k::splitTask([key, track, nowPlaying]() {
         album_art_data_ptr data;
         try {
-            // Signalled when foobar2000 quits (which waits for splitTask work).
             abort_callback& abort = fb2k::mainAborter();
             pfc::list_t<GUID> ids; ids.add_item(album_art_ids::cover_front);
             auto extractor = album_art_manager_v2::get()->open(pfc::list_single_ref_t(track), ids, abort);
@@ -149,21 +132,17 @@ void request_art(const std::string& key, const metadb_handle_ptr& track, bool no
             --g_artInflight;
             g_artPending.erase(key);
             gfx::ImagePtr cur;
-            if (cache_get(key, cur) && cur) return; // the now-playing loader got there first
+            if (cache_get(key, cur) && cur) return;
             gfx::ImagePtr img = data.is_valid() ? gfx::decode_image_memory(data->data(), data->size()) : nullptr;
-            // A miss for the now-playing track might just mean the now_playing loader hasn't
-            // finished its async load yet: retry a few times, a second apart, before backing off
-            // like any other miss. (Its notification replaces the entry as soon as it lands.)
             Clock::duration ttl = kArtMissTtl;
             if (img) g_retryCount.erase(key);
             else if (nowPlaying && ++g_retryCount[key] < kNowPlayingRetries) ttl = kNowPlayingRetry;
             cache_put(key, img, ttl);
-            if (g_onArtReady) g_onArtReady(); // a waiting caller (or the retry) repaints
+            if (g_onArtReady) g_onArtReady();
         });
     });
 }
 
-// Case-insensitive '*'/'?' match (ASCII folding, like the Windows file APIs).
 bool wild_match(const char* pat, const char* s) {
     auto low = [](char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; };
     const char *star = nullptr, *resume = nullptr;
@@ -177,9 +156,8 @@ bool wild_match(const char* pat, const char* s) {
     return !*pat;
 }
 
-} // namespace
+}
 
-// Resolve a wildcard in the file-name part (e.g. C:/Album/*folder*.jpg -> C:/Album/Folder.jpg).
 std::string resolve_wildcard(const std::string& p) {
     if (p.find('*') == std::string::npos && p.find('?') == std::string::npos) return p;
     std::string q = p; for (auto& c : q) if (c == '\\') c = '/';
@@ -198,8 +176,6 @@ std::string resolve_wildcard(const std::string& p) {
 
 namespace {
 
-// Keyed by the path as given, so a cached wildcard path ("<track dir>/*folder*.*", in every
-// panel script) costs a lookup per paint instead of a directory scan.
 gfx::ImagePtr load(const std::string& rawpath) {
     ensure_started();
     gfx::ImagePtr img;
@@ -213,8 +189,6 @@ gfx::ImagePtr load(const std::string& rawpath) {
     return cache_put(rawpath, img, kMissTtl);
 }
 
-// Decode+cache an in-memory image (album art bytes fetched via album_art_manager_v2, which has
-// no on-disk path to key a normal load() call). `key` must be a stable, collision-free cache key.
 gfx::ImagePtr load_from_memory(const std::string& key, const void* data, size_t size) {
     gfx::ImagePtr img;
     if (cache_get(key, img)) return img;
@@ -222,11 +196,6 @@ gfx::ImagePtr load_from_memory(const std::string& key, const void* data, size_t 
     return cache_put(key, img, kMissTtl);
 }
 
-// Scaled copies of big images drawn at another size than their own, at the device size they're
-// drawn at: a skin repaints its wallpaper and CD case every frame, and high-quality scaling of a
-// ~1000 px image each time cost far more than the rest of the frame. Keyed by the source image
-// (kept alive only by the decoded cache: a dropped or replaced source drops its copies) and the
-// size; LRU-bounded like the decoded cache.
 struct ScaledKey {
     const gfx::Image* src; int w, h;
     bool operator<(const ScaledKey& o) const { return std::tie(src, w, h) < std::tie(o.src, o.w, o.h); }
@@ -235,21 +204,21 @@ struct Scaled { std::weak_ptr<gfx::Image> src; gfx::ImagePtr img; uint64_t used 
 std::map<ScaledKey, Scaled> g_scaled;
 size_t g_scaledBytes = 0;
 constexpr size_t kScaledBudget = 96u << 20;
-constexpr int kScaledMinArea = 128 * 128; // smaller images scale cheaply enough
+constexpr int kScaledMinArea = 128 * 128;
 
 gfx::ImagePtr scaled_copy(const gfx::ImagePtr& img, int pw, int ph) {
     const ScaledKey key{ img.get(), pw, ph };
     auto it = g_scaled.find(key);
     if (it != g_scaled.end()) {
         if (it->second.src.lock() == img) { it->second.used = ++g_clock; return it->second.img; }
-        g_scaledBytes -= image_bytes(it->second.img); // an old image at a reused address
+        g_scaledBytes -= image_bytes(it->second.img);
         g_scaled.erase(it);
     }
     gfx::ImagePtr out = gfx::resample_image(*img, pw, ph);
     if (!out) return nullptr;
     g_scaledBytes += image_bytes(out);
     g_scaled[key] = Scaled{ img, out, ++g_clock };
-    while (g_scaledBytes > kScaledBudget && g_scaled.size() > 1) { // drop the least recently used
+    while (g_scaledBytes > kScaledBudget && g_scaled.size() > 1) {
         auto victim = g_scaled.begin();
         for (auto i = g_scaled.begin(); i != g_scaled.end(); ++i) if (i->second.used < victim->second.used) victim = i;
         g_scaledBytes -= image_bytes(victim->second.img);
@@ -262,7 +231,6 @@ void blit(gfx::Canvas& cv, const gfx::ImagePtr& img, int x, int y, int w, int h,
     if (w <= 0) w = img->width();
     if (h <= 0) h = img->height();
     const gfx::RectF dst{ (float)x, (float)y, (float)w, (float)h };
-    // RotateFlipType 6 == Rotate180FlipX == vertical mirror (used for reflections).
     const bool flip = rotateflip == 6;
     const double s = cv.device_scale();
     const int pw = (int)std::lround(w * s), ph = (int)std::lround(h * s);
@@ -275,8 +243,6 @@ void blit(gfx::Canvas& cv, const gfx::ImagePtr& img, int x, int y, int w, int h,
     cv.draw_image(*img, dst, gfx::RectF{}, alpha, flip);
 }
 
-// Front cover for `track`: `path` on disk if it loads, else the album-art pipeline. The
-// pipeline answers asynchronously: nullptr now, and the art-ready callback repaints once it's in.
 gfx::ImagePtr resolve_cover(const std::string& path, const metadb_handle_ptr& track) {
     if (gfx::ImagePtr b = load(path)) return b;
     if (!track.is_valid()) return nullptr;
@@ -284,12 +250,6 @@ gfx::ImagePtr resolve_cover(const std::string& path, const metadb_handle_ptr& tr
     gfx::ImagePtr img;
     if (cache_get(key, img)) return img;
 
-    // The now-playing art loader is fed live by the active decoder (see SDK album_art.h:
-    // "since various components require the album art of the now-playing track, a
-    // centralized loader has been provided"), so it can supply art for streaming sources
-    // (e.g. foo_navidrome) whose extractor can only answer while actually decoding, not on
-    // a cold out-of-band per-file query. Only valid when `track` really is the playing item,
-    // and only once the loader's notification (NowPlayingArtNotify) has tied its art to it.
     metadb_handle_ptr np;
     bool is_now_playing = playback_control::get()->get_now_playing(np) && track == np;
     if (is_now_playing && g_npPath == track->get_path() && g_npData.is_valid())
@@ -297,7 +257,7 @@ gfx::ImagePtr resolve_cover(const std::string& path, const metadb_handle_ptr& tr
     request_art(key, track, is_now_playing);
     return nullptr;
 }
-} // namespace
+}
 
 void set_art_ready_callback(std::function<void()> cb) { g_onArtReady = std::move(cb); }
 
@@ -355,14 +315,14 @@ void draw_image_strips(gfx::Canvas& cv, const gfx::Image& img, float x0, float x
     if (x1 - x0 < 1.0f) return;
     const float iw = (float)img.width(), ih = (float)img.height();
     const float width = x1 - x0;
-    if (!reflection && std::abs(h0 - h1) < 0.5f) { // face-on: one plain draw, no strips
+    if (!reflection && std::abs(h0 - h1) < 0.5f) {
         cv.draw_image(img, gfx::RectF{ x0, yMid - h0 * 0.5f, width, h0 }, gfx::RectF{ 0, 0, iw, ih },
                       alpha, false, gfx::Interp::Bilinear);
         return;
     }
     const int n = std::max(1, (int)(width / 3.0f));
     const float dx = width / n;
-    const float refl = 0.45f; // portion of the cover mirrored below it
+    const float refl = 0.45f;
     for (int i = 0; i < n; ++i) {
         float t0 = (float)i / n, t1 = (float)(i + 1) / n;
         float h = h0 + (h1 - h0) * ((t0 + t1) * 0.5f);
@@ -406,7 +366,7 @@ bool file_exists(const std::string& path) {
 }
 
 void images_shutdown() {
-    g_shutdown = true; // queries still in flight drop their result
+    g_shutdown = true;
     g_onArtReady = nullptr;
     if (g_npRegistered) { now_playing_album_art_notify_manager::get()->remove(&g_npNotify); g_npRegistered = false; }
     g_npData.release();
@@ -424,4 +384,4 @@ bool draw_image_region(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int
     return true;
 }
 
-} // namespace pui
+}

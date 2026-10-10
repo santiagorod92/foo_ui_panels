@@ -1,7 +1,5 @@
-// Component registration shared by every platform build.
 #include "../fb2k.h"
 
-// PUI_VERSION: written by scripts/version.sh into the build dir (see CMakeLists.txt).
 #if __has_include("version_generated.h")
 #include "version_generated.h"
 #endif

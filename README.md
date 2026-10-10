@@ -1,6 +1,7 @@
 # foo_ui_panels — Panels UI (reborn)
 
-A [foobar2000](https://www.foobar2000.org/) v2 (64-bit) user interface component that brings
+A [foobar2000](https://www.foobar2000.org/) v2 user interface component (Windows x64 and ARM64,
+macOS) that brings
 back **Panels UI**: the scriptable, skinnable interface where the whole player window is a
 titleformat-driven canvas and panels, buttons, images and text are placed wherever the skin
 wants them.
@@ -36,8 +37,16 @@ original code is used, the skin format was reverse-engineered from fooAvA's conf
 
 ## Installation
 
-One `.fb2k-component` carries both builds: Windows (foobar2000 v2, 64-bit) and macOS
-(universal, macOS 11+).
+One multi-arch `.fb2k-component` carries every build; foobar2000 loads the one matching it:
+
+| Platform | Binary in the component |
+|---|---|
+| Windows x64 | `x64/foo_ui_panels.dll` |
+| Windows on ARM (ARM64) | `arm64ec/foo_ui_panels.dll` — native ARM64EC, what foobar2000 v2 for ARM runs as (not emulated x64) |
+| macOS 11+ (Apple silicon and Intel) | `mac/foo_ui_panels.component` — universal (arm64 + x86_64) |
+| Linux | runs under Wine with the Windows x64 build |
+
+foobar2000 v2 is 64-bit only, so there's no 32-bit (x86) build.
 
 1. Download `foo_ui_panels_<version>.fb2k-component` from the [Releases](../../releases) page.
 2. Double-click it (or drag it onto foobar2000) and restart foobar2000.
@@ -131,6 +140,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 
 ## What's implemented
 
+- A log (`foo_ui_panels.log`, verbose on request) and **Copy Diagnostics** in Preferences, for
+  bug reports — see [Reporting a problem](#reporting-a-problem).
 - Full foobar2000 UI replacement on Windows (`user_interface` service, same slot as the Default
   UI or Columns UI); a full-window layout element on macOS.
 - The Panels UI script engine: titleformat-driven canvas with `$panel`, `$button`/`$button2`,
@@ -229,6 +240,27 @@ own):
 - **Playlist switcher panel**: browse Navidrome artists and albums and play them straight from
   the skin.
 
+## Reporting a problem
+
+Bugs go to [GitHub issues](../../issues/new/choose) — the bug report form walks you through it.
+The component keeps a log and can put everything a report needs on the clipboard:
+
+1. **Preferences › Display › Panels UI (reborn) › Diagnostics**: tick **Verbose logging (for bug
+   reports)** and click **Apply** (macOS applies it right away).
+2. Make the problem happen again.
+3. Click **Copy Diagnostics** and paste it into the issue. It has the component, foobar2000 and
+   OS versions (and the build: x64, ARM64EC or macOS), the skin folder and main script, its
+   panels, the script problems the engine found, the installed components and the recent log.
+   Your user name is replaced in paths and your persistent variables' values are left out; read
+   it before posting anyway.
+
+**Report an Issue…** on the same tab opens the bug report form. If foobar2000 crashed or the
+player window doesn't come up, **Open Log Folder** (**Show Log in Finder** on macOS) shows
+`foo_ui_panels.log` in your foobar2000 profile folder — attach that file instead. Without verbose
+logging the log only keeps warnings and errors (plus one line per session with the versions); it
+rotates at 2 MB to `foo_ui_panels.log.1`. Warnings and errors also show in **View › Console** as
+`Panels UI:` lines.
+
 ## Roadmap
 
 - More Panels UI skins from the 0.9.x days (only fooAvA has been tried so far — see Contributing).
@@ -243,7 +275,8 @@ wrong, a function isn't supported, or a panel is missing, just
 [open an issue](../../issues) — it will be looked into. Helpful details:
 
 - the skin's name and where to get it (link to the original download);
-- your OS (Windows / macOS), foobar2000 version and component version;
+- the output of **Copy Diagnostics** (see [Reporting a problem](#reporting-a-problem)): versions,
+  the skin's panels and the script problems the engine found;
 - a screenshot of what you see (and, if you can, of how it should look);
 - the script of the affected panel (right-click › **Edit code…**) or the titleformat function
   that fails;
@@ -279,6 +312,8 @@ things smooth:
   drive the automated releases (see [Releases](#releases)).
 - Update this README when you add or change a feature (e.g. *What's implemented*, *Roadmap*),
   so the docs stay in sync with the code.
+- No comments in the code (sources, scripts, CMake, Makefile, workflows): name things so they
+  read on their own, and put the *why* of anything surprising in the commit message.
 
 Not sure where to start, or want to discuss an idea first? Open an issue.
 
@@ -296,8 +331,9 @@ reference, this is what the project is developed and tested with today:
 | **foobar2000** | v2.26 for Windows (x64, under Wine 11 Staging) and v2 for Mac (latest) | foobar2000 v2.x |
 | **foobar2000 SDK** | `SDK-2026-09-16` from [reupen/foobar2000-sdk-unmodified](https://github.com/reupen/foobar2000-sdk-unmodified) (`build.sh` and CI fetch the latest tag) | a foobar2000 v2 SDK; only `SDK-2026-09-16` and newer are tested |
 | **C++ standard** | C++20 | |
-| **Windows compiler** | clang-cl / lld-link (LLVM 22) + CMake 4 + Ninja | LLVM **19+** (the MSVC STL headers reject older Clang), CMake 3.21+; Visual Studio/MSVC isn't used or tested |
-| **Windows SDK / CRT** | Windows SDK 10.0.26100 + MSVC CRT, fetched by [xwin](https://github.com/Jake-Shadle/xwin) | |
+| **Windows compiler** | clang-cl / lld-link (LLVM 22) + CMake 4 + Ninja | LLVM **19+** for x64 (the MSVC STL headers reject older Clang), **22** for ARM64EC; CMake 3.21+; Visual Studio/MSVC isn't used or tested |
+| **Windows SDK / CRT** | Windows SDK 10.0.26100 + MSVC CRT, fetched by [xwin](https://github.com/Jake-Shadle/xwin) (x86_64 + aarch64) | |
+| **Windows targets** | x64 and ARM64EC, both cross-compiled with the same clang-cl toolchain | ARM64EC needs a recent LLVM: built and tested with 22 (CI pins it) |
 | **macOS toolchain** | Linux cross-build with `clang` + `ld64.lld` against the macOS 14.5 SDK (from Xcode 15.4); CI uses the `macos-latest` runner's Xcode | Xcode command line tools + CMake + Ninja on a Mac; deployment target **macOS 11.0**, universal (arm64 + x86_64) |
 | **Runtime testing** | Wine (fast loop), a Windows 11 VM ([dockur/windows](https://github.com/dockur/windows)) and a macOS 14 Sonoma VM ([dockur/macos](https://github.com/dockur/macos)) | any Windows 10/11 or macOS 11+ machine with foobar2000 v2 |
 | **Build tooling** | GNU Make, bash, git | |
@@ -313,7 +349,7 @@ nor foobar2000.
 
 ```sh
 sudo pacman -S --needed clang lld llvm cmake ninja          # once (Arch shown)
-cargo install xwin && xwin --accept-license splat --output ~/.xwin
+cargo install xwin && xwin --accept-license --arch x86_64,aarch64 splat --output ~/.xwin
 make test        # unit tests + golden render tests (host compiler, ASan/UBSan)
 make run         # build.sh (fetches the SDK if missing), install into Wine foobar2000, relaunch
 ```
@@ -404,10 +440,17 @@ from [xwin](https://github.com/Jake-Shadle/xwin) — no Visual Studio needed.
 ```sh
 # prerequisites (Arch shown): clang, lld, llvm, cmake, ninja, and xwin
 sudo pacman -S --needed clang lld llvm cmake ninja
-cargo install xwin && xwin --accept-license splat --output ~/.xwin
+cargo install xwin && xwin --accept-license --arch x86_64,aarch64 splat --output ~/.xwin
 
-./build.sh          # -> build/foo_ui_panels.dll
+./build.sh                    # -> build/foo_ui_panels.dll          (x64)
+WIN_ARCH=arm64ec ./build.sh   # -> build-arm64ec/foo_ui_panels.dll  (Windows on ARM; make build-arm64ec)
 ```
+
+The ARM64 build is ARM64EC, the flavour foobar2000 v2 for Windows on ARM itself is built as, so
+it runs natively there instead of through x64 emulation. clang-cl gets there with a few
+adjustments, all in `CMakeLists.txt` and `cmake/clang-cl-win64.cmake` (the why is in `CLAUDE.md`): the
+SDK's x86-only intrinsics are stubbed, and the static UCRT is linked in as x64 code (an ARM64EC
+image may mix in x64 code; xwin's ARM64 UCRT has no ARM64EC objects).
 
 The foobar2000 SDK is **not** vendored. It's expected next to the checkout (the same layout
 [foo_navidrome](https://github.com/santiagorod92/foo_navidrome) uses, so both can share one
@@ -443,9 +486,10 @@ an `mvm` helper script; set its path with `MVM=`) and relaunches foobar2000 ther
 Releases are automated with [semantic-release](https://github.com/semantic-release/semantic-release)
 from [Conventional Commits](https://www.conventionalcommits.org/): every push to `main` with a
 `feat:`/`fix:`/`perf:`/`refactor:` commit cuts a new semver release: a `v<version>` tag and a
-GitHub release whose notes are the changelog, with the `.fb2k-component` attached, which is then
-published to foobar2000.org. (`CHANGELOG.md` holds the history up to 1.3.0; later releases are
-on the [Releases](../../releases) page.) Changes reach `main` through pull requests.
+GitHub release whose notes are the changelog, with the multi-arch `.fb2k-component` attached
+(Windows x64 + ARM64EC, macOS universal), which is then
+published to foobar2000.org. [`CHANGELOG.md`](CHANGELOG.md) has the full history, every version
+in detail. Changes reach `main` through pull requests.
 
 ## License
 

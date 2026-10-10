@@ -1,6 +1,3 @@
-// Writes every layout-wizard template as a skin folder under a directory, as picking its card in
-// the wizard would (used by scripts/wizard-previews.sh). Prints "<id>\t<folder>" per template.
-//   install_templates <dir>
 #include "../src/core/skin_templates.h"
 #include <cstdio>
 

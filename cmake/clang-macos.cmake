@@ -1,7 +1,3 @@
-# Cross-compile toolchain: Linux clang + ld64.lld -> macOS (arm64 / x86_64) .component bundle.
-# Needs a MacOSX.sdk (default ~/.macos-sdk/MacOSX.sdk; extract it from an Xcode .xip with
-# scripts/extract-macos-sdk.py). On a real Mac, don't use this file — plain `cmake` works.
-# Architecture: -DMAC_ARCH=arm64 (default) or x86_64; build both + llvm-lipo for universal.
 set(CMAKE_SYSTEM_NAME Darwin)
 if(NOT MAC_ARCH)
   set(MAC_ARCH arm64)

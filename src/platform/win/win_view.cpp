@@ -1,5 +1,3 @@
-// Windows implementation of the ui:: layer (src/ui/view.h): every native panel is a ui::View
-// hosted in a plain child HWND (WinViewHost), painted double-buffered through a GdiCanvas.
 #include "win_sdk.h"
 #include <windowsx.h>
 #include <commdlg.h>
@@ -43,7 +41,7 @@ void refresh_zoom(HWND main) {
     g_zoom.store(zoom_factor_for(zoom_setting(), (int)window_dpi(main)), std::memory_order_relaxed);
 }
 
-} // namespace pui::win
+}
 
 namespace pui::ui {
 
@@ -104,7 +102,6 @@ HCURSOR load_cursor(Cursor c) {
     }
 }
 
-// ---------------------------------------------------------------------------------------------
 class WinTextField;
 const wchar_t* kTextFieldProp = L"pui.textfield";
 
@@ -122,7 +119,6 @@ public:
     bool create_child(HWND parent) {
         register_classes();
         m_root = parent;
-        // The window text is the panel's accessible name (what MSAA/UIA report for a plain window).
         m_wnd = CreateWindowExW(0, m_opts.double_clicks ? kClassDbl : kClass, widen(m_opts.accessible_name).c_str(),
                                 WS_CHILD | WS_VISIBLE | WS_CLIPSIBLINGS | WS_CLIPCHILDREN, 0, 0, 0, 0,
                                 parent, nullptr, module(), this);
@@ -138,7 +134,7 @@ public:
         RECT rc = { 0, 0, dev(w), dev(h) };
         AdjustWindowRect(&rc, style, FALSE);
         int ww = rc.right - rc.left, wh = rc.bottom - rc.top;
-        RECT orc = {}; if (owner) GetWindowRect(owner, &orc); // centre on the owner window
+        RECT orc = {}; if (owner) GetWindowRect(owner, &orc);
         int x = orc.left + ((orc.right - orc.left) - ww) / 2;
         int y = orc.top + ((orc.bottom - orc.top) - wh) / 2;
         m_wnd = CreateWindowExW(WS_EX_TOOLWINDOW, m_opts.double_clicks ? kClassDbl : kClass,
@@ -149,14 +145,11 @@ public:
     void start() {
         start_view(*m_view, *this);
         if (m_opts.render_fps > 0) {
-            // timeBeginPeriod sharpens the frame sleep (default Windows/Wine granularity is
-            // ~15.6ms, which makes frames land unevenly and animations stutter).
             m_highResTimer = timeBeginPeriod(1) != TIMERR_NOCANDO;
             m_render = std::thread([this] { render_loop(); });
         }
     }
 
-    // --- ViewHost ---
     void invalidate() override { if (m_wnd && m_opts.render_fps <= 0) InvalidateRect(m_wnd, nullptr, FALSE); }
     void set_bounds(const gfx::Rect& r, bool to_top) override {
         if (!m_wnd) return;
@@ -207,7 +200,7 @@ private:
             wc.lpfnWndProc = WndProc;
             wc.hInstance = module();
             wc.lpszClassName = i ? kClassDbl : kClass;
-            wc.hCursor = nullptr; // WM_SETCURSOR picks the view's cursor
+            wc.hCursor = nullptr;
             wc.style = i ? CS_DBLCLKS : 0;
             RegisterClassExW(&wc);
         }
@@ -229,8 +222,6 @@ private:
     }
 
     void render_loop() {
-        // Nothing in here sends messages to the UI thread (GetDC/BitBlt don't), so WM_DESTROY
-        // can join us without risking a deadlock.
         using clock = std::chrono::steady_clock;
         const auto frame = std::chrono::microseconds(1000000 / m_opts.render_fps);
         auto next = clock::now();
@@ -239,8 +230,6 @@ private:
             RECT rc; GetClientRect(m_wnd, &rc);
             if (IsWindowVisible(m_wnd) && rc.right > 0 && rc.bottom > 0) {
                 if (HDC dc = GetDC(m_wnd)) {
-                    // Cached backbuffer: recreate only on resize (per-frame DC/bitmap churn is a
-                    // classic GDI bottleneck that makes the animation stutter).
                     if (!mem || bw != rc.right || bh != rc.bottom) {
                         if (old) SelectObject(mem, old);
                         if (bmp) DeleteObject(bmp);
@@ -258,7 +247,7 @@ private:
             next += frame;
             auto now = clock::now();
             if (next > now) std::this_thread::sleep_for(next - now);
-            else next = now; // fell behind (e.g. system stall): don't try to catch up in a burst
+            else next = now;
         }
         if (old) SelectObject(mem, old);
         if (bmp) DeleteObject(bmp);
@@ -290,7 +279,7 @@ private:
     HCURSOR m_cursor = nullptr;
     win::Tooltip m_tooltip;
     bool m_tracking = false, m_popup = false, m_highResTimer = false;
-    bool m_ring = false; // keyboard focus ring (set_focus_ring)
+    bool m_ring = false;
     std::function<void()> m_onClosed;
     std::thread m_render;
     std::atomic<bool> m_stop{ false };
@@ -298,7 +287,6 @@ private:
     friend class WinTextField;
 };
 
-// ---------------------------------------------------------------------------------------------
 class WinTextField : public TextField {
 public:
     WinTextField(HWND parent, TextFieldDelegate* d, const TextFieldStyle& st) : m_delegate(d), m_style(st) {
@@ -337,7 +325,6 @@ public:
     void set_text(const std::string& s) override { SetWindowTextW(m_edit, widen(s).c_str()); }
     void focus() override { SetFocus(m_edit); }
 
-    // Parent-window notifications, routed here by WinViewHost.
     static WinTextField* from(HWND edit) { return edit ? (WinTextField*)GetPropW(edit, kTextFieldProp) : nullptr; }
     void on_command(WORD code) { if (code == EN_CHANGE && m_delegate) m_delegate->on_text_changed(); }
     LRESULT on_ctlcolor(HDC dc) {
@@ -352,7 +339,7 @@ private:
         if (!self) return DefWindowProcW(h, msg, wp, lp);
         if (msg == WM_KEYDOWN && wp == VK_RETURN) { if (self->m_delegate) self->m_delegate->on_enter(); return 0; }
         if (msg == WM_KEYDOWN && wp == VK_ESCAPE) { if (self->m_delegate) self->m_delegate->on_escape(); return 0; }
-        if (msg == WM_CHAR && (wp == VK_RETURN || wp == VK_ESCAPE)) return 0; // no beep
+        if (msg == WM_CHAR && (wp == VK_RETURN || wp == VK_ESCAPE)) return 0;
         return CallWindowProcW(self->m_prevProc, h, msg, wp, lp);
     }
 
@@ -373,12 +360,10 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
     }
     if (!self) return DefWindowProcW(wnd, msg, wp, lp);
     View* v = self->m_view;
-    const bool live = v->host() == self; // attached (start() ran)
+    const bool live = v->host() == self;
     switch (msg) {
     case WM_ERASEBKGND: return 1;
     case WM_PAINT: if (live) { self->paint_now(); return 0; } break;
-    // A copy of the view into another DC (the main window's capture()). Not for views painted on
-    // their own render thread: paint() isn't safe to run on two threads at once.
     case WM_PRINTCLIENT:
         if (live && self->m_opts.render_fps <= 0) {
             RECT rc; GetClientRect(wnd, &rc);
@@ -418,7 +403,6 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
     case WM_KEYDOWN:
     case WM_SYSKEYDOWN:
         if (dispatch_key(*v, live, self->m_opts, map_key(wp), key_mods())) return 0;
-        // Unhandled: configured keyboard shortcuts still work while a panel has focus.
         if (keyboard_shortcut_manager::get()->on_keydown_auto(wp)) return 0;
         break;
     case WM_SHOWWINDOW: if (live) v->on_visibility(wp != 0); break;
@@ -450,14 +434,13 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
         self->m_wnd = nullptr;
         auto cb = std::move(self->m_onClosed);
         self->m_onClosed = nullptr;
-        if (cb) cb(); // may delete `self`
+        if (cb) cb();
         return 0;
     }
     }
     return DefWindowProcW(wnd, msg, wp, lp);
 }
 
-// ---------------------------------------------------------------------------------------------
 class WinEmbeddedPanel : public EmbeddedPanel {
 public:
     ~WinEmbeddedPanel() override { m_host.destroy(); }
@@ -473,7 +456,6 @@ private:
     PanelHost m_host;
 };
 
-// ---------------------------------------------------------------------------------------------
 void append_menu(HMENU m, const Menu& items) {
     for (const auto& it : items) {
         if (it.separator) { AppendMenuW(m, MF_SEPARATOR, 0, nullptr); continue; }
@@ -494,28 +476,23 @@ int track_menu(HWND owner, POINT screen, const Menu& menu, UINT extra) {
     SetForegroundWindow(owner);
     int cmd = (int)TrackPopupMenu(m, TPM_RETURNCMD | extra, screen.x, screen.y, 0, owner, nullptr);
     PostMessageW(owner, WM_NULL, 0, 0);
-    DestroyMenu(m); // also destroys the submenus
+    DestroyMenu(m);
     return cmd;
 }
 
-// "Edit code..." windows, by key.
 std::map<std::string, HWND> g_editors;
 enum { IDC_CODE = 100, IDC_APPLY, IDC_OK, IDC_CANCEL, IDC_REVERT, IDC_STATUS };
 const wchar_t* kEditorClass = L"foo_ui_panels_codeedit";
 enum { kTimerCheck = 1 };
 
-// The code editor: a RichEdit (plain text, word-wrapped — the extracted scripts are mostly one
-// very long line) with the script syntax coloured, a status line (cursor position, what a quick
-// check of the script finds) and Apply / OK / Cancel / Revert. Ctrl+S applies, Ctrl+Enter is OK,
-// Esc cancels.
 struct EditorState {
     std::string key;
     std::function<bool(const std::string&)> apply;
-    std::wstring original; // as opened: Revert goes back to it
+    std::wstring original;
     HFONT ui = nullptr;
     WNDPROC editProc = nullptr;
-    std::string check;     // the last check_script() summary
-    bool plain = false;    // too long to colour (highlight_limit)
+    std::string check;
+    bool plain = false;
 };
 
 std::wstring editor_text(HWND ed) {
@@ -528,18 +505,11 @@ std::wstring editor_text(HWND ed) {
     return w;
 }
 
-// The longest script coloured: RichEdit lays a paragraph out again for every colour run, and
-// these scripts are mostly one paragraph with thousands of runs. Native RichEdit copes; Wine's
-// takes ~1 s at 9 KB and ~50 s at 45 KB (quadratic), with the player frozen meanwhile.
 size_t highlight_limit() {
     static const bool wine = GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "wine_get_version") != nullptr;
     return wine ? 8 * 1024 : kEditorHighlightMax;
 }
 
-// Colours the script: the whole text replaced at once by an RTF copy with its tokens coloured
-// (script_to_rtf) — colouring token by token (select + EM_SETCHARFORMAT) re-laid-out the text per
-// token. Longer than highlight_limit(): plain. Done when the text is loaded or applied; the
-// undo history is cleared after. Returns whether it coloured.
 bool highlight_editor(HWND ed) {
     const std::string text = narrow(editor_text(ed));
     if (text.size() > highlight_limit()) return false;
@@ -590,7 +560,7 @@ LRESULT CALLBACK EditorTextProc(HWND ed, UINT msg, WPARAM wp, LPARAM lp) {
         if (ctrl && wp == VK_RETURN) { if (editor_apply(wnd, st)) DestroyWindow(wnd); return 0; }
         if (wp == VK_ESCAPE) { DestroyWindow(wnd); return 0; }
     }
-    if (msg == WM_CHAR && GetKeyState(VK_CONTROL) < 0 && (wp == 0x13 || wp == '\n')) return 0; // no beep / stray newline
+    if (msg == WM_CHAR && GetKeyState(VK_CONTROL) < 0 && (wp == 0x13 || wp == '\n')) return 0;
     return CallWindowProcW(st ? st->editProc : DefWindowProcW, ed, msg, wp, lp);
 }
 
@@ -648,9 +618,8 @@ LRESULT CALLBACK EditorProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
     return DefWindowProcW(wnd, msg, wp, lp);
 }
 
-} // namespace
+}
 
-// --- factories --------------------------------------------------------------------------------
 std::unique_ptr<ViewHost> create_child_view(MainWindow& root, View* view, const ViewOptions& opts) {
     auto h = std::make_unique<WinViewHost>(view, opts);
     if (!h->create_child((HWND)root.native())) return nullptr;
@@ -748,6 +717,49 @@ void reveal_in_file_manager(const std::string& path) {
         ShellExecuteW(nullptr, L"open", L"explorer.exe", (L"/select,\"" + widen(path) + L"\"").c_str(), nullptr, SW_SHOWNORMAL);
 }
 
+bool copy_to_clipboard(const std::string& text) {
+    const std::wstring w = widen(text);
+    if (!OpenClipboard(nullptr)) return false;
+    bool ok = false;
+    EmptyClipboard();
+    if (HGLOBAL mem = GlobalAlloc(GMEM_MOVEABLE, (w.size() + 1) * sizeof(wchar_t))) {
+        if (void* dst = GlobalLock(mem)) {
+            memcpy(dst, w.c_str(), (w.size() + 1) * sizeof(wchar_t));
+            GlobalUnlock(mem);
+            ok = SetClipboardData(CF_UNICODETEXT, mem) != nullptr;
+        }
+        if (!ok) GlobalFree(mem);
+    }
+    CloseClipboard();
+    return ok;
+}
+
+std::string os_version() {
+    using RtlGetVersionFn = LONG(WINAPI*)(OSVERSIONINFOW*);
+    OSVERSIONINFOW v{};
+    v.dwOSVersionInfoSize = sizeof v;
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
+        if (auto fn = reinterpret_cast<RtlGetVersionFn>(reinterpret_cast<void*>(GetProcAddress(ntdll, "RtlGetVersion"))))
+            if (fn(&v) == 0)
+                return std::to_string(v.dwMajorVersion) + "." + std::to_string(v.dwMinorVersion) + "." +
+                       std::to_string(v.dwBuildNumber);
+    return "unknown";
+}
+
+std::string wine_version() {
+    using WineVersionFn = const char* (*)();
+    if (HMODULE ntdll = GetModuleHandleW(L"ntdll.dll"))
+        if (auto fn = reinterpret_cast<WineVersionFn>(reinterpret_cast<void*>(GetProcAddress(ntdll, "wine_get_version"))))
+            if (const char* v = fn()) return v;
+    return {};
+}
+
+std::string home_dir() {
+    wchar_t buf[MAX_PATH] = {};
+    const DWORD n = GetEnvironmentVariableW(L"USERPROFILE", buf, MAX_PATH);
+    return n > 0 && n < MAX_PATH ? narrow(buf) : std::string();
+}
+
 void open_text_editor(MainWindow& root, const std::string& key, const std::string& title,
                       const std::string& text, std::function<bool(const std::string&)> apply) {
     auto it = g_editors.find(key);
@@ -775,13 +787,11 @@ void open_text_editor(MainWindow& root, const std::string& key, const std::strin
     HWND ed = CreateWindowExW(WS_EX_CLIENTEDGE, msftedit ? MSFTEDIT_CLASS : RICHEDIT_CLASSW, L"",
                               WS_CHILD | WS_VISIBLE | WS_VSCROLL | ES_MULTILINE | ES_AUTOVSCROLL | ES_WANTRETURN | ES_NOHIDESEL,
                               0, 0, 0, 0, wnd, (HMENU)(INT_PTR)IDC_CODE, module(), nullptr);
-    // Rich text mode (plain-text mode allows one format for the whole text, so no colouring);
-    // the text itself stays plain: it's read back with EM_GETTEXTEX.
     SendMessageW(ed, EM_SETTEXTMODE, TM_RICHTEXT | TM_MULTILEVELUNDO, 0);
     SendMessageW(ed, EM_EXLIMITTEXT, 0, 16 << 20);
     CHARFORMAT2W cf = {}; cf.cbSize = sizeof(cf);
     cf.dwMask = CFM_FACE | CFM_SIZE | CFM_COLOR;
-    wcscpy(cf.szFaceName, L"Consolas"); cf.yHeight = 200; cf.crTextColor = RGB(30, 30, 30); // 10pt
+    wcscpy(cf.szFaceName, L"Consolas"); cf.yHeight = 200; cf.crTextColor = RGB(30, 30, 30);
     SendMessageW(ed, EM_SETCHARFORMAT, SCF_DEFAULT, (LPARAM)&cf);
     SendMessageW(ed, EM_SETCHARFORMAT, SCF_ALL, (LPARAM)&cf);
     SetWindowTextW(ed, st->original.c_str());
@@ -807,10 +817,10 @@ void open_text_editor(MainWindow& root, const std::string& key, const std::strin
 
 void close_text_editor(const std::string& key) {
     auto it = g_editors.find(key);
-    if (it != g_editors.end()) DestroyWindow(it->second); // WM_NCDESTROY erases the entry
+    if (it != g_editors.end()) DestroyWindow(it->second);
 }
 
-} // namespace pui::ui
+}
 
 namespace pui {
 
@@ -823,4 +833,4 @@ std::string component_dir() {
     return ui::narrow(wd);
 }
 
-} // namespace pui
+}

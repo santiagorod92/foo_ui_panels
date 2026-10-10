@@ -5,7 +5,6 @@
 
 namespace pui {
 
-// Default content until per-panel scripts are wired from the skin.
 static const char* kDefaultScript =
     "$font(Segoe UI,15,b)$drawstring([%title%],6,4,%el_width%,22,255-255-255,)"
     "$font(Segoe UI,11,)$drawstring([%artist%][ \xe2\x80\x94 %album%],6,28,%el_width%,18,200-200-210,)"
@@ -17,7 +16,7 @@ TrackDisplay::TrackDisplay(SkinEngine* engine, std::string name)
 }
 
 void TrackDisplay::on_attached() {
-    host()->set_timer(1, 1000); // elapsed time; track changes repaint via SkinEngine::repaint_all
+    host()->set_timer(1, 1000);
 }
 
 void TrackDisplay::on_timer(int) {
@@ -36,17 +35,13 @@ void TrackDisplay::set_script(const char* spec) {
 
 void TrackDisplay::paint(gfx::Canvas& cv) {
     const int W = cv.width(), H = cv.height();
-    // Transparent background: what the master canvas drew behind us.
     if (!m_engine || !m_engine->draw_canvas_snapshot(cv, *host()))
         cv.fill_rect(gfx::Rect{ 0, 0, W, H }, gfx::Color());
 
     metadb_handle_ptr track;
     playback_control::get()->get_now_playing(track);
-    // Capture clickable regions in this panel's own coordinate space (cover-case view switch,
-    // play/pause overlay, rating stars, theme buttons), plus any $panel() this script requests.
     if (m_engine) m_engine->draw_script(cv, W, H, m_script, track, &m_buttons,
                                         m_hoverX, m_hoverY, &m_childPlacements);
-    // Keep the frame: panels stacked on top of us (the spectrum strips) show it through.
     if (m_engine) m_engine->store_panel_frame(m_name, cv.snapshot(gfx::Rect{ 0, 0, W, H }), host()->bounds());
     m_problemMarker = m_engine ? m_engine->draw_problem_marker(cv, W, H, m_engine->panel_script_label(m_name)) : gfx::Rect{};
     host_children();
@@ -57,8 +52,8 @@ void TrackDisplay::host_children() {
     const gfx::Rect org = host()->bounds();
     std::set<std::string> shown;
     for (const auto& raw : m_childPlacements) {
-        Placement p = m_engine->remap_panel(raw); // the skin config can swap the panel
-        if (p.name == m_name) continue; // never host ourselves
+        Placement p = m_engine->remap_panel(raw);
+        if (p.name == m_name) continue;
         m_engine->host_child_panel(p, org.x, org.y);
         shown.insert(p.name);
     }
@@ -81,7 +76,6 @@ bool TrackDisplay::update_hover(int x, int y) {
 bool TrackDisplay::apply_code(const std::string& utf8) {
     if (!m_engine || m_name.empty()) return false;
     if (!m_engine->save_panel_script(m_name, utf8)) return false;
-    // Same load path as panel creation (adds the engine's cover-path init), then repaint.
     std::string sc = m_engine->read_panel_script(m_name);
     set_script(sc.empty() ? nullptr : sc.c_str());
     invalidate();
@@ -100,8 +94,6 @@ void TrackDisplay::open_code_editor() {
 }
 
 void TrackDisplay::on_rclick(int x, int y) {
-    // While a lyrics panel is hosted over us, right-click on our own frame around it opens the
-    // Lyric Show settings (the same menu as right-clicking the lyrics themselves).
     for (const auto& child : m_shownChildren)
         if (m_engine && m_engine->is_lyrics_panel(child)) {
             LyricsPanel::show_settings_menu(m_engine, host(), x, y);
@@ -109,7 +101,7 @@ void TrackDisplay::on_rclick(int x, int y) {
         }
     ui::Menu m;
     enum { kEdit = 1, kCover = 100 };
-    if (add_cover_menu_items(m, kCover)) m.push_back(ui::MenuItem::sep()); // the skin draws its cover here
+    if (add_cover_menu_items(m, kCover)) m.push_back(ui::MenuItem::sep());
     ui::MenuItem edit; edit.label = "Edit code..."; edit.id = kEdit; m.push_back(edit);
     const int id = ui::popup_menu(host(), x, y, m);
     if (id == kEdit) open_code_editor();
@@ -137,8 +129,6 @@ void TrackDisplay::on_mouse_leave() {
 }
 
 void TrackDisplay::on_visibility(bool shown) {
-    // Hidden by the canvas (e.g. cover flow mode replaces the Display panel): take the overlay
-    // panels our script hosted down with us — nothing repaints us to hide them.
     if (!shown && m_engine) {
         for (const auto& n : m_shownChildren) m_engine->hide_child_panel(n);
         m_shownChildren.clear();
@@ -154,11 +144,11 @@ void TrackDisplay::on_click(int x, int y) {
     if (m_problemMarker.contains(x, y)) { open_code_editor(); return; }
     for (const auto& b : m_buttons) {
         if (button_hit(b, x, y)) {
-            m_engine->run_button_action(b.action); // repaints all panels on a pvar change
+            m_engine->run_button_action(b.action);
             invalidate();
             return;
         }
     }
 }
 
-} // namespace pui
+}

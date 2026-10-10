@@ -6,14 +6,12 @@
 
 namespace pui {
 
-// --- $eval integer expression evaluator ------------------------------------
 namespace {
 struct Expr {
     const char* s;
     void skip() { while (*s == ' ') ++s; }
     long number() {
         skip();
-        // {} and () are both grouping in PanelsUI $eval.
         if (*s == '(' || *s == '{') {
             char close = (*s == '(') ? ')' : '}';
             ++s; long v = expr(); skip(); if (*s == close) ++s; return v;
@@ -34,15 +32,14 @@ struct Expr {
             else if (*s == '-') { ++s; v -= term(); }
             else break; } return v; }
 };
-} // namespace
+}
 
 long eval_expr(const std::string& in) { Expr e{ in.c_str() }; return e.expr(); }
 
-// --- colours ---------------------------------------------------------------
 gfx::Color parse_rgb(const char* s) {
     int v[4] = { 0,0,0,255 }, n = 0;
     while (*s && n < 4) {
-        while (*s && (*s < '0' || *s > '9')) ++s; // skip non-digit (prefix/dashes)
+        while (*s && (*s < '0' || *s > '9')) ++s;
         if (!*s) break;
         int x = 0; while (*s >= '0' && *s <= '9') { x = x * 10 + (*s - '0'); ++s; }
         v[n++] = x;
@@ -76,7 +73,7 @@ bool find_color(const std::string& spec, const char* key, gfx::Color& out) {
     if (p == std::string::npos) return false;
     const char* v = spec.c_str() + p + strlen(key);
     while (*v == '-' || *v == ' ') ++v;
-    if (strncmp(v, "null", 4) == 0) return false; // transparent
+    if (strncmp(v, "null", 4) == 0) return false;
     out = parse_rgb(v);
     return true;
 }
@@ -101,9 +98,6 @@ std::string hex_colorref(unsigned long c) {
     char buf[16]; snprintf(buf, sizeof buf, "%lx", c & 0xFFFFFFul); return buf;
 }
 
-// --- script arguments ------------------------------------------------------
-// fooAvA's text buttons are $button2(...,$font(face,size,style,colour)Label,...): skip the
-// balanced $func(...) prefix, the rest is the label.
 std::string trailing_literal(const std::string& body) {
     size_t i = 0;
     while (i < body.size()) {
@@ -147,17 +141,33 @@ unsigned text_opts(const std::string& o) {
     if (o.find("center")  != std::string::npos) f |= gfx::kAlignCenter;
     if (o.find("right")   != std::string::npos) f |= gfx::kAlignRight;
     if (o.find("vcenter") != std::string::npos) f |= gfx::kVCenter | gfx::kSingleLine;
-    if (o.find("wrap") != std::string::npos && !(f & gfx::kSingleLine)) f |= gfx::kWordWrap; // ours, not legacy
+    if (o.find("wrap") != std::string::npos && !(f & gfx::kSingleLine)) f |= gfx::kWordWrap;
     return f;
 }
 
-// The skin sometimes glues these straight onto the colour ("glow-114-114-114glowexpand-0"), so
-// they don't always arrive as their own token.
 void parse_glow_tail(const std::string& t, int& expand, int& alpha) {
     size_t e = t.find("glowexpand-");
     if (e != std::string::npos) expand = atoi(t.c_str() + e + 11);
     size_t a = t.find("glowalpha-");
     if (a != std::string::npos) alpha = atoi(t.c_str() + a + 10);
+}
+
+const char* panel_kind_name(PanelKind k) {
+    switch (k) {
+    case PanelKind::TrackDisplay: return "Track Display";
+    case PanelKind::Seekbar: return "Seekbar";
+    case PanelKind::Volume: return "Volume";
+    case PanelKind::Playlist: return "Playlist";
+    case PanelKind::Spectrum: return "Spectrum";
+    case PanelKind::PeakMeter: return "Peak Meter";
+    case PanelKind::AlbumArt: return "Album Art";
+    case PanelKind::AlbumList: return "Album List";
+    case PanelKind::Lyrics: return "Lyric Show";
+    case PanelKind::QuickSearch: return "Quick Search";
+    case PanelKind::LibraryTree: return "Playlist Switcher";
+    case PanelKind::Embedded: return "UI element";
+    }
+    return "?";
 }
 
 PanelKind panel_kind(const std::string& type, PanelZ* z) {
@@ -186,11 +196,10 @@ const char* map_type(const std::string& t) {
     if (has("Single Column Playlist") || has("ELPlaylist")) return "Playlist View";
     if (has("Track Display") || has("Peakmeter") || has("Peak Meter") || has("Album Art") || has("Lyric") || has("Playlist switcher") || has("Seek") || has("Volume") || has("Chronflow") ||
         has("Quick Search") || has("Album list") || has("Graphical Browser"))
-        return nullptr; // native (Album list/Graphical Browser: no stock DUI element to host)
+        return nullptr;
     return t.c_str();
 }
 
-// --- main-menu actions -----------------------------------------------------
 std::string menu_label(const char* s) {
     std::string out;
     for (; *s; ++s) {
@@ -213,4 +222,4 @@ int best_menu_match(const std::vector<std::string>& paths, const std::string& ac
     return best;
 }
 
-} // namespace pui
+}

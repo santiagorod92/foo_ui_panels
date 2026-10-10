@@ -7,11 +7,11 @@ using namespace pui;
 TEST("zoom_step: presets up and down, clamped at the ends") {
     CHECK_EQ(zoom_step(100, +1), 110);
     CHECK_EQ(zoom_step(100, -1), 90);
-    CHECK_EQ(zoom_step(130, +1), 150); // off-preset values snap to the next preset
+    CHECK_EQ(zoom_step(130, +1), 150);
     CHECK_EQ(zoom_step(130, -1), 125);
     CHECK_EQ(zoom_step(300, +1), 300);
     CHECK_EQ(zoom_step(75, -1), 75);
-    CHECK_EQ(zoom_step(60, -1), 60);   // already below the lowest preset: stays
+    CHECK_EQ(zoom_step(60, -1), 60);
     CHECK_EQ(zoom_step(100, 0), 100);
 }
 
@@ -20,7 +20,7 @@ TEST("zoom_factor_for: automatic follows the system dpi") {
     CHECK_EQ(zoom_factor_for(0, 144), 1.5);
     CHECK_EQ(zoom_factor_for(0, 0), 1.0);
     CHECK_EQ(zoom_factor_for(125, 144), 1.25);
-    CHECK_EQ(zoom_factor_for(1000, 96), 4.0); // clamped to kZoomMax
+    CHECK_EQ(zoom_factor_for(1000, 96), 4.0);
 }
 
 TEST("to_device / to_logical round-trip without overshooting the edge") {
@@ -65,9 +65,9 @@ TEST("mini_mode_plan: enter, leave, nothing to do") {
     CHECK(p.act && p.enter && p.w == 430 && p.h == 172);
     p = mini_mode_plan(430, 172, 430, 172, 950, 750);
     CHECK(p.act && !p.enter && p.w == 950 && p.h == 750);
-    CHECK(!mini_mode_plan(430, 172, 430, 172, 0, 0).act);       // nothing saved to go back to
-    CHECK(!mini_mode_plan(430, 172, 430, 172, 430, 172).act);   // saved size is the mini size
-    CHECK(!mini_mode_plan(950, 750, 0, 0, 0, 0).act);           // skin declares no mini size
+    CHECK(!mini_mode_plan(430, 172, 430, 172, 0, 0).act);
+    CHECK(!mini_mode_plan(430, 172, 430, 172, 430, 172).act);
+    CHECK(!mini_mode_plan(950, 750, 0, 0, 0, 0).act);
 }
 
 TEST("filter_matches: every word, case-insensitive") {

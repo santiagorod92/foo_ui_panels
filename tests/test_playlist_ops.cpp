@@ -26,5 +26,5 @@ TEST("drop_order: a scattered selection stays in order and gathers") {
 TEST("drop_order: out-of-range insertion point clamps; empty lists") {
     CHECK(drop_order({ true, false }, 99) == (V{ 1, 0 }));
     CHECK(drop_order({}, 0).empty());
-    CHECK(drop_order({ false, false }, 1).empty()); // no selection
+    CHECK(drop_order({ false, false }, 1).empty());
 }

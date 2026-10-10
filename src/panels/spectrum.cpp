@@ -1,6 +1,7 @@
 #include "spectrum.h"
 #include "../core/skin_engine.h"
 #include "../core/image_cache.h"
+#include "../core/log.h"
 #include <cmath>
 #include <algorithm>
 
@@ -8,9 +9,6 @@ namespace pui {
 
 namespace {
 
-// Frequency range [lo, hi) in Hz shown by output column `col` of `cols`: the analyser's
-// [minFreq, maxFreq] span split evenly either in log space (equal musical width per column, so
-// bass gets as many columns as treble) or linearly.
 struct Band { float lo, hi; };
 Band column_band(unsigned col, unsigned cols, bool logScale, float minFreq, float maxFreq) {
     const float t0 = (float)col / (float)cols, t1 = (float)(col + 1) / (float)cols;
@@ -21,9 +19,6 @@ Band column_band(unsigned col, unsigned cols, bool logScale, float minFreq, floa
     return { minFreq + (maxFreq - minFreq) * t0, minFreq + (maxFreq - minFreq) * t1 };
 }
 
-// FFT bins [first, last] whose centre frequencies fall inside `band`. The spectrum chunk holds
-// `binCount` magnitudes spanning 0..Nyquist, so bin k sits at k * (Nyquist / binCount) Hz.
-// A band narrower than one bin (low end of a log scale) still maps to the nearest single bin.
 std::pair<unsigned, unsigned> band_bins(Band band, unsigned binCount, unsigned sampleRate) {
     const float binHz = (sampleRate * 0.5f) / (float)binCount;
     const int maxBin = (int)binCount - 1;
@@ -33,8 +28,6 @@ std::pair<unsigned, unsigned> band_bins(Band band, unsigned binCount, unsigned s
     return { (unsigned)first, (unsigned)last };
 }
 
-// Bar height in pixels for a linear magnitude: shown on an 80 dB window (-80 dB = empty,
-// 0 dB = full height).
 int magnitude_to_height(double magnitude, int height) {
     constexpr double kFloorDb = -80.0;
     const double db = magnitude > 0 ? 20.0 * std::log10(magnitude) : kFloorDb;
@@ -42,24 +35,19 @@ int magnitude_to_height(double magnitude, int height) {
     return (int)std::lround(fill * height);
 }
 
-// Columns UI defaults to 4096, but that's a ~93ms window at 44.1kHz: every transient gets smeared
-// across several frames and the bars rise/fall sluggishly. 2048 (~46ms) reacts twice as fast
-// while keeping enough low-frequency resolution for the log-scaled bass bars.
 constexpr unsigned kFftSize = 2048;
 constexpr float kMinFreq = 50.f, kMaxFreq = 22050.f;
-constexpr int kBarW = 14, kBarGap = 1; // extra-fat LED bars requested by the user
+constexpr int kBarW = 14, kBarGap = 1;
 
 enum {
     IDM_SPECTRUM_BARS = 1, IDM_SPECTRUM_STANDARD, IDM_SPECTRUM_LOG, IDM_SPECTRUM_LINEAR,
 };
 
-} // namespace
+}
 
 Spectrum::Spectrum(SkinEngine* engine) : m_engine(engine) {
-    try { visualisation_manager::get()->create_stream(m_vis, visualisation_manager::KStreamFlagNewFFT); }
-    catch (...) {}
-    // Mono, like the reference renderer: a stereo chunk would interleave L/R and shift every
-    // frequency by one bin, and it halves the work.
+    log::guarded("spectrum", "visualisation stream",
+                 [&] { visualisation_manager::get()->create_stream(m_vis, visualisation_manager::KStreamFlagNewFFT); });
     if (m_vis.is_valid()) {
         try { m_vis->set_channel_mode(visualisation_stream_v2::channel_mode_mono); } catch (...) {}
     }
@@ -67,20 +55,16 @@ Spectrum::Spectrum(SkinEngine* engine) : m_engine(engine) {
 
 void Spectrum::on_attached() {
     refresh_cfg();
-    host()->set_timer(1, 100); // keeps m_cfg current (theme colour, mode, backdrop)
+    host()->set_timer(1, 100);
 }
 
 void Spectrum::refresh_cfg() {
     Cfg c;
     c.mirror = m_mirror;
     if (m_engine) m_engine->theme_color(c.accent);
-    // The lower strip is the inverted reflection: render it in a darkened shade of the theme
-    // colour so it reads as a shadow under the analyser.
     if (c.mirror) c.accent = c.accent.scaled(45);
-    c.bars = !m_engine || m_engine->pvar_str("spectrum.mode") != "standard";  // default Bars
-    c.log  = !m_engine || m_engine->pvar_str("spectrum.scale") != "linear";   // default Log
-    // Transparent background: the last frame of the panel we sit on (the cover), else the
-    // master canvas.
+    c.bars = !m_engine || m_engine->pvar_str("spectrum.mode") != "standard";
+    c.log  = !m_engine || m_engine->pvar_str("spectrum.scale") != "linear";
     if (m_engine && host()) {
         gfx::Rect b = host()->bounds();
         int ox = 0, oy = 0;
@@ -106,8 +90,6 @@ void Spectrum::paint(gfx::Canvas& cv) {
     double t = 0; bool ok = false;
     if (m_vis.is_valid() && m_vis->get_absolute_time(t))
         ok = m_vis->get_spectrum_absolute(chunk, t, kFftSize);
-    // Anything not mono means an input component interfered with the visualisation API; the
-    // reference renderer bails out rather than misreading interleaved samples.
     if (!ok || chunk.get_sample_count() == 0 || chunk.get_channels() != 1) return;
     const audio_sample* d = chunk.get_data();
     const unsigned n = chunk.get_sample_count();
@@ -115,11 +97,6 @@ void Spectrum::paint(gfx::Canvas& cv) {
     const float maxF = std::min(kMaxFreq, sr / 2.f - 1.f);
 
     if (barsMode) {
-        // The skin lays the analyser out as two stacked strips: the UPPER strip is the
-        // analyser itself and its bars rise upward from the strip's bottom edge; the LOWER
-        // strip is the inverted reflection and its bars descend from its top edge. Each strip
-        // therefore draws one half only — no per-strip centre mirror — so the whole reads as
-        // a single analyser plus its reflection below.
         const int bars = W / kBarW;
         for (int i = 0; i < bars; ++i) {
             auto [s, e] = band_bins(column_band(i, bars, logScale, kMinFreq, maxF), n, sr);
@@ -128,13 +105,12 @@ void Spectrum::paint(gfx::Canvas& cv) {
             int left = 1 + i * kBarW, right = left + kBarW - kBarGap;
             for (int k = 1; k <= yp; k += 2) {
                 gfx::Rect rt = mirror
-                    ? gfx::Rect::ltrb(left, k - 1, right, k)               // reflection: descend from top
-                    : gfx::Rect::ltrb(left, H - k, right, H - k + 1);      // rise from bottom
+                    ? gfx::Rect::ltrb(left, k - 1, right, k)
+                    : gfx::Rect::ltrb(left, H - k, right, H - k + 1);
                 cv.fill_rect(rt, accent);
             }
         }
     } else {
-        // Standard smooth mode, same up-only / down-only split.
         for (int x = 0; x < W; ++x) {
             auto [s, e] = band_bins(column_band(x, W, logScale, kMinFreq, maxF), n, sr);
             double v = 0; for (unsigned k = s; k <= e; ++k) v = std::max(v, (double)d[k]);
@@ -173,4 +149,4 @@ void Spectrum::on_mouse_up(const ui::MouseEvent& e) {
     if (e.button == ui::MouseButton::Right) show_context_menu(e.x, e.y);
 }
 
-} // namespace pui
+}

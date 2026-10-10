@@ -1,44 +1,28 @@
 #!/usr/bin/env python3
-# Recover the fooAvA image assets (button PNGs, cover-case art, side-tab icons) from the
-# original DeviantArt distribution .exe — a **ClickTeam Install Creator** SFX.
-#
-# Reliable extraction (ported from Bioruebe/cicdec). The overlay starts at the signature
-# 77 77 67 54 29 48; it is a sequence of blocks: blockId(u16) + skip2 + blockSize(u32) + data.
-#   FILE_LIST (0x143A): a compressed node table -> file names + each file's offset/sizes.
-#   FILE_DATA (0x7F7F): the file bodies; file k lives at dataStart + offset + 4 as
-#                       [method byte][zlib(78 da) deflate | BZh | raw].
-# This installer is version 30 (u16 nodeSize, has a u32 index field). Mapping files by their
-# recorded `offset` is exact — no size-guessing (an earlier heuristic mismapped same-size
-# images, e.g. swapping themed colour variants / wrong dimensions).
-#
-# Usage: python3 recover_fooava_images.py <fooava_1_05_*.exe> <out_dir> [--all]
-#   default: only image files (png/jpg). --all: every file (incl .ava/.pui/.txt configs).
 import struct, zlib, bz2, sys, os, re
 
 def u16(d, o): return struct.unpack_from('<H', d, o)[0]
 def u32(d, o): return struct.unpack_from('<I', d, o)[0]
 
 def unpack(d, o, dec=None):
-    """Decompress a ClickTeam stream at offset o (optional known decompressed size)."""
     p = o
     if dec is None: dec = u32(d, p); p += 4
     method = d[p]; p += 1
-    if method == 0: return d[p:p + dec]                       # NONE (stored)
-    if d[p:p + 1] == b'\x78': return zlib.decompress(d[p + 2:], -15)[:dec]  # DEFLATE (skip zlib hdr)
+    if method == 0: return d[p:p + dec]
+    if d[p:p + 1] == b'\x78': return zlib.decompress(d[p + 2:], -15)[:dec]
     if d[p:p + 3] == b'BZh': return bz2.BZ2Decompressor().decompress(d[p:])[:dec]
     return zlib.decompressobj().decompress(d[p:])[:dec]
 
 def parse_filelist_v30(man):
-    """Parse a version-30 FILE_LIST -> list of (path, offset, compressedSize, uncompressedSize)."""
     n = u16(man, 0); p = 4; files = []
     for _ in range(n):
         if p + 4 > len(man): break
         ns = p; nodeSize = u16(man, p); type_ = u16(man, p + 2); ne = ns + nodeSize
         if ne > len(man) or nodeSize < 4: break
-        if type_ != 0: p = ne; continue          # not a file node
-        q = p + 4 + 2                              # nodeSize(2)+type(2)+skip2
+        if type_ != 0: p = ne; continue
+        q = p + 4 + 2
         offset = u32(man, q); comp = u32(man, q + 4); uncomp = u32(man, q + 12)
-        q += 18 + 16 + 4 + 24                      # fields + skip18 + index(4) + 3x FILETIME(24)
+        q += 18 + 16 + 4 + 24
         path = man[q:ne].split(b'\x00')[0].decode('latin1')
         files.append((path, offset, comp, uncomp))
         p = ne

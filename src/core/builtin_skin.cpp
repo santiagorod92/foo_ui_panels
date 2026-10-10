@@ -1,10 +1,6 @@
 #include "builtin_skin.h"
 
 namespace pui {
-// Built-in welcome screen, shown while the skin folder has no main script (a fresh install: the
-// component ships no skin). Says where it looked and offers the ways forward — pick a skin
-// layout (the wizard), a skin folder, the Preferences page — with a playlist below so the player is usable
-// meanwhile. Plain Panels UI script: the engine's own functions and actions only.
 const char* builtin_test_skin() {
     return
         "$drawrect(0,0,%_width%,%_height%,brushcolor-22-24-30 pencolor-null)"
@@ -25,4 +21,4 @@ const char* builtin_test_skin() {
         "$textbutton(432,152,150,32,Preferences...,,PREFERENCES)"
         "$panel(welcome.playlist,Single Column Playlist,28,204,$sub(%_width%,56),$sub(%_height%,232),)";
 }
-} // namespace pui
+}

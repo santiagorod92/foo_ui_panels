@@ -1,7 +1,3 @@
-// Golden render tests: whole scripts run through the runtime (tests/mini_titleformat.h stands in
-// for foobar2000's titleformat engine), every canvas call recorded as a line and compared with
-// tests/golden/<name>.txt. A change in what a script draws shows up as a line diff; when it is
-// intended, regenerate with `UPDATE_GOLDEN=1 make test` and review the .txt change.
 #include "test.h"
 #include "mini_titleformat.h"
 #include "core/builtin_skin.h"
@@ -20,7 +16,6 @@ std::string join(const std::vector<std::string>& lines) {
     return s;
 }
 
-// Renders `script` at w x h and checks it against tests/golden/<name>.txt.
 void check_golden(const std::string& name, const std::string& script, int w, int h,
                   const std::map<std::string, std::string>& fields = {}) {
     t::RecordingCanvas cv;
@@ -31,7 +26,6 @@ void check_golden(const std::string& name, const std::string& script, int w, int
         ScriptRuntime rt(st, env, cv, w, h);
         env.render(rt, script);
     }
-    // Buttons and panels the script declared are part of what it "draws" too.
     for (auto& b : st.buttons)
         cv.ops.push_back("button " + t::rect(gfx::Rect{ b.x, b.y, b.w, b.h }) + " " + b.action +
                          (b.tooltip.empty() ? "" : " tooltip=" + b.tooltip));
@@ -47,7 +41,7 @@ void check_golden(const std::string& name, const std::string& script, int w, int
                                     ".actual.txt; diff them, or UPDATE_GOLDEN=1 make test if intended)");
 }
 
-} // namespace
+}
 
 TEST("golden: the built-in welcome screen") {
     check_golden("welcome", builtin_test_skin(), 640, 480, { { "pui_skin_folder", "C:\\skins\\none" } });
@@ -71,16 +65,12 @@ TEST("golden: the default layout while playing") {
                    { "codec", "FLAC" }, { "bitrate", "900" }, { "playback_time", "1:02" }, { "length", "4:05" } });
 }
 
-// tests/skins/synthetic: a skin that calls every engine function, places every panel kind and
-// names the native panels' art. It must stay clean for the offline checker, and its scripts
-// render to known output.
 static const char* kSynthetic = "tests/skins/synthetic";
 
 TEST("golden: the synthetic skin is clean for skin_lint") {
     const auto findings = lint_skin(kSynthetic);
     for (auto& f : findings)
         if (f.level != LintFinding::Level::Info) t::fail(__FILE__, __LINE__, "lint: " + f.file + ": " + f.message);
-    // ... and it covers the whole function table (a new function wants a line in synthetic.txt).
     std::string all;
     for (const char* f : { "/synthetic.txt", "/panels/display.txt", "/panels/Popup.txt" }) all += read_file(std::string(kSynthetic) + f);
     for (auto& fn : script_functions())

@@ -1,5 +1,6 @@
 #include "album_list.h"
 #include "../core/skin_engine.h"
+#include "../core/log.h"
 #include "../core/image_cache.h"
 #include <algorithm>
 #include <cmath>
@@ -10,7 +11,6 @@ namespace pui {
 static const char* kPlaylistName = "Album Browser";
 static const unsigned kCaption = gfx::kAlignCenter | gfx::kSingleLine | gfx::kEndEllipsis;
 
-// Compiled titleformat scripts (lazy, shared) — same grouping key shape as playlist_view.cpp.
 struct ALScripts {
     service_ptr_t<titleformat_object> key, artist, album, cover, year, added;
     bool ok = false;
@@ -22,12 +22,11 @@ struct ALScripts {
         c->compile_safe(album,  "[%album%]");
         c->compile_safe(cover,  "$replace(%path%,%filename_ext%,*folder*.*)");
         c->compile_safe(year,   "[$left(%date%,4)]");
-        c->compile_safe(added,  "[%added%]"); // foobar2000 v2's own playback statistics
+        c->compile_safe(added,  "[%added%]");
         ok = true;
     }
 };
 
-// Sort/filter state is remembered across sessions in a reserved pvar.
 static const char* kSortPvar = "_albumlist.sort";
 static ALScripts g_al;
 
@@ -49,16 +48,13 @@ static std::string lower_str(std::string s) {
 
 void AlbumList::ensure_built() { if (!m_built) rebuild(); }
 
-// Scans the whole Media Library once and groups by album artist + album. Library size is
-// typically thousands of tracks, not millions — a full rescan is cheap enough to do on demand
-// (create + manual refresh) without needing incremental library-callback tracking.
 void AlbumList::rebuild() {
     m_built = true;
     g_al.ensure();
     metadb_handle_list all;
     library_manager::get()->get_all_items(all);
 
-    std::vector<std::pair<pfc::string8, t_size>> keyed; // (group key, index into `all`)
+    std::vector<std::pair<pfc::string8, t_size>> keyed;
     keyed.reserve(all.get_count());
     for (t_size i = 0; i < all.get_count(); ++i)
         keyed.push_back({ fmt(all[i], g_al.key), i });
@@ -76,7 +72,6 @@ void AlbumList::rebuild() {
         }
         Group& g = m_all.back();
         g.items.push_back(h);
-        // An album counts as added when its newest track was.
         if (g.items.size() > 1) {
             pfc::string8 a = fmt(h, g_al.added);
             if (strcmp(a.c_str(), g.added.c_str()) > 0) g.added = a.c_str();
@@ -91,7 +86,7 @@ void AlbumList::apply_view() {
     if (!m_sortLoaded && m_engine) { m_sortLoaded = true; m_sort = album_sort_from(m_engine->get_pvar(kSortPvar)); }
     auto key_at = [&](int i) { return (i >= 0 && i < (int)m_groups.size()) ? std::string(m_groups[i].key.c_str()) : std::string(); };
     std::string selKey = key_at(m_selected), cfKey = key_at(m_cf_target);
-    if (m_restoreSel && selKey.empty() && m_engine) { // the album from last time
+    if (m_restoreSel && selKey.empty() && m_engine) {
         selKey = m_engine->view_state(view_key());
         if (m_coverflow && !selKey.empty() && m_filter.empty()) { cfKey = selKey; m_cf_user = true; }
     }
@@ -114,7 +109,7 @@ void AlbumList::apply_view() {
         m_cf_target = cf; m_cf_pos = (float)cf; m_cf_init = true;
     }
     if (m_restoreSel && m_selected >= 0) {
-        m_restoreSel = false; // found it (else keep looking: Navidrome albums arrive later)
+        m_restoreSel = false;
         if (!m_coverflow) ensure_visible(m_selected);
     }
     invalidate();
@@ -126,7 +121,7 @@ void AlbumList::set_filter(const std::string& f) {
     m_scroll = 0;
     apply_view();
     if (m_selected < 0 && !m_groups.empty() && !m_filter.empty()) m_selected = 0;
-    if (m_coverflow && !m_filter.empty()) m_cf_user = true; // the search picks the centre now
+    if (m_coverflow && !m_filter.empty()) m_cf_user = true;
 }
 
 void AlbumList::set_sort(AlbumSort s) {
@@ -143,9 +138,6 @@ void AlbumList::ensure_visible(int idx) {
     m_scroll = grid(b.w).reveal(m_scroll, idx, b.h);
 }
 
-// Albums foo_navidrome publishes (none of them are in the Media Library until played/queued).
-// The blocking list call runs on a worker; results are merged in batches so the grid fills as
-// the server answers.
 void AlbumList::start_remote_load() {
     ++m_gen;
     m_remote_err.clear(); m_remote_loading = false;
@@ -183,6 +175,8 @@ void AlbumList::start_remote_load() {
         try { ok = api->list_albums(sink, *abort, err); } catch (...) { err = "Navidrome library request failed."; }
         sink.flush();
         std::string errs = ok ? std::string() : std::string(err.c_str());
+        if (!ok) log::warn("navidrome", "album list request failed: " + errs);
+        else log::info("navidrome", "album list loaded");
         fb2k::inMainThread([=]() {
             if (!alive->load() || self->m_gen != gen) return;
             self->m_remote_loading = false; self->m_remote_err = errs;
@@ -195,16 +189,15 @@ void AlbumList::merge_remote(std::vector<Group>&& add) {
     std::set<std::string> have;
     for (auto& g : m_all) have.insert(lower_str(g.key.c_str()));
     for (auto& g : add) {
-        if (have.count(lower_str(g.key.c_str()))) continue; // already in the local library
+        if (have.count(lower_str(g.key.c_str()))) continue;
         have.insert(lower_str(g.key.c_str()));
         m_all.push_back(std::move(g));
     }
     std::stable_sort(m_all.begin(), m_all.end(), [](const Group& a, const Group& b) {
         return lower_str(a.key.c_str()) < lower_str(b.key.c_str());
     });
-    // Cover flow: until the user moves it, keep centring the playing album as the list grows.
     if (m_coverflow && !m_cf_user && m_filter.empty()) m_cf_target = -1;
-    apply_view(); // keeps the selection / the user's cover-flow centre by key
+    apply_view();
 }
 
 void AlbumList::request_cover(const std::string& coverId, int size) {
@@ -239,7 +232,6 @@ AlbumList::CaseArt AlbumList::case_art() const {
     return a;
 }
 
-// Tight tiles, about 100px wide (four across in a ~430px panel).
 GridLayout AlbumList::grid(int clientW) const {
     const CaseArt ca = case_art();
     return album_grid(clientW, ca.iw, ca.ih);
@@ -260,15 +252,14 @@ gfx::Color AlbumList::color_of(const char* role, gfx::Color def) const {
 void AlbumList::paint(gfx::Canvas& cv) {
     ensure_built();
     if (m_engine && m_selected >= 0 && m_selected < (int)m_groups.size()) {
-        m_restoreSel = false; // something is selected now: that's what to remember
+        m_restoreSel = false;
         const std::string k = m_groups[(size_t)m_selected].key.c_str();
         if (k != m_savedSel) { m_savedSel = k; m_engine->set_view_state(view_key(), k); }
     }
     const int W = cv.width(), H = cv.height();
-    // No backdrop at all behind us? Start from black (the gradient below covers it anyway).
     bool drewbg = m_engine && m_engine->draw_canvas_background(cv, *host());
     if (!drewbg) fill_gradient_v(cv, 0, 0, W, H, color_of("background", gfx::Color(28, 28, 32)));
-    else if (m_coverflow) fill_alpha(cv, 0, 0, W, H, color_of("overlay", gfx::Color(20, 20, 22)), 90); // reflections need a darker floor
+    else if (m_coverflow) fill_alpha(cv, 0, 0, W, H, color_of("overlay", gfx::Color(20, 20, 22)), 90);
 
     gfx::Color accent(0, 140, 220);
     if (m_engine && !m_engine->configured_color("album_list", "highlight", accent)) m_engine->theme_color(accent);
@@ -299,14 +290,11 @@ void AlbumList::paint(gfx::Canvas& cv) {
         if (y + cellH < 0 || y > H) continue;
 
         const auto& g = m_groups[i];
-        // No tile backdrop: the skin wallpaper shows through around each case.
         if ((int)i == m_selected || (int)i == m_hover) {
             gfx::Color hlc = (int)i == m_selected ? accent : color_of("hover", gfx::Color(255, 255, 255));
             int a = (int)i == m_selected ? 70 : 32;
             fill_alpha(cv, x, y, cellW, cellH, hlc, a);
         }
-        // With case art (CaseArt) each album sits in it: the cover in the case's window, the case
-        // drawn on top. Without, the cover fills the tile.
         const int inset = 5, caseW = cellW - inset * 2, caseH = caseW * ca.ih / ca.iw;
         const int ax = x + inset, ay = y + inset;
         const int cx = ax + caseW * ca.wx / ca.iw, cy = ay + caseH * ca.wy / ca.ih;
@@ -330,7 +318,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
         if (!drew && !nocover.empty()) drew = draw_image(cv, nocover, cx, cy, cw, ch);
         if (!drew) fill_alpha(cv, cx, cy, cw, ch, color_of("placeholder", gfx::Color(40, 42, 52)), 200);
         if (!ca.img.empty()) draw_image(cv, ca.img, ax, ay, caseW, caseH);
-        const int art = caseH; // label rows start below the case
+        const int art = caseH;
 
         cv.set_font(fTitle);
         cv.draw_text(pfc::stringToUpper(g.album).get_ptr(),
@@ -343,7 +331,6 @@ void AlbumList::paint(gfx::Canvas& cv) {
     paint_filter_bar(cv, W);
 }
 
-// The typed search, over the top of the grid / carousel while there is one.
 void AlbumList::paint_filter_bar(gfx::Canvas& cv, int W) {
     if (m_filter.empty()) return;
     static const gfx::FontSpec f{ "Segoe UI", 10, false, true };
@@ -380,8 +367,6 @@ void AlbumList::set_target(int idx) {
     invalidate();
 }
 
-// Cover-flow carousel: the centre cover face-on, neighbours turned away as perspective
-// trapezoids (taller outer edge), each with a faint reflection. Glides between albums.
 void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
     const int n = (int)m_groups.size();
     if (!m_cf_init) { m_cf_init = true; m_cf_target = group_index_for_now_playing(); m_cf_pos = (float)m_cf_target; }
@@ -423,7 +408,6 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
     for (int k = range; k >= 1; --k) draw_one(c + k);
     draw_one(c);
 
-    // Caption for the album nearest the centre.
     const Group& cg = m_groups[std::clamp(c, 0, n - 1)];
     static const gfx::FontSpec fTitle{ "Segoe UI", 17, false, true };
     static const gfx::FontSpec fSub{ "Segoe UI", 13, false };
@@ -435,8 +419,6 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
     cv.draw_text(line.get_ptr(), gfx::Rect::ltrb(12, H - 28, W - 12, H - 8), kCaption, color_of("text_dim", gfx::Color(175, 185, 210)));
 }
 
-// Replaces the dedicated "Album Browser" playlist with this album and starts playing it —
-// mirrors the "browse the library, double-click to play" UX every album browser offers.
 void AlbumList::play_group(int idx) {
     if (idx < 0 || idx >= (int)m_groups.size()) return;
     if (m_groups[idx].remote) {
@@ -473,7 +455,6 @@ void AlbumList::on_rclick(int x, int y) {
     host()->focus();
     int idx = item_at(x, y);
     if (idx < 0) {
-        // Empty space: how the albums are listed.
         enum { kArtist = 1, kAlbum, kYear, kAdded, kClear, kRefresh };
         auto item = [](const char* label, int id, bool checked = false, bool enabled = true) {
             ui::MenuItem m; m.label = label; m.id = id; m.checked = checked; m.enabled = enabled; return m;
@@ -543,7 +524,6 @@ void AlbumList::on_mouse_down(const ui::MouseEvent& e) {
 }
 
 bool AlbumList::on_key_down(int key, unsigned mods) {
-    // Type to search: letters, digits and spaces extend the filter, Backspace edits, Esc clears.
     if (!(mods & (ui::kCtrl | ui::kAlt))) {
         if ((key >= 'A' && key <= 'Z') || (key >= '0' && key <= '9') || (key == ' ' && !m_filter.empty())) {
             set_filter(m_filter + (char)tolower(key));
@@ -567,7 +547,6 @@ bool AlbumList::on_key_down(int key, unsigned mods) {
     if (key == ui::kKeyEnter && m_selected >= 0) { play_group(m_selected); return true; }
     if (key == ui::kKeyF5) { rebuild(); invalidate(); return true; }
     if (!m_coverflow && !m_groups.empty()) {
-        // Grid navigation: arrows by tile/row, Page Up/Down by a screenful, Home/End.
         const gfx::Rect b = host()->bounds();
         const GridLayout gl = grid(b.w);
         const int next = grid_nav(key, m_selected, (int)m_groups.size(), gl.cols, gl.page(b.h));
@@ -580,4 +559,4 @@ bool AlbumList::on_key_down(int key, unsigned mods) {
     return false;
 }
 
-} // namespace pui
+}

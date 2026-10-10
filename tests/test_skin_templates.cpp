@@ -11,9 +11,6 @@
 using namespace pui;
 
 namespace {
-// foobar2000's titleformat only pairs the parentheses of function calls: a bare "(" inside a
-// function's arguments (grouping in $eval) ends the call early. tests/mini_titleformat.h nests
-// them anyway, so check the scripts' text: every "(" follows a $name, outside 'quoted' text.
 void check_parens(const std::string& what, const std::string& script) {
     bool quoted = false, comment = false;
     for (size_t i = 0; i < script.size(); ++i) {
@@ -35,7 +32,7 @@ struct TempDir {
     TempDir() { dir = (std::filesystem::temp_directory_path() / ("pui_tpl_" + std::to_string(tick_ms()))).string(); }
     ~TempDir() { std::error_code ec; std::filesystem::remove_all(dir, ec); }
 };
-} // namespace
+}
 
 TEST("templates: unique ids and names, each with a thumbnail, script and config") {
     std::set<std::string> ids, names;
@@ -46,9 +43,7 @@ TEST("templates: unique ids and names, each with a thumbnail, script and config"
         CHECK(t.script.find("$panel(") != std::string::npos);
         CHECK(t.ini.find("script = main.txt") != std::string::npos);
         CHECK_EQ(find_skin_template(t.id), &t);
-        // The wizard offers every one of them.
         CHECK(layout_wizard_script().find(std::string("SKIN:TEMPLATE:") + t.id) != std::string::npos);
-        // ...with its preview, built in from res/ (scripts/wizard-previews.sh makes them).
         CHECK(std::filesystem::is_regular_file(std::string("res/wizard/") + t.id + ".png"));
         CHECK(layout_wizard_script().find(std::string("builtin:wizard/") + t.id + ".png") != std::string::npos);
     }

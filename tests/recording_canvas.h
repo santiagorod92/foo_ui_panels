@@ -1,6 +1,3 @@
-// Test doubles for the script runtime: a gfx::Canvas that records every call as a line of text
-// ("fill_rect 1,2,3,4 #ff0000") and a ScriptEnv with no titleformat engine behind it (snippets
-// evaluate to themselves unless the test maps them) that records image draws the same way.
 #pragma once
 #include "core/script_runtime.h"
 #include <cstdio>
@@ -20,8 +17,8 @@ inline std::string rect(const pui::gfx::Rect& r) {
 class RecordingCanvas : public pui::gfx::Canvas {
 public:
     std::vector<std::string> ops;
-    int charWidth = 7; // text_width = chars * charWidth
-    bool fontAvailable = true; // set_font's result (false = "substituted")
+    int charWidth = 7;
+    bool fontAvailable = true;
 
     int width() const override { return 800; }
     int height() const override { return 600; }
@@ -51,7 +48,6 @@ public:
     int text_height(std::string_view, int, unsigned) override { return 12; }
     bool text_coverage(std::string_view, const pui::gfx::Rect& r, unsigned, const pui::gfx::Rect& area,
                        std::vector<uint8_t>& mask) override {
-        // A solid block where the text box overlaps the area.
         mask.assign((size_t)area.w * area.h, 0);
         for (int y = 0; y < area.h; ++y) for (int x = 0; x < area.w; ++x)
             if (r.contains(area.x + x, area.y + y)) mask[(size_t)y * area.w + x] = 255;
@@ -70,9 +66,9 @@ struct StringOut : pui::ScriptOut {
 
 class FakeEnv : public pui::ScriptEnv {
 public:
-    std::vector<std::string>& ops;        // shared with the canvas, so the order is one log
-    std::map<std::string, std::string> evals; // snippet -> rendered text (else itself)
-    std::map<std::string, std::pair<int, int>> images; // path -> natural size (exists)
+    std::vector<std::string>& ops;
+    std::map<std::string, std::string> evals;
+    std::map<std::string, std::pair<int, int>> images;
     std::vector<std::string> reports, subscripts;
     bool titlebar = true; std::string tray = "-", title;
 
@@ -107,12 +103,11 @@ public:
     void set_title(const std::string& s) override { title = s; }
 };
 
-// One canvas + env + state, and a call helper: call("drawrect", {"1","2","3","4","brushcolor-1-2-3"}).
 struct Rig {
     RecordingCanvas cv;
     FakeEnv env{ cv.ops };
     pui::ScriptState st;
-    std::string buf; // the script's literal output (what titleformat would append)
+    std::string buf;
     pui::ScriptRuntime rt;
     explicit Rig(int hoverX = -1, int hoverY = -1) : rt(st, env, cv, 400, 300, hoverX, hoverY) {
         rt.set_text_buffer(&buf);
@@ -127,4 +122,4 @@ struct Rig {
     std::vector<std::string>& ops() { return cv.ops; }
 };
 
-} // namespace t
+}

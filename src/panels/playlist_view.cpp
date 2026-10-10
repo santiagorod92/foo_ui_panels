@@ -10,8 +10,6 @@
 
 namespace pui {
 
-
-// Compiled titleformat scripts (lazy, shared).
 struct PLScripts {
     service_ptr_t<titleformat_object> key, artist, album, year, genre, row, len, rating, cover, title;
     bool ok = false;
@@ -26,7 +24,6 @@ struct PLScripts {
         c->compile_safe(row,    "$num(%tracknumber%,2). [%title%]");
         c->compile_safe(len,    "[%length%]");
         c->compile_safe(title,  "[%title%]");
-        // navidrome:// tracks keep their rating in NAVIDROME_RATING (foo_navidrome), not RATING
         c->compile_safe(rating, "$if2(%navidrome_rating%,[%rating%])");
         c->compile_safe(cover,  "$replace(%path%,%filename_ext%,*folder*.*)");
         ok = true;
@@ -45,7 +42,6 @@ PlaylistView::Events::Events(PlaylistView* v)
                                          flag_on_item_ensure_visible),
       m_v(v) {}
 
-// Per playlist, by name (indices shift as playlists are added and removed).
 std::string PlaylistView::scroll_state_key() const {
     auto pm = playlist_manager::get();
     pfc::string8 name;
@@ -79,20 +75,14 @@ static const gfx::FontSpec kRowFont{ "Segoe UI", 12, false };
 
 void PlaylistView::paint(gfx::Canvas& cv) {
     const int W = cv.width(), H = cv.height();
-    // Background: the skin wallpaper (so it matches the main window) under a translucent dark
-    // overlay so the track list stays readable. Falls back to a navy gradient. The row highlight
-    // colour is tinted from the wallpaper so it matches instead of being a stark blue.
-    // Colours: the skin config's `color.playlist.<role>` / `color.<role>`, else these defaults.
     auto col = [this](const char* role, gfx::Color def) { return m_engine ? m_engine->color("playlist", role, def) : def; };
     bool drewbg = false;
     gfx::Color hl(36, 86, 180);
-    const bool hlFixed = m_engine && m_engine->configured_color("playlist", "highlight", hl); // configured: no tinting
+    const bool hlFixed = m_engine && m_engine->configured_color("playlist", "highlight", hl);
     if (m_engine && !hlFixed) m_engine->theme_color(hl);
     if (m_engine) {
-        const std::string wppath = m_engine->background_path(); // "" = the skin has none / it's off
+        const std::string wppath = m_engine->background_path();
         if (!wppath.empty()) {
-            // Transparent: show exactly what the skin canvas drew beneath us (its wallpaper at
-            // the skin's own alpha), so the list sits on the same background as the rest.
             drewbg = m_engine->draw_canvas_snapshot(cv, *host());
             if (!drewbg) {
                 drewbg = draw_image(cv, wppath, 0, 0, W, H);
@@ -100,14 +90,14 @@ void PlaylistView::paint(gfx::Canvas& cv) {
             }
             if (drewbg) {
                 gfx::Color avg;
-                if (!hlFixed && image_avg_color(wppath, avg)) { // tint highlight to the wallpaper
+                if (!hlFixed && image_avg_color(wppath, avg)) {
                     auto up = [](int v){ int r = v * 3; return r > 255 ? 255 : (r < 40 ? 40 : r); };
                     hl = gfx::Color(up(avg.r), up(avg.g), up(avg.b));
                 }
             }
         }
     }
-    if (!drewbg && m_engine) drewbg = m_engine->draw_canvas_snapshot(cv, *host()); // wallpaper off
+    if (!drewbg && m_engine) drewbg = m_engine->draw_canvas_snapshot(cv, *host());
     if (!drewbg) fill_gradient_v(cv, 0, 0, W, H, col("background", gfx::Color(30, 30, 34)));
 
     const unsigned kLine = gfx::kSingleLine;
@@ -117,24 +107,21 @@ void PlaylistView::paint(gfx::Canvas& cv) {
     auto pm = playlist_manager::get();
     metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
 
-    if (m_restoreScroll && m_engine) { // this playlist's last position (clamped below)
+    if (m_restoreScroll && m_engine) {
         m_restoreScroll = false;
         m_scroll = m_savedScroll = atoi(m_engine->view_state(scroll_state_key()).c_str());
     }
-    clamp_scroll(); // the restored position may be past the end
+    clamp_scroll();
     if (m_engine && m_scroll != m_savedScroll) {
         m_savedScroll = m_scroll;
         m_engine->set_view_state(scroll_state_key(), std::to_string(m_scroll));
     }
-    // From the first group on screen down.
     for (size_t g = L.group_count() ? L.group_at(m_scroll) : 0; g < L.group_count(); ++g) {
         int y = L.group_top(g) - m_scroll;
         if (y >= H) break;
         const t_size first = L.group_start(g), count = L.group_size(g);
-        // ---- album header ----
         if (y + HEADER_H > 0) {
             metadb_handle_ptr h0; pm->activeplaylist_get_item_handle(h0, first);
-            // cover thumb: folder.* on disk, else the album-art pipeline (navidrome:// etc.)
             {
                 pfc::string8 cov = fmt(h0, g_pl.cover);
                 draw_cover_art(cv, cov.get_ptr(), h0, 5, y + 4, 38, 38);
@@ -143,34 +130,29 @@ void PlaylistView::paint(gfx::Canvas& cv) {
             pfc::string8 art = fmt(h0, g_pl.artist);
             cv.draw_text(art.get_ptr(), gfx::Rect::ltrb(50, y + 2, W - 70, y + 18), kLine | gfx::kEndEllipsis,
                          col("text", gfx::Color(235, 240, 255)));
-            // track count, right
             char cnt[32]; snprintf(cnt, sizeof cnt, "%u TRACKS", (unsigned)count);
             cv.set_font(kSubFont);
             cv.draw_text(cnt, gfx::Rect::ltrb(W - 120, y + 3, W - 6, y + 18), gfx::kAlignRight | kLine,
                          col("text_dim", gfx::Color(150, 170, 210)));
-            // album
             pfc::string8 alb = fmt(h0, g_pl.album);
             cv.draw_text(alb.get_ptr(), gfx::Rect::ltrb(50, y + 18, W - 70, y + 32), kLine | gfx::kEndEllipsis,
                          col("text_secondary", gfx::Color(200, 210, 235)));
-            // year + genre
             pfc::string8 yr = fmt(h0, g_pl.year);
             cv.draw_text(yr.get_ptr(), gfx::Rect::ltrb(50, y + 31, W - 70, y + 45), kLine, col("text_dim", gfx::Color(140, 160, 200)));
             pfc::string8 gen = fmt(h0, g_pl.genre);
             cv.draw_text(gen.get_ptr(), gfx::Rect::ltrb(W - 160, y + 31, W - 6, y + 45),
                          gfx::kAlignRight | kLine | gfx::kEndEllipsis, col("text_dim", gfx::Color(140, 160, 200)));
-            // separator line
             cv.line(4, y + HEADER_H - 1, W - 4, y + HEADER_H - 1, col("separator", gfx::Color(40, 55, 90)));
         }
         y += HEADER_H;
-        // ---- track rows ----
         for (t_size idx = first; idx < first + count && y < H; ++idx) {
             if (y + ROW_H > 0) {
                 metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, idx);
                 bool playing = np.is_valid() && h == np;
                 bool selected = pm->activeplaylist_is_item_selected(idx);
-                if (playing) { // now-playing: gradient bar tinted to the wallpaper
+                if (playing) {
                     fill_gradient_v(cv, 2, y, W - 4, ROW_H, hl);
-                } else if (selected) { // click selection: translucent band + bright underline
+                } else if (selected) {
                     fill_alpha(cv, 2, y, W - 4, ROW_H, hl, 90);
                     auto lt = [](int v){ int r = v + 60; return r > 255 ? 255 : r; };
                     cv.line(6, y + ROW_H - 1, W - 8, y + ROW_H - 1, gfx::Color(lt(hl.r), lt(hl.g), lt(hl.b)));
@@ -180,11 +162,9 @@ void PlaylistView::paint(gfx::Canvas& cv) {
                                                        : col("row_text", gfx::Color(205, 215, 235));
                 pfc::string8 line = fmt(h, g_pl.row);
                 cv.draw_text(line.get_ptr(), gfx::Rect::ltrb(10, y + 1, W - 150, y + ROW_H), kLine | gfx::kEndEllipsis, tc);
-                // duration (right)
                 pfc::string8 ln = fmt(h, g_pl.len);
                 cv.draw_text(ln.get_ptr(), gfx::Rect::ltrb(W - 46, y + 1, W - 8, y + ROW_H), gfx::kAlignRight | kLine, tc);
-                // rating stars, left of duration: the skin's `asset.rating_stars` ({n} = 0..5 stars)
-                int r = ((int)idx == m_hover_row)   // live preview while hovering the stars
+                int r = ((int)idx == m_hover_row)
                             ? m_hover_stars
                             : atoi(fmt(h, g_pl.rating).get_ptr());
                 if (r < 0) r = 0; if (r > 5) r = 5;
@@ -197,7 +177,6 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         }
     }
 
-    // Drag-to-reorder insertion point: a bar between rows, in the highlight colour.
     if (m_dragging && m_drop_idx >= 0) {
         const t_size n = pm->activeplaylist_get_item_count();
         int ly = (t_size)m_drop_idx < n ? L.item_top(m_drop_idx) : (n ? L.item_top((int)n - 1) + ROW_H : 0);
@@ -218,7 +197,6 @@ void PlaylistView::clamp_scroll() {
 
 void PlaylistView::ensure_visible(int idx) {
     if (!host()) return;
-    // The group's first row brings its header along, so the album stays identifiable.
     m_scroll = layout().reveal(m_scroll, idx, host()->bounds().h);
     invalidate();
 }
@@ -232,7 +210,6 @@ void PlaylistView::on_click(int x, int y, bool dbl, bool shift, bool ctrl) {
     int idx = item_at(y);
     if (idx < 0) return;
     auto pm = playlist_manager::get();
-    // Click on the rating stars → set this track's rating (1..5) like the skin.
     const int star = star_under(x);
     if (!dbl && !shift && !ctrl && star) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, idx);
@@ -240,27 +217,27 @@ void PlaylistView::on_click(int x, int y, bool dbl, bool shift, bool ctrl) {
         invalidate();
         return;
     }
-    if (shift && m_anchor >= 0) {                 // range select [anchor..idx]
+    if (shift && m_anchor >= 0) {
         int a = m_anchor < idx ? m_anchor : idx, b = m_anchor < idx ? idx : m_anchor;
         pm->activeplaylist_clear_selection();
         pm->activeplaylist_set_selection(bit_array_range(a, b - a + 1, true), bit_array_true());
-    } else if (ctrl) {                            // toggle idx
+    } else if (ctrl) {
         pm->activeplaylist_set_selection_single(idx, !pm->activeplaylist_is_item_selected(idx));
         m_anchor = idx;
-    } else {                                      // single select
+    } else {
         pm->activeplaylist_clear_selection();
         pm->activeplaylist_set_selection_single(idx, true);
         m_anchor = idx;
     }
     pm->activeplaylist_set_focus_item(idx);
-    if (dbl) pm->activeplaylist_execute_default_action(idx); // play
+    if (dbl) pm->activeplaylist_execute_default_action(idx);
     invalidate();
 }
 
 void PlaylistView::on_rclick(int x, int y) {
     auto pm = playlist_manager::get();
     int idx = item_at(y);
-    if (idx >= 0 && !pm->activeplaylist_is_item_selected(idx)) { // right-click outside selection → select it
+    if (idx >= 0 && !pm->activeplaylist_is_item_selected(idx)) {
         pm->activeplaylist_clear_selection();
         pm->activeplaylist_set_selection_single(idx, true);
         pm->activeplaylist_set_focus_item(idx);
@@ -269,7 +246,6 @@ void PlaylistView::on_rclick(int x, int y) {
     }
     metadb_handle_list sel; pm->activeplaylist_get_selected_items(sel);
     if (sel.get_count() == 0) return;
-    // The classic foobar context menu (Properties / tagging / etc.) for the selected tracks.
     ui::track_context_menu(*host(), x, y, sel);
     invalidate();
 }
@@ -288,10 +264,10 @@ void PlaylistView::on_mouse_move(int x, int y, unsigned, bool left_down) {
     if (m_press_idx >= 0 && left_down) {
         if (!m_dragging && std::abs(y - m_press_y) > kDragThreshold) {
             m_dragging = true;
-            host()->set_timer(kTimerAutoScroll, 50); // keeps scrolling while held past an edge
+            host()->set_timer(kTimerAutoScroll, 50);
         }
         if (m_dragging) {
-            m_press_y = y; // the auto-scroll timer re-evaluates the drop point from here
+            m_press_y = y;
             const int d = drop_index_at(y);
             if (d != m_drop_idx) { m_drop_idx = d; invalidate(); }
             return;
@@ -316,8 +292,6 @@ void PlaylistView::on_mouse_down(const ui::MouseEvent& e) {
         const bool shift = (e.mods & ui::kShift) != 0, ctrl = (e.mods & ui::kCtrl) != 0;
         const int idx = item_at(e.y);
         auto pm = playlist_manager::get();
-        // A plain press on an already selected row keeps the selection (it may be the start of
-        // dragging all of it); the click's single-select happens on release instead.
         const bool onStars = star_under(e.x) != 0;
         m_press_deferred = idx >= 0 && !shift && !ctrl && !onStars && pm->activeplaylist_is_item_selected(idx);
         if (!m_press_deferred) on_click(e.x, e.y, false, shift, ctrl);
@@ -340,8 +314,6 @@ void PlaylistView::on_mouse_up(const ui::MouseEvent& e) {
     invalidate();
 }
 
-// Move the selection to the insertion point (drop_order): one undoable reorder, like the stock
-// playlist views.
 void PlaylistView::finish_drag(int y) {
     auto pm = playlist_manager::get();
     const t_size n = pm->activeplaylist_get_item_count();
@@ -390,8 +362,6 @@ void PlaylistView::move_focus(int idx, unsigned mods) {
     ensure_visible(idx);
 }
 
-// Letters/digits typed with no modifier jump to the next track whose title — or album artist,
-// the grouped view's headline — starts with what was typed in the last second.
 bool PlaylistView::find_as_you_type(int key) {
     if (!typeahead_key(key, !m_find.empty())) return false;
     m_find += (char)key;
@@ -400,8 +370,6 @@ bool PlaylistView::find_as_you_type(int key) {
     const t_size n = pm->activeplaylist_get_item_count();
     if (!n) return true;
     g_pl.ensure();
-    // A fresh search starts after the focused track (so typing the same letter again moves on);
-    // a longer prefix re-tests the focused one first.
     const int hit = typeahead_find(n, pm->activeplaylist_get_focus_item(), m_find.size(), [&](size_t i) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, i);
         return starts_with_upper(fmt(h, g_pl.title).c_str(), m_find) ||
@@ -411,12 +379,6 @@ bool PlaylistView::find_as_you_type(int key) {
     return true;
 }
 
-// Ctrl+A / Cmd+A selects the whole playlist, Delete drops the selection from it, arrows /
-// PgUp / PgDn / Home / End move the focus (Shift extends the selection, Ctrl moves only the
-// focus), Enter plays the focused track, letters find as you type — what the stock playlist
-// views bind; the panel has keyboard focus from the click that reached it. macOS reports
-// Command as kCtrl (mods_of in mac_view.mm), and its own Delete key arrives as kKeyBackspace,
-// so both spellings count.
 bool PlaylistView::on_key_down(int key, unsigned mods) {
     auto pm = playlist_manager::get();
     if (key == 'A' && (mods & ui::kCtrl) && !(mods & ui::kAlt)) {
@@ -425,9 +387,9 @@ bool PlaylistView::on_key_down(int key, unsigned mods) {
         return true;
     }
     if ((key == ui::kKeyDelete || key == ui::kKeyBackspace) && !(mods & (ui::kCtrl | ui::kAlt))) {
-        pm->activeplaylist_undo_backup(); // same as the stock views: the removal stays undoable
+        pm->activeplaylist_undo_backup();
         pm->activeplaylist_remove_selection();
-        m_anchor = -1; // the shift-range anchor indexed items that are gone now
+        m_anchor = -1;
         invalidate();
         return true;
     }
@@ -446,4 +408,4 @@ bool PlaylistView::on_key_down(int key, unsigned mods) {
     return false;
 }
 
-} // namespace pui
+}
