@@ -155,7 +155,7 @@ jobs:
             --arm64ec win/x/arm64ec/foo_ui_panels.dll --x86 win/x/foo_ui_panels.dll \
             --mac mac/foo_ui_panels.component
           gh release upload "v${VERSION}" \
-            "$ASSET#foo_ui_panels ${VERSION} (multi-arch: Windows x64 + ARM64 + 32-bit, macOS universal; foobar2000 v2)" \
+            "$ASSET#foo_ui_panels ${VERSION} (macOS + Windows x86/x64/ARM64)" \
             --clobber
 
   notify-n8n:

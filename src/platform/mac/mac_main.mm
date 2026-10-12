@@ -68,10 +68,29 @@ public:
     }
     void on_mouse_down(const pui::ui::MouseEvent& e) override {
         if (e.button != pui::ui::MouseButton::Left) return;
-        if (!m_skin.handle_click(e.x, e.y)) begin_window_drag();
+        if (m_skin.press(e.x, e.y)) invalidate();
+        if (m_skin.handle_click(e.x, e.y)) return;
+        m_skin.release_press();
+        begin_window_drag();
     }
-    void on_mouse_move(int x, int y, unsigned, bool) override { if (m_skin.update_hover(x, y)) invalidate(); }
-    void on_mouse_leave() override { if (m_skin.update_hover(-1, -1)) invalidate(); }
+    void on_mouse_up(const pui::ui::MouseEvent& e) override {
+        if (e.button == pui::ui::MouseButton::Left && m_skin.release_press()) invalidate();
+    }
+    void on_mouse_move(int x, int y, unsigned, bool left_down) override {
+        bool dirty = !left_down && m_skin.release_press();
+        if (m_skin.update_hover(x, y)) dirty = true;
+        const bool hand = m_skin.over_button(x, y);
+        if (hand != m_hand) {
+            m_hand = hand;
+            host()->set_cursor(hand ? pui::ui::Cursor::Hand : pui::ui::Cursor::Arrow);
+        }
+        if (dirty) invalidate();
+    }
+    void on_mouse_leave() override {
+        bool dirty = m_skin.release_press();
+        if (m_skin.update_hover(-1, -1)) dirty = true;
+        if (dirty) invalidate();
+    }
     void on_drop_files(const std::vector<std::string>& paths, int, int) override { pui::SkinEngine::add_files(paths); }
 
     void* native() const override { return m_host ? m_host->native() : nullptr; }
@@ -201,6 +220,7 @@ private:
     double m_zoom = 1.0;
     bool m_owns_window = false;
     bool m_titlebar_visible = true;
+    bool m_hand = false;
     NSStatusItem* m_status = nil;
     FooUIPanelsTrayTarget* m_trayTarget = nil;
     std::string m_trayTip;

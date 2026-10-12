@@ -103,6 +103,9 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   is protected (PRs only) and nothing is committed back. `CHANGELOG.md` is kept by hand in the
   release PR. `notify-n8n` publishes to foobar2000.org. If the head commit is non-releasing,
   dispatch the workflow by hand.
+- **Release asset:** one `<component>_<version>.fb2k-component` per release, labelled
+  `<component> <version> (macOS + Windows x86/x64/ARM64)`. Every place that uploads it
+  (`.releaserc.json`, any `gh release upload --clobber` re-upload) uses that same label.
 - **Commits:** author Santiago Rodriguez only, no AI trailers. Push only at the end of an
   iteration.
 - **CI path filters:** files that aren't part of the component don't trigger CI builds:
@@ -300,6 +303,9 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   handles paren-balancing/pvar-seeding needed for fb2k titleformat to actually execute),
   `tools/recover_fooava_images.py` (ClickTeam SFX asset extraction). Don't reintroduce the old
   size-collision image-mapping heuristic — it mismapped same-size PNGs; offset-based mapping is exact.
+  `tools/setup_fooava.py` = the user-facing one-step wrapper (installer → skin folder, default
+  `Documents/fooava`). Per-panel records are cut only at names some `$panel(name,` uses: stray
+  length-prefixed bytes inside a script (e.g. `\x02\0\0\0ts`) otherwise split it (lost `ChronTIM`).
 - `tools/wclick.c` + `scripts/ui-test.sh` — drive the Wine foobar2000 UI (post clicks/keys/text
   to the Panels UI windows, screenshot it, edit pvars in config.sqlite, restart with a DLL).
 
@@ -391,5 +397,7 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   `SkinEngine`: `abort_callback_impl`, `play_callback_impl_base`, `::get()` calls. The DLL fails
   to load ("No access to memory location") and fb2k falls back to the Default UI. Create lazily.
 - `titleformat_object::run()` with a null hook crashes the core — pass an empty hook.
+- Window edge resize under Wine: Wine turns an edge drag (`HTLEFT`…) into `_NET_WM_MOVERESIZE`,
+  which Hyprland ignores — `main.cpp` runs its own capture/`SetWindowPos` loop when `wine_version()` is set.
 - Full UI replacement must forward `WM_KEYDOWN`/`WM_SYSKEYDOWN` to
   `keyboard_shortcut_manager::on_keydown_auto(wp)` or shortcuts break.

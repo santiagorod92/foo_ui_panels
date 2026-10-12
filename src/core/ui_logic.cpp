@@ -2,6 +2,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdio>
 
 namespace pui {
 
@@ -137,6 +138,67 @@ std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort
     default: break;
     }
     return v;
+}
+
+std::string format_time(double seconds) {
+    long long t = seconds > 0 ? (long long)seconds : 0;
+    const long long h = t / 3600, m = (t / 60) % 60, sec = t % 60;
+    char buf[32];
+    if (h > 0) snprintf(buf, sizeof buf, "%lld:%02lld:%02lld", h, m, sec);
+    else snprintf(buf, sizeof buf, "%lld:%02lld", m, sec);
+    return buf;
+}
+
+double seek_position_at(int x, int width, double length) {
+    if (width <= 0 || length <= 0) return 0;
+    return length * std::clamp((double)x / width, 0.0, 1.0);
+}
+
+double seek_by(double pos, double length, double delta) {
+    if (length <= 0) return 0;
+    return std::clamp(pos + delta, 0.0, length);
+}
+
+std::string seek_tooltip(double at, double length) {
+    if (length <= 0) return {};
+    return format_time(at) + " / " + format_time(length);
+}
+
+std::string volume_label(float db) {
+    if (db <= -100.0f) return "Muted";
+    if (db >= -0.05f) return "0 dB";
+    char buf[32];
+    snprintf(buf, sizeof buf, "%.1f dB", db);
+    return buf;
+}
+
+float volume_step(float db, int steps) {
+    return std::clamp(db + steps * 2.5f, -100.0f, 0.0f);
+}
+
+int wheel_steps(float& acc, float notches) {
+    if ((acc > 0 && notches < 0) || (acc < 0 && notches > 0)) acc = 0;
+    acc += notches;
+    const int steps = (int)acc;
+    acc -= (float)steps;
+    return steps;
+}
+
+std::string folder_picker_start(const std::string& current, const std::string& avoid) {
+    if (current.empty()) return {};
+    if (!avoid.empty() && current.compare(0, avoid.size(), avoid) == 0 &&
+        (current.size() == avoid.size() || current[avoid.size()] == '/' || current[avoid.size()] == '\\'))
+        return {};
+    return current;
+}
+
+EdgeRect resize_rect(EdgeRect start, int edges, int dx, int dy, int min_w, int min_h) {
+    EdgeRect r = start;
+    if (edges & kEdgeLeft)   r.l = std::min(start.l + dx, start.r - min_w);
+    if (edges & kEdgeRight)  r.r = std::max(start.r + dx, start.l + min_w);
+    if (edges & kEdgeTop)    r.t = std::min(start.t + dy, start.b - min_h);
+    if (edges & kEdgeBottom) r.b = std::max(start.b + dy, start.t + min_h);
+    return r;
 }
 
 }

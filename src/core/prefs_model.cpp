@@ -38,7 +38,19 @@ void PrefsModel::reset() {
     load_script();
 }
 
-void PrefsModel::refresh_skins() { m_skins = m_b.list_skins(m_now.root); }
+static bool looks_like_skin(const std::string& dir) {
+    std::error_code ec;
+    return !main_script_candidates(dir).empty() ||
+           std::filesystem::is_regular_file(fs_path(dir + "/" + SkinConfig::kFileName), ec);
+}
+
+void PrefsModel::refresh_skins() {
+    m_skins = m_b.list_skins(m_now.root);
+    std::vector<std::string> skins;
+    for (const auto& s : m_skins)
+        if (looks_like_skin(m_now.root + "/" + s)) skins.push_back(s);
+    if (!skins.empty()) m_skins = std::move(skins);
+}
 
 void PrefsModel::set_root(const std::string& root) {
     m_now.root = root;
@@ -61,11 +73,6 @@ void PrefsModel::set_main(const std::string& file) {
 void PrefsModel::choose_skin_folder(const std::string& folderIn) {
     std::string folder = folderIn;
     while (folder.size() > 1 && (folder.back() == '/' || folder.back() == '\\')) folder.pop_back();
-    auto looks_like_skin = [](const std::string& dir) {
-        std::error_code ec;
-        return !main_script_candidates(dir).empty() ||
-               std::filesystem::is_regular_file(fs_path(dir + "/" + SkinConfig::kFileName), ec);
-    };
     if (!looks_like_skin(folder)) {
         const std::vector<std::string> subs = m_b.list_skins(folder);
         if (std::any_of(subs.begin(), subs.end(), [&](const std::string& s) { return looks_like_skin(folder + "/" + s); })) {

@@ -3,6 +3,105 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.11.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.10.0...v1.11.0) (2026-10-12)
+
+### Highlights
+- **Seek bar, volume and skin buttons that feel like a modern player**: the time under the
+  pointer, drag to scrub, the mouse wheel, the keyboard, and hover/press feedback on buttons.
+- **Sortable playlist**: a column header to sort by album, title, rating or length.
+- **fooAvA in one step**: `tools/setup_fooava.py` turns the original installer into a ready
+  skin folder (in your Documents by default), and a skin there now loads cleanly from scratch.
+- **Resizing the window under Wine** by dragging its edge now works, also on compositors such
+  as Hyprland.
+
+### New
+- **Playlist column header** (Album, Title, Rating, Length): click a column to sort the
+  playlist by it, click again to reverse; an arrow shows the column and direction. Rating
+  starts with the best rated. Right-click the header for the same choices. The order before
+  sorting is kept for foobar2000's undo. Sorting by anything but the album splits the album
+  groups, as in any grouped view. Skins can hide it with `playlist.header = 0`.
+- **Seek bar**:
+  - Hover to see the time under the pointer (`1:23 / 4:56`) and a marker line.
+  - Drag to scrub; the track seeks when you release (a plain click still seeks there).
+  - Mouse wheel: 5 seconds per notch.
+  - Keyboard, once focused with Tab: ←/→ seek 5 seconds (Shift: 30), Home restarts the track.
+- **Volume**:
+  - Mouse wheel and arrow keys change it in 2.5 dB steps, matching the bar.
+  - Home mutes, End sets full volume, double-click toggles mute.
+  - Hover shows the level (`-6.0 dB`, `Muted`).
+- **Skin buttons**: a hand pointer over them; buttons with no hover art of their own light up
+  under the pointer and darken while pressed. `button.feedback = 0` in the skin's
+  `foo_ui_panels.ini` turns the highlight off.
+- **`tools/setup_fooava.py`** (Python 3, any OS): unpacks the fooAvA 1.05 installer (without
+  running it), copies its images, converts the layout and panel scripts, writes fooAvA's
+  `foo_ui_panels.ini` and puts each popup window (settings, playlist, about) where the skin's
+  buttons look for it. Output goes to `Documents/fooava` unless another folder is given; it
+  never overwrites an existing skin. An already unpacked installer folder works too.
+- New skin `foo_ui_panels.ini` keys: `playlist.header`, `button.feedback`.
+
+### Changed
+- **Choosing a skin folder on Windows** uses the standard folder dialog, with an address bar,
+  Documents and other places, and a box to paste a path (it was a small folder tree that
+  started at the drive root). It no longer starts inside the profile folder the layout wizard
+  writes to.
+- **Preferences › Browse…** (Windows and macOS) accepts either a skin's own folder or a folder
+  with one skin per subfolder, like the welcome screen and the wizard already did.
+- The **Active skin** list only shows subfolders that are skins (have a main script or a
+  `foo_ui_panels.ini`), so a Documents folder doesn't list unrelated folders.
+- The seek bar and the volume are now **Tab stops**, between the other panels that take keys.
+- The **release asset** is labelled `foo_ui_panels <version> (macOS + Windows x86/x64/ARM64)`,
+  the same format as foo_navidrome.
+
+### Fixed
+- Picking a skin's own folder with **Preferences › Browse…** made it the skins root: the list
+  showed its `images` and `panels` subfolders and the skin didn't load.
+- **fooAvA conversion**:
+  - The `ChronTIM` panel script (cover-flow track info) was lost, leaving a red "!" marker; it
+    is recovered.
+  - Eleven stray `panels/*.txt` files with nonsense names (some invalid on Windows, such as
+    `*Graphical Browser*.txt`) are no longer written; only scripts the skin uses are.
+- **Wine**: dragging the window's edge didn't resize it on compositors that ignore Wine's
+  resize request (Hyprland, for one). Panels UI now resizes the window itself under Wine.
+- macOS: the README explains the one-time *"foobar2000 would like to access files in your
+  Documents folder"* prompt; answering *Don't Allow* keeps a skin there from loading.
+
+### For contributors
+- foobar2000 SDK bumped to **SDK-2026-10-01** (pfc's ARM64EC `/alternatename` hooks fixed;
+  `now_playing_album_art_notify` may pass null data, already handled).
+- **Faster CI**: changes outside the component (docs, issue forms, local dev scripts) don't
+  trigger builds; superseded PR runs are cancelled; the Windows architectures build in parallel
+  with per-arch ccache; tests run in their own job without xwin. On a releasing push to main a
+  dry-run stamps every build with the next version, and the Release workflow reuses those
+  artifacts instead of rebuilding.
+- `CLAUDE.md` gains a *Shared conventions* section kept identical with foo_navidrome (SDK, build,
+  versioning, release asset naming, logging, test environments, troubleshooting).
+- New SDK-free, unit-tested helpers: `list_logic` (playlist header columns, sort state, stable
+  sort order), `ui_logic` (time/volume labels, seek and volume steps, fractional wheel
+  accumulation, folder-picker start folder, edge-resize geometry), `PrefsModel` skin-list
+  filtering, the `feedback` flag on script buttons.
+- `src/platform/win/folder_picker.h`: the shared Windows folder picker (`IFileOpenDialog` with a
+  `SHBrowseForFolder` fallback), used by the welcome screen, the wizard and Preferences.
+- `tools/extract_fooava.py` only cuts per-panel records at names some `$panel()` uses, and
+  reports how many records it skipped.
+
+## [1.10.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.9.0...v1.10.0) (2026-10-11)
+
+### Highlights
+- **32-bit foobar2000**: Panels UI now also runs in the 32-bit (x86) build of foobar2000 v2.
+
+### New
+- A **32-bit Windows (x86) DLL** in the release component, at its root, where 32-bit
+  foobar2000 v2 looks for it. Installing is unchanged: the same `.fb2k-component` works in
+  32-bit, 64-bit and ARM64 foobar2000 on Windows, and on macOS.
+
+### Changed
+- The README no longer says foobar2000 v2 is 64-bit only.
+
+### For contributors
+- `WIN_ARCH=x86 ./build.sh` / `make build-x86` → `build-x86/foo_ui_panels.dll`, linked against
+  `shared-Win32.lib`. xwin must be splatted with `--arch x86,x86_64,aarch64`.
+- CI builds and uploads the x86 DLL; the release job packages it.
+
 ## [1.9.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.8.0...v1.9.0) (2026-10-10)
 
 ### Highlights

@@ -299,27 +299,51 @@ def main(src, out):
             recs.append((o, ln, data[o+4:o+4+ln].decode('latin1'))); o += 4 + ln
         else:
             o += 1
+    referenced = set(re.findall(r'\$panel\(([^,()]+),', data.decode('latin1')))
     offs = [r[0] for r in recs] + [len(data)]
-    made = 0
-    for idx, (o, ln, name) in enumerate(recs):
-        seg = data[o+4+ln:offs[idx+1]]
-        best = b''; cur = b''
+
+    def runs_of(seg):
+        out = []; cur = b''
         for b in seg:
             if 9 <= b < 127: cur += bytes([b])
             else:
-                if len(cur) > len(best): best = cur
+                if cur: out.append(cur)
                 cur = b''
-        if len(cur) > len(best): best = cur
-        if len(best) <= 40: continue
+        if cur: out.append(cur)
+        return out
+
+    texts = {}
+    for idx, (o, ln, name) in enumerate(recs):
+        if name not in referenced or re.search(r'[<>:"/\\|?*\x00-\x1f]', name):
+            continue
+        best = max(runs_of(data[o+4+ln:offs[idx+1]]), key=len, default=b'')
+        if len(best) <= 40:
+            nxt = next((r[0] for r in recs[idx+1:] if r[2] in referenced), len(data))
+            best = next((r for r in runs_of(data[o+4+ln:nxt]) if len(r) > 40), b'')
+        if len(best) > 40:
+            texts[name] = best.decode('latin1')
+    used = set()
+    pending = [full]
+    while pending:
+        text = pending.pop()
+        for name, body in texts.items():
+            if name not in used and ('$panel(' + name + ',') in text:
+                used.add(name)
+                pending.append(body)
+    skipped = sorted({r[2] for r in recs} - used)
+    made = 0
+    for name in sorted(used):
         try:
             panel_path = os.path.join(pdir, name + '.txt')
-            panel_text = fix_image_case(scrub_author_paths(preprocess(best.decode('latin1'))), out)
+            panel_text = fix_image_case(scrub_author_paths(preprocess(texts[name])), out)
             panel_text = PANEL_TIDY.get(name, lambda t: t)(panel_text)
             open(panel_path, 'w', encoding='latin1').write(panel_text)
             made += 1
-        except OSError:
-            pass
+        except OSError as e:
+            print(f"panel {name!r}: {e}")
     print(f"per-panel scripts: {made} -> {pdir}")
+    if skipped:
+        print(f"skipped {len(skipped)} record(s) no $panel() uses")
 
 if __name__ == '__main__':
     main(sys.argv[1], sys.argv[2])

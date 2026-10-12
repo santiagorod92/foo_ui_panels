@@ -38,18 +38,24 @@ private:
     void move_focus(int idx, unsigned mods);
     bool find_as_you_type(int key);
     void finish_drag(int y);
+    int  header_h() const;
+    int  view_h() const;
+    void paint_header(gfx::Canvas& cv, gfx::Color hl);
+    void sort_by(PlaylistColumn c);
+    void header_menu(int x, int y);
 
     const GroupedRows& layout();
     struct Events : playlist_callback_single_impl_base {
         explicit Events(PlaylistView* v);
         PlaylistView* m_v;
         void changed() { m_v->m_dirty = true; m_v->invalidate(); }
-        void on_items_added(t_size, metadb_handle_list_cref, const bit_array&) override { changed(); }
-        void on_items_reordered(const t_size*, t_size) override { changed(); }
+        void unsorted() { if (!m_v->m_sorting) m_v->m_sort = SortState{}; }
+        void on_items_added(t_size, metadb_handle_list_cref, const bit_array&) override { unsorted(); changed(); }
+        void on_items_reordered(const t_size*, t_size) override { unsorted(); changed(); }
         void on_items_removed(const bit_array&, t_size, t_size) override { m_v->m_anchor = -1; changed(); }
         void on_items_modified(const bit_array&) override { changed(); }
         void on_items_replaced(const bit_array&, const pfc::list_base_const_t<playlist_callback::t_on_items_replaced_entry>&) override { changed(); }
-        void on_playlist_switch() override { m_v->m_restoreScroll = true; m_v->m_anchor = -1; changed(); }
+        void on_playlist_switch() override { m_v->m_restoreScroll = true; m_v->m_anchor = -1; m_v->m_sort = SortState{}; changed(); }
         void on_items_selection_change(const bit_array&, const bit_array&) override { m_v->invalidate(); }
         void on_item_focus_change(t_size, t_size) override { m_v->invalidate(); }
         void on_item_ensure_visible(t_size idx) override { m_v->ensure_visible((int)idx); }
@@ -72,6 +78,10 @@ private:
     bool m_press_deferred = false;
     bool m_dragging = false;
     int m_drop_idx = -1;
+
+    SortState m_sort;
+    bool m_sorting = false;
+    PlaylistColumn m_hover_col = PlaylistColumn::None;
 };
 
 }

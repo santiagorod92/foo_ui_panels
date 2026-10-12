@@ -116,8 +116,9 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         m_savedScroll = m_scroll;
         m_engine->set_view_state(scroll_state_key(), std::to_string(m_scroll));
     }
+    const int top = header_h();
     for (size_t g = L.group_count() ? L.group_at(m_scroll) : 0; g < L.group_count(); ++g) {
-        int y = L.group_top(g) - m_scroll;
+        int y = L.group_top(g) - m_scroll + top;
         if (y >= H) break;
         const t_size first = L.group_start(g), count = L.group_size(g);
         if (y + HEADER_H > 0) {
@@ -180,24 +181,108 @@ void PlaylistView::paint(gfx::Canvas& cv) {
     if (m_dragging && m_drop_idx >= 0) {
         const t_size n = pm->activeplaylist_get_item_count();
         int ly = (t_size)m_drop_idx < n ? L.item_top(m_drop_idx) : (n ? L.item_top((int)n - 1) + ROW_H : 0);
-        ly -= m_scroll;
+        ly += top - m_scroll;
         cv.fill_rect(gfx::Rect{ 2, ly - 1, W - 4, 2 }, gfx::Color(std::min(255, hl.r + 80), std::min(255, hl.g + 80), std::min(255, hl.b + 80)));
     }
+    if (top > 0) paint_header(cv, hl);
+}
+
+int PlaylistView::header_h() const {
+    return m_engine && m_engine->config().num("playlist.header", 1) ? 20 : 0;
+}
+
+int PlaylistView::view_h() const {
+    return host() ? std::max(0, host()->bounds().h - header_h()) : 0;
+}
+
+void PlaylistView::paint_header(gfx::Canvas& cv, gfx::Color hl) {
+    const int W = cv.width(), HH = header_h();
+    auto col = [this](const char* role, gfx::Color def) { return m_engine ? m_engine->color("playlist", role, def) : def; };
+    cv.fill_rect(gfx::Rect{ 0, 0, W, HH }, col("background", gfx::Color(30, 30, 34)));
+    fill_alpha(cv, 0, 0, W, HH, gfx::Color(0, 0, 0), 90);
+    cv.set_font(kSubFont);
+    const gfx::Color sep = col("separator", gfx::Color(40, 55, 90));
+    for (const auto& c : playlist_header_columns(W, has_stars())) {
+        if (c.w <= 0) continue;
+        const bool sorted = c.col == m_sort.col, hover = c.col == m_hover_col;
+        if (hover) fill_alpha(cv, c.x, 0, c.w, HH, gfx::Color(255, 255, 255), 24);
+        const gfx::Color tc = sorted || hover ? col("text", gfx::Color(235, 240, 255)) : col("text_dim", gfx::Color(150, 170, 210));
+        const bool right = c.col == PlaylistColumn::Length;
+        const int arrowW = sorted ? 12 : 0;
+        gfx::Rect r = gfx::Rect::ltrb(c.x + 6, 0, c.x + c.w - 4 - (right ? arrowW : 0), HH);
+        cv.draw_text(c.label, r, gfx::kSingleLine | gfx::kVCenter | gfx::kEndEllipsis | (right ? gfx::kAlignRight : 0u), tc);
+        if (sorted) {
+            const float ax = right ? (float)(c.x + c.w - 12) : (float)std::min(c.x + c.w - 12, c.x + 10 + cv.text_width(c.label));
+            const float cy = HH / 2.0f;
+            gfx::PointF tri[3];
+            if (m_sort.desc) { tri[0] = { ax, cy - 2 }; tri[1] = { ax + 7, cy - 2 }; tri[2] = { ax + 3.5f, cy + 2 }; }
+            else             { tri[0] = { ax, cy + 2 }; tri[1] = { ax + 7, cy + 2 }; tri[2] = { ax + 3.5f, cy - 2 }; }
+            cv.fill_polygon(tri, 3, hl.r + hl.g + hl.b > 150 ? gfx::Color(std::min(255, hl.r + 60), std::min(255, hl.g + 60), std::min(255, hl.b + 60)) : tc);
+        }
+        if (c.x > 0) cv.line(c.x, 4, c.x, HH - 4, sep);
+    }
+    cv.line(0, HH - 1, W, HH - 1, sep);
+}
+
+void PlaylistView::sort_by(PlaylistColumn c) {
+    const SortState s = next_sort(m_sort, c);
+    const char* spec = playlist_sort_format(s.col);
+    if (!*spec) return;
+    auto pm = playlist_manager::get();
+    const t_size n = pm->activeplaylist_get_item_count();
+    service_ptr_t<titleformat_object> tf;
+    titleformat_compiler::get()->compile_safe(tf, spec);
+    std::vector<std::string> keys(n);
+    for (t_size i = 0; i < n; ++i) {
+        metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, i);
+        keys[i] = fmt(h, tf).c_str();
+    }
+    const std::vector<size_t> order = sort_order(keys, s.desc);
+    if (n > 1) {
+        pm->activeplaylist_undo_backup();
+        m_sorting = true;
+        pm->activeplaylist_reorder_items(order.data(), n);
+        m_sorting = false;
+    }
+    m_sort = s;
+    m_anchor = -1;
+    const t_size focus = pm->activeplaylist_get_focus_item();
+    if (focus != pfc_infinite) ensure_visible((int)focus);
+    invalidate();
+}
+
+void PlaylistView::header_menu(int x, int y) {
+    const bool stars = has_stars();
+    ui::Menu m;
+    for (const auto& c : playlist_header_columns(host()->bounds().w, stars)) {
+        ui::MenuItem it;
+        std::string name = c.label;
+        for (char& ch : name) ch = (char)std::tolower((unsigned char)ch);
+        it.label = "Sort by " + name;
+        it.id = 1 + (int)c.col;
+        it.checked = c.col == m_sort.col;
+        m.push_back(it);
+    }
+    const int id = ui::popup_menu(host(), x, y, m);
+    if (id > 0) sort_by((PlaylistColumn)(id - 1));
 }
 
 enum { kTimerFind = 2, kTimerAutoScroll = 3, kFindResetMs = 1000, kDragThreshold = 4 };
 
-int PlaylistView::item_at(int y) { return layout().item_at(y + m_scroll); }
+int PlaylistView::item_at(int y) {
+    if (y < header_h()) return -1;
+    return layout().item_at(y - header_h() + m_scroll);
+}
 
-int PlaylistView::drop_index_at(int y) { return layout().drop_index_at(y + m_scroll); }
+int PlaylistView::drop_index_at(int y) { return layout().drop_index_at(std::max(0, y - header_h()) + m_scroll); }
 
 void PlaylistView::clamp_scroll() {
-    m_scroll = pui::clamp_scroll(m_scroll, layout().content_height(), host() ? host()->bounds().h : 0);
+    m_scroll = pui::clamp_scroll(m_scroll, layout().content_height(), view_h());
 }
 
 void PlaylistView::ensure_visible(int idx) {
     if (!host()) return;
-    m_scroll = layout().reveal(m_scroll, idx, host()->bounds().h);
+    m_scroll = layout().reveal(m_scroll, idx, view_h());
     invalidate();
 }
 
@@ -273,6 +358,9 @@ void PlaylistView::on_mouse_move(int x, int y, unsigned, bool left_down) {
             return;
         }
     }
+    const PlaylistColumn hc = y >= 0 && y < header_h()
+        ? header_column_at(playlist_header_columns(host()->bounds().w, has_stars()), x) : PlaylistColumn::None;
+    if (hc != m_hover_col) { m_hover_col = hc; invalidate(); }
     int hr = -1, hs = 0;
     const int idx = item_at(y), star = star_under(x);
     if (idx >= 0 && star) { hr = idx; hs = star; }
@@ -283,10 +371,19 @@ void PlaylistView::on_mouse_move(int x, int y, unsigned, bool left_down) {
 }
 
 void PlaylistView::on_mouse_leave() {
-    if (m_hover_row != -1) { m_hover_row = -1; invalidate(); }
+    if (m_hover_row != -1 || m_hover_col != PlaylistColumn::None) {
+        m_hover_row = -1; m_hover_col = PlaylistColumn::None; invalidate();
+    }
 }
 
 void PlaylistView::on_mouse_down(const ui::MouseEvent& e) {
+    if (e.y < header_h()) {
+        if (e.button == ui::MouseButton::Left)
+            sort_by(header_column_at(playlist_header_columns(host()->bounds().w, has_stars()), e.x));
+        else if (e.button == ui::MouseButton::Right)
+            header_menu(e.x, e.y);
+        return;
+    }
     if (e.button == ui::MouseButton::Left) {
         if (e.double_click) { on_click(e.x, e.y, true, false, false); return; }
         const bool shift = (e.mods & ui::kShift) != 0, ctrl = (e.mods & ui::kCtrl) != 0;
@@ -332,7 +429,7 @@ void PlaylistView::on_timer(int id) {
     if (id == kTimerFind) { host()->kill_timer(kTimerFind); m_find.clear(); return; }
     if (id == kTimerAutoScroll && m_dragging) {
         const int H = host()->bounds().h, old = m_scroll, ROW_H = m_layout.row_h();
-        if (m_press_y < ROW_H) m_scroll -= ROW_H;
+        if (m_press_y < header_h() + ROW_H) m_scroll -= ROW_H;
         else if (m_press_y > H - ROW_H) m_scroll += ROW_H;
         clamp_scroll();
         if (m_scroll != old) { m_drop_idx = drop_index_at(m_press_y); invalidate(); }
@@ -397,7 +494,7 @@ bool PlaylistView::on_key_down(int key, unsigned mods) {
     const int n = (int)pm->activeplaylist_get_item_count();
     int focus = (int)pm->activeplaylist_get_focus_item();
     if (focus < 0 || focus >= n) focus = -1;
-    const int page = std::max(1, (host() ? host()->bounds().h : 0) / m_layout.row_h() - 1);
+    const int page = std::max(1, view_h() / m_layout.row_h() - 1);
     const int to = list_nav(key, focus, n, page);
     if (to >= 0) { move_focus(to, mods); return true; }
     if (key == ui::kKeyEnter) {

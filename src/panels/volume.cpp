@@ -1,6 +1,7 @@
 #include "volume.h"
 #include "../core/skin_engine.h"
 #include "../core/image_cache.h"
+#include "../core/ui_logic.h"
 #include <string>
 
 namespace pui {
@@ -10,16 +11,47 @@ void Volume::set_from_x(int x) {
     if (W <= 0) return;
     float f = (float)x / W; if (f < 0) f = 0; if (f > 1) f = 1;
     playback_control::get()->set_volume(f * 100.0f - 100.0f);
+    changed();
+}
+
+void Volume::changed() {
+    host()->set_tooltip(volume_label(playback_control::get()->get_volume()));
+    invalidate();
     if (m_engine && m_engine->main_window()) m_engine->main_window()->invalidate();
 }
 
 void Volume::on_mouse_down(const ui::MouseEvent& e) {
     if (e.button != ui::MouseButton::Left) return;
+    if (e.double_click) { playback_control::get()->volume_mute_toggle(); changed(); return; }
     host()->capture_mouse(true);
     set_from_x(e.x);
 }
 
-void Volume::on_mouse_move(int x, int, unsigned, bool left_down) { if (left_down) set_from_x(x); }
+void Volume::on_mouse_move(int x, int, unsigned, bool left_down) {
+    if (left_down) set_from_x(x);
+    else host()->set_tooltip(volume_label(playback_control::get()->get_volume()));
+}
+
+void Volume::on_wheel(int, int, float notches) {
+    const int steps = wheel_steps(m_wheel, notches);
+    if (!steps) return;
+    auto pc = playback_control::get();
+    pc->set_volume(volume_step(pc->get_volume(), steps));
+    changed();
+}
+
+bool Volume::on_key_down(int key, unsigned) {
+    auto pc = playback_control::get();
+    switch (key) {
+    case ui::kKeyRight: case ui::kKeyUp:   pc->set_volume(volume_step(pc->get_volume(), 1)); break;
+    case ui::kKeyLeft:  case ui::kKeyDown: pc->set_volume(volume_step(pc->get_volume(), -1)); break;
+    case ui::kKeyHome:  pc->set_volume(-100.0f); break;
+    case ui::kKeyEnd:   pc->set_volume(0.0f); break;
+    default: return false;
+    }
+    changed();
+    return true;
+}
 
 void Volume::on_mouse_up(const ui::MouseEvent& e) {
     if (e.button == ui::MouseButton::Left) host()->capture_mouse(false);

@@ -35,6 +35,7 @@ struct PrefsBackend {
 namespace prefs_text {
 inline constexpr const char* kTabs[] = { "General", "Script", "Variables", "Overrides", "Diagnostics" };
 inline constexpr const char* kRoot = "Skins root folder:";
+inline constexpr const char* kChooseFolder = "Choose a skin folder, or a folder with one skin per subfolder";
 inline constexpr const char* kSkin = "Active skin:";
 inline constexpr const char* kMain = "Main script:";
 inline constexpr const char* kZoom = "Zoom:";

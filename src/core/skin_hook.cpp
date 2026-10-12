@@ -261,6 +261,7 @@ void SkinEngine::render(gfx::Canvas& cv, int width, int height) {
       gfx::Color accent;
       const bool haveAccent = theme_color(accent);
       hook.runtime().apply_selected_buttons(m_st.buttons, haveAccent, accent); }
+    draw_button_feedback(cv);
 
     m_problemMarker = draw_problem_marker(cv, width, height, main_script_label(), true);
 

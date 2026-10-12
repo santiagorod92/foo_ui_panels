@@ -255,3 +255,39 @@ TEST("album_view: filter and sort orders") {
     CHECK(v == std::vector<size_t>({ 2, 0, 3, 1 }));
     CHECK(album_view(all, AlbumSort::Year, "zeppelin").empty());
 }
+
+TEST("playlist header: columns follow the row layout") {
+    auto cols = playlist_header_columns(400, true);
+    CHECK_EQ(cols.size(), (size_t)4);
+    CHECK(cols[0].col == PlaylistColumn::Album);  CHECK_EQ(cols[0].x, 0);   CHECK_EQ(cols[0].w, 64);
+    CHECK(cols[1].col == PlaylistColumn::Title);  CHECK_EQ(cols[1].x, 64);
+    CHECK(cols[2].col == PlaylistColumn::Rating); CHECK_EQ(cols[2].x, star_strip(400).x - 4);
+    CHECK(cols[3].col == PlaylistColumn::Length); CHECK_EQ(cols[3].x, 350); CHECK_EQ(cols[3].w, 50);
+    CHECK(header_column_at(cols, 10) == PlaylistColumn::Album);
+    CHECK(header_column_at(cols, 200) == PlaylistColumn::Title);
+    CHECK(header_column_at(cols, 300) == PlaylistColumn::Rating);
+    CHECK(header_column_at(cols, 399) == PlaylistColumn::Length);
+    CHECK(header_column_at(cols, 400) == PlaylistColumn::None);
+    cols = playlist_header_columns(400, false);
+    CHECK_EQ(cols.size(), (size_t)3);
+    CHECK_EQ(cols[1].w, 350 - 64);
+    cols = playlist_header_columns(20, true);
+    for (const auto& c : cols) CHECK(c.w >= 0);
+}
+
+TEST("playlist sort: click toggles, rating starts descending") {
+    SortState s;
+    s = next_sort(s, PlaylistColumn::Title);  CHECK(s.col == PlaylistColumn::Title); CHECK(!s.desc);
+    s = next_sort(s, PlaylistColumn::Title);  CHECK(s.desc);
+    s = next_sort(s, PlaylistColumn::Rating); CHECK(s.col == PlaylistColumn::Rating); CHECK(s.desc);
+    s = next_sort(s, PlaylistColumn::None);   CHECK(s.col == PlaylistColumn::Rating);
+    CHECK(std::string(playlist_sort_format(PlaylistColumn::Length)).find("length_seconds") != std::string::npos);
+    CHECK_EQ(std::string(playlist_sort_format(PlaylistColumn::None)), std::string());
+}
+
+TEST("sort_order: stable, case-insensitive, both directions") {
+    std::vector<std::string> k = { "b", "A", "a", "C" };
+    CHECK(sort_order(k, false) == (std::vector<size_t>{ 1, 2, 0, 3 }));
+    CHECK(sort_order(k, true) == (std::vector<size_t>{ 3, 0, 1, 2 }));
+    CHECK(sort_order({}, false).empty());
+}

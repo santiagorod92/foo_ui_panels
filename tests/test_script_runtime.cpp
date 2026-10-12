@@ -298,3 +298,27 @@ TEST("pvars: serialize / parse round trip, case-insensitive names") {
     CHECK_EQ(back["a"], std::string("1"));
     CHECK_EQ(back["B"], std::string("x=y"));
 }
+
+TEST("runtime: buttons without hover art of their own ask for hover feedback") {
+    Rig r;
+    r.st.base = "/s";
+    r.env.images["/s/n.png"] = { 10, 10 };
+    r.env.images["/s/h.png"] = { 10, 10 };
+    r.call("button", { "0", "0", "", "", "0", "0", "n.png", "h.png", "A" });
+    r.call("button", { "0", "0", "", "", "0", "0", "n.png", "n.png", "B" });
+    r.call("button", { "0", "0", "", "", "0", "0", "n.png", "", "C" });
+    r.call("button2", { "0", "0", "", "", "40", "20", "INFO", "INFO", "D" });
+    r.call("textbutton", { "1", "2", "0", "0", "EQ", "EQ", "E" });
+    r.call("imagebutton", { "5", "5", "s0.png", "s1.png", "F" });
+    r.call("imagebutton", { "5", "5", "s0.png", "s0.png", "G" });
+    CHECK_EQ(r.st.buttons.size(), (size_t)7);
+    CHECK(!r.st.buttons[0].feedback);
+    CHECK(r.st.buttons[1].feedback);
+    CHECK(r.st.buttons[2].feedback);
+    CHECK(r.st.buttons[3].feedback);
+    CHECK(r.st.buttons[4].feedback);
+    CHECK(!r.st.buttons[5].feedback);
+    CHECK(r.st.buttons[6].feedback);
+    CHECK(button_at(r.st.buttons, 6, 6) == &r.st.buttons[6]);
+    CHECK(button_at(r.st.buttons, 500, 500) == nullptr);
+}

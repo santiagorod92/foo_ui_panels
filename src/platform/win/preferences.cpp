@@ -1,6 +1,8 @@
 #include "win_sdk.h"
 #include "gdi_canvas.h"
 #include "dark_mode.h"
+#include "folder_picker.h"
+#include "../../core/ui_logic.h"
 #include "../../core/prefs_model.h"
 #include "../../core/prefs_store.h"
 #include "../../core/skin_paths.h"
@@ -284,16 +286,13 @@ private:
     }
 
     void browse_root() {
-        wchar_t path[MAX_PATH] = {};
-        BROWSEINFOW bi = {}; bi.hwndOwner = m_wnd; bi.lpszTitle = L"Skins root folder";
-        bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-        LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-        if (!pidl) return;
-        if (SHGetPathFromIDListW(pidl, path)) {
-            m_updating = true; SetWindowTextW(m_rootEdit, path); m_updating = false;
-            root_edited();
-        }
-        CoTaskMemFree(pidl);
+        const std::string dir = win::pick_folder(m_wnd, prefs_text::kChooseFolder,
+                                                 folder_picker_start(m_model.pending().root, layout_skins_dir()));
+        if (dir.empty()) return;
+        m_model.choose_skin_folder(dir);
+        m_updating = true; set_text(m_rootEdit, m_model.pending().root); m_updating = false;
+        refresh_skin_choice();
+        changed();
     }
 
     void begin_edit_value(int row) {

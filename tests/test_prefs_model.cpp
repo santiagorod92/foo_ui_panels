@@ -183,3 +183,22 @@ TEST("prefs: picker entries and selection by index") {
     CHECK_EQ(z[0], std::string(prefs_text::kZoomAuto100));
     CHECK_EQ(z[3], std::string("100%"));
 }
+
+TEST("prefs: the skin list leaves out subfolders that aren't skins") {
+    Skins s;
+    std::filesystem::create_directories(s.dir + "/docs/Games");
+    std::filesystem::create_directories(s.dir + "/docs/fooava/images");
+    std::filesystem::create_directories(s.dir + "/docs/fooava/panels");
+    write_file(s.dir + "/docs/fooava/fooava.txt", "x");
+    write_file(s.dir + "/docs/fooava/foo_ui_panels.ini", "script = fooava.txt\n");
+    FakeBackend b; b.root = s.dir;
+    PrefsModel m(b);
+    m.load();
+    m.choose_skin_folder(s.dir + "/docs/fooava");
+    CHECK_EQ(m.pending().root, s.dir + "/docs");
+    CHECK_EQ(m.pending().active, std::string("fooava"));
+    CHECK(m.skins() == (std::vector<std::string>{ "fooava" }));
+    CHECK_EQ(m.main_script(), s.dir + "/docs/fooava/fooava.txt");
+    m.set_root(s.dir + "/docs/fooava");
+    CHECK(m.skins() == (std::vector<std::string>{ "images", "panels" }));
+}

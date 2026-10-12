@@ -47,6 +47,9 @@ One multi-arch `.fb2k-component` carries every build; foobar2000 loads the one m
 | macOS 11+ (Apple silicon and Intel) | `mac/foo_ui_panels.component` — universal (arm64 + x86_64) |
 | Linux | runs under Wine with the Windows x64 build |
 
+Under Wine (Linux), drag the window's edge to resize it: Panels UI does the resizing itself, since
+some compositors (Hyprland, for one) ignore Wine's request to start it.
+
 foobar2000 v2 is still offered as a 32-bit build on Windows; the x86 DLL is for that one. Prefer
 the 64-bit foobar2000 when you can.
 
@@ -79,7 +82,7 @@ lyrics, spectrum) — each with a screenshot of it. Picking one writes it out as
 ordinary skin from then on, to edit like any other. **Use my own skin folder…** loads any other skin
 instead (fooAvA, see below).
 
-Picking a skin folder (the dialog's **OK**) is all it takes: it is saved and the skin loads. A folder
+Picking a skin folder is all it takes: it is saved and the skin loads. A folder
 with nothing to run yet is kept all the same, with a warning saying why — no `.txt` main script at
 its top level (the skin starts as soon as one appears there, no restart), or several `.txt` files
 (Preferences opens to pick the main one). Until a folder has a main script, a welcome screen offers
@@ -88,24 +91,32 @@ the wizard, the folder chooser and the Preferences page.
 ### Setting up fooAvA
 
 fooAvA is distributed by its author (link above) as a Windows installer for the old Panels UI.
-The scripts in [`tools/`](tools/) (Python 3, no extra packages) turn it into a skin folder:
+[`tools/setup_fooava.py`](tools/setup_fooava.py) (Python 3, no extra packages, any OS) turns it
+into a ready-to-use skin folder in one step — you don't run the installer itself (it targets
+foobar2000 0.9):
 
 1. Download fooAvA 1.05 from the author's DeviantArt page — `fooava_1_05_by_dawxxx666_*.exe`.
-   You don't need to run it (it targets foobar2000 0.9).
-2. Unpack it into a working folder, every file included:
-   `python3 tools/recover_fooava_images.py fooava_1_05_by_dawxxx666_*.exe fooava-files --all`
-3. Make the skin folder (say `fooava/`) and copy the unpacked `images/` folder into it.
-4. Convert the Panels UI configuration — the skin's layout and its panel scripts — into scripts
-   this component runs: `python3 tools/extract_fooava.py <the configuration file> fooava/fooava.txt`.
-   This also writes `fooava/panels/*.txt` and fooAvA's `foo_ui_panels.ini`. Convert each popup
-   window (`FOOAvA_settings.ava`, `FOOAvA Playlist.ava`, `FOOAvA_about.ava`) the same way, into
-   `fooava/panels/<its name>.txt`.
-5. Check it: `make skin-lint LINT_DIR=fooava` (from a source checkout) lists anything missing.
-6. Point the component at it: the welcome screen's **Choose a skin folder…**, or Preferences.
-   On macOS copy the folder to `~/Library/foobar2000-v2/foo_ui_panels/` or choose it there too.
+2. Run `python3 tools/setup_fooava.py fooava_1_05_by_dawxxx666_*.exe` (on Windows: `py
+   tools\setup_fooava.py …`). It unpacks the installer, copies its images, converts the layout
+   and its panel scripts into `fooava.txt` + `panels/`, writes fooAvA's `foo_ui_panels.ini`, and
+   converts each popup window (settings, playlist, about) to where the skin's buttons look for
+   it. The skin goes to `fooava` in your **Documents** folder; add a second argument to put it
+   elsewhere. An already unpacked installer folder works too instead of the `.exe`.
+3. Point Panels UI at it: **Preferences › Display › Panels UI (reborn) › Browse…** (or the
+   wizard's **Use my own skin folder…**, the welcome screen's **Choose a skin folder…**) and pick the `fooava` folder.
+   Picking a skin's own folder or a folder that holds several skins both work: the skin list
+   only shows the subfolders that are skins.
+4. Optional, from a source checkout: `make skin-lint LINT_DIR=<the folder>` lists anything missing.
+
+On macOS, Documents is a protected folder: the first time, macOS asks whether foobar2000 may
+access it — **Allow**, or the skin can't load (System Settings › Privacy & Security › Files and
+Folders changes it later). Keeping the skin in `~/Library/foobar2000-v2/foo_ui_panels/` instead
+needs no permission.
 
 fooAvA's fonts (Calibri, Swis721 Cn BT) are optional: without them it uses the stand-ins its
 `foo_ui_panels.ini` names. Cover flow needed the long-gone foo_chronflow; the native one replaces it.
+The lower-level tools it runs are `tools/recover_fooava_images.py` (unpacks the installer) and
+`tools/extract_fooava.py` (converts one configuration).
 
 ### Skin configuration
 
@@ -127,6 +138,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
 | `asset.nocover`, `asset.cd_case`, `asset.cd_case_window` | Album browser: missing-cover art, case art and the cover's window inside it (`x y w h`, case pixels). |
+| `playlist.header` | Show the playlist's sortable column header (`1`; `0` hides it). |
+| `button.feedback` | Light up buttons with no hover art under the pointer and darken them while pressed (`1`; `0` turns it off). |
 | `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
 | `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
 | `popup.size`, `popup.size.<file>` | Size of a `POPUP:` window, `W H` (`400 500`). |
@@ -157,6 +170,18 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   the selection, Enter to play, type a few letters to jump to a title or album artist), drag
   selected tracks to reorder them, and drop files or folders from Explorer / Finder onto it
   (dropped anywhere else in the window, they're added to the end of the active playlist).
+- Playlist **column header**: click **Album**, **Title**, **Rating** or **Length** to sort the
+  playlist by it, click again to reverse (an arrow shows which way); right-click it for the same
+  choices. Sorting by anything but the album splits the
+  album groups, as in any grouped view. Skins can hide it (`playlist.header = 0`).
+- Seek bar: hover to see the time under the pointer (and a marker), drag to scrub and release to
+  seek, the mouse wheel jumps 5 seconds, and with the bar focused (Tab) ←/→ seek 5 seconds
+  (Shift: 30), Home restarts the track.
+- Volume: the mouse wheel and the arrow keys change it in 2.5 dB steps, Home/End mute or set it
+  to full, double-click toggles mute, and hovering shows the level in dB.
+- The skin's buttons show a hand pointer, and the ones with no hover art of their own light up
+  under the pointer and darken while pressed (`button.feedback = 0` in the skin's ini turns that
+  off).
 - Lyrics panel: a timing correction per track on top of the global one, "Search online again"
   to replace wrong lyrics (even ones from tags or a sidecar file), and lrclib.net's
   instrumental tracks shown as such. Synced lyrics found anywhere (tags, sidecar `.lrc`, cache)
@@ -191,7 +216,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   `mini.size`), zoom, **Reload skin**, **Layout wizard…**, **Skin ›** (switch between the skins in your skins
   folder, applied right away) and **Skin commands ›** (the skin's own `command.<label>` actions).
 - Keyboard and screen readers: **Tab** / **Shift+Tab** move between the panels that take keys
-  (playlist, album browser, playlist switcher, search, lyrics), the focused one outlined; each
+  (playlist, seek bar, volume, album browser, playlist switcher, search, lyrics), the focused one outlined; each
   panel has a name screen readers announce ("Playlist", "Album browser"…).
 - The system's media controls (Windows' media overlay / SMTC, macOS Now Playing) are run by
   foobar2000 itself for whichever UI owns the main window; Panels UI hands the core its window

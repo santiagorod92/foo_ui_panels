@@ -10,6 +10,7 @@
 #include "panel_host.h"
 #include "tooltip.h"
 #include "drop_files.h"
+#include "folder_picker.h"
 #include "zoom.h"
 #include "../../ui/host_input.h"
 #include "../../core/skin_paths.h"
@@ -680,25 +681,8 @@ void message_box(ViewHost* owner, const std::string& title, const std::string& t
                 widen(text).c_str(), widen(title).c_str(), MB_ICONWARNING);
 }
 
-static int CALLBACK browse_start(HWND wnd, UINT msg, LPARAM, LPARAM data) {
-    if (msg == BFFM_INITIALIZED && data) SendMessageW(wnd, BFFM_SETSELECTIONW, TRUE, data);
-    return 0;
-}
-
 std::string choose_folder(MainWindow& root, const std::string& title, const std::string& start) {
-    const std::wstring wtitle = widen(title), wstart = widen(start);
-    BROWSEINFOW bi = {};
-    bi.hwndOwner = (HWND)root.native();
-    bi.lpszTitle = wtitle.c_str();
-    bi.ulFlags = BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE;
-    bi.lpfn = browse_start;
-    bi.lParam = wstart.empty() ? 0 : (LPARAM)wstart.c_str();
-    LPITEMIDLIST pidl = SHBrowseForFolderW(&bi);
-    if (!pidl) return {};
-    wchar_t path[MAX_PATH] = {};
-    const bool ok = SHGetPathFromIDListW(pidl, path) != FALSE;
-    CoTaskMemFree(pidl);
-    return ok ? narrow(path) : std::string();
+    return win::pick_folder((HWND)root.native(), title, start);
 }
 
 void open_url(const std::string& url) {

@@ -8,6 +8,7 @@
 #include "prefs_store.h"
 #include "skin_paths.h"
 #include "skin_templates.h"
+#include "ui_logic.h"
 #include "log.h"
 #include <cstdio>
 #include <cstring>
@@ -206,8 +207,8 @@ bool SkinEngine::run_button_action(const std::string& action) {
         if (!m_main) return true;
         PrefsModel prefs(prefs_backend());
         prefs.load();
-        const std::string dir = ui::choose_folder(*m_main, "Choose a skin folder, or a folder with one skin per subfolder",
-                                                  prefs.pending().root);
+        const std::string dir = ui::choose_folder(*m_main, prefs_text::kChooseFolder,
+                                                  folder_picker_start(prefs.pending().root, layout_skins_dir()));
         if (dir.empty()) return true;
         prefs.choose_skin_folder(dir);
         apply_skin_choice(prefs);
@@ -319,6 +320,32 @@ bool SkinEngine::update_hover(int x, int y) {
     if (m_main) m_main->set_tooltip(m_problemMarker.contains(x, y) ? problem_tooltip(main_script_label())
                                                                  : tooltip_at(m_st.buttons, x, y));
     return before != after;
+}
+
+bool SkinEngine::over_button(int x, int y) const {
+    return m_problemMarker.contains(x, y) || button_at(m_st.buttons, x, y) != nullptr;
+}
+
+bool SkinEngine::press(int x, int y) {
+    if (!button_at(m_st.buttons, x, y)) return false;
+    m_pressX = m_hoverX = x; m_pressY = m_hoverY = y;
+    return true;
+}
+
+bool SkinEngine::release_press() {
+    if (m_pressX < 0) return false;
+    m_pressX = m_pressY = -1;
+    return true;
+}
+
+void SkinEngine::draw_button_feedback(gfx::Canvas& cv) const {
+    if (!m_st.cfg.num("button.feedback", 1)) return;
+    const bool pressed = m_pressX >= 0;
+    const Button* b = button_at(m_st.buttons, pressed ? m_pressX : m_hoverX, pressed ? m_pressY : m_hoverY);
+    if (!b || !b->feedback) return;
+    if (pressed && !button_hit(*b, m_hoverX, m_hoverY)) return;
+    cv.fill_rect_alpha(gfx::Rect{ b->x, b->y, b->w, b->h },
+                       pressed ? gfx::Color(0, 0, 0) : gfx::Color(255, 255, 255), pressed ? 70 : 36);
 }
 
 void SkinEngine::set_rating(const metadb_handle_ptr& track, int stars) {

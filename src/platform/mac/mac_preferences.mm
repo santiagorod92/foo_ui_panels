@@ -3,6 +3,7 @@
 #include "../../core/prefs_model.h"
 #include "../../core/prefs_store.h"
 #include "../../core/skin_paths.h"
+#include "../../core/ui_logic.h"
 #include "../../core/diagnostics.h"
 #include "../../ui/view.h"
 #include <algorithm>
@@ -291,12 +292,12 @@ NSStackView* column(NSArray<NSView*>* views) {
     p.canChooseDirectories = YES;
     p.canChooseFiles = NO;
     p.allowsMultipleSelection = NO;
-    p.message = @"Folder with one subfolder per skin";
-    const std::string cur = _model->pending().root;
+    p.message = ns(pui::prefs_text::kChooseFolder);
+    const std::string cur = pui::folder_picker_start(_model->pending().root, pui::layout_skins_dir());
     if (!cur.empty()) p.directoryURL = [NSURL fileURLWithPath:ns(cur)];
     [p beginSheetModalForWindow:self.view.window completionHandler:^(NSModalResponse res) {
         if (res != NSModalResponseOK || !p.URL.fileSystemRepresentation) return;
-        self->_model->set_root(p.URL.fileSystemRepresentation);
+        self->_model->choose_skin_folder(p.URL.fileSystemRepresentation);
         [self commit];
     }];
 }

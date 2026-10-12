@@ -52,6 +52,15 @@ struct StarStrip { int x = 0, w = 55; };
 StarStrip star_strip(int view_w);
 int star_at(const StarStrip& s, int x);
 
+enum class PlaylistColumn { None = -1, Album, Title, Rating, Length };
+struct HeaderColumn { PlaylistColumn col = PlaylistColumn::None; int x = 0, w = 0; const char* label = ""; };
+std::vector<HeaderColumn> playlist_header_columns(int view_w, bool stars);
+PlaylistColumn header_column_at(const std::vector<HeaderColumn>& cols, int x);
+const char* playlist_sort_format(PlaylistColumn c);
+struct SortState { PlaylistColumn col = PlaylistColumn::None; bool desc = false; };
+SortState next_sort(SortState cur, PlaylistColumn clicked);
+std::vector<size_t> sort_order(const std::vector<std::string>& keys, bool desc);
+
 struct TreeItem {
     std::string label;
     int kind = 0, a = -1, b = -1;

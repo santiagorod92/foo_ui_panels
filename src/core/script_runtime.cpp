@@ -550,6 +550,7 @@ bool ScriptRuntime::f_button(const ScriptArgs& a, ScriptOut&) {
     std::string act = clean_action(a.str(8));
     if (!act.empty()) {
         Button btn = make_button(x, y, hw, hh, act, tooltip_arg(a, 9));
+        btn.feedback = dHover.empty() || dHover == state(6);
         if (m_ox == 0 && m_oy == 0) {
             const std::string kTag = "PVAR:SET:";
             if (act.compare(0, kTag.size(), kTag) == 0) {
@@ -572,7 +573,11 @@ bool ScriptRuntime::f_textbutton(const ScriptArgs& a, ScriptOut&) {
     m_cv.draw_text(a.str(4), mkrect(x, y, w, h), gfx::kAlignCenter | gfx::kSingleLine | gfx::kVCenter | gfx::kNoClip, m_textcol);
     if (a.size() >= 7) {
         std::string act = clean_action(a.str(6));
-        if (!act.empty()) button_list().push_back(make_button(x, y, w, h, act, tooltip_arg(a, 7)));
+        if (!act.empty()) {
+            Button btn = make_button(x, y, w, h, act, tooltip_arg(a, 7));
+            btn.feedback = true;
+            button_list().push_back(btn);
+        }
     }
     return true;
 }
@@ -583,7 +588,11 @@ bool ScriptRuntime::f_imagebutton(const ScriptArgs& a, ScriptOut&) {
     const bool hovered = m_hoverX >= x && m_hoverX < x + hw && m_hoverY >= y && m_hoverY < y + hh;
     m_env.draw_image(m_cv, image_path(a.str(hovered ? 3 : 2)), x, y, 0, 0, 255, 0);
     std::string act = clean_action(a.str(4));
-    if (!act.empty()) button_list().push_back(make_button(x, y, hw, hh, act, tooltip_arg(a, 5)));
+    if (!act.empty()) {
+        Button btn = make_button(x, y, hw, hh, act, tooltip_arg(a, 5));
+        btn.feedback = trim_ws(a.str(3)).empty() || trim_ws(a.str(3)) == trim_ws(a.str(2));
+        button_list().push_back(btn);
+    }
     return true;
 }
 

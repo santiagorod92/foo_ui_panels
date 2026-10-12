@@ -257,6 +257,40 @@ private:
     std::string m_title;
     pui::win::Tooltip m_tooltip;
     pui::win::TrayIcon m_tray;
+    int         m_sizeEdges = 0;
+    POINT       m_sizeFrom{};
+    pui::EdgeRect m_sizeStart;
+
+    static int resize_edges(WPARAM ht) {
+        using namespace pui;
+        switch (ht) {
+        case HTLEFT: return kEdgeLeft;
+        case HTRIGHT: return kEdgeRight;
+        case HTTOP: return kEdgeTop;
+        case HTBOTTOM: return kEdgeBottom;
+        case HTTOPLEFT: return kEdgeTop | kEdgeLeft;
+        case HTTOPRIGHT: return kEdgeTop | kEdgeRight;
+        case HTBOTTOMLEFT: return kEdgeBottom | kEdgeLeft;
+        case HTBOTTOMRIGHT: return kEdgeBottom | kEdgeRight;
+        default: return 0;
+        }
+    }
+    static bool under_wine() {
+        static const bool wine = !pui::ui::wine_version().empty();
+        return wine;
+    }
+    void begin_size(int edges, POINT screen) {
+        RECT rc; GetWindowRect(m_wnd, &rc);
+        m_sizeStart = pui::EdgeRect{ rc.left, rc.top, rc.right, rc.bottom };
+        m_sizeFrom = screen;
+        m_sizeEdges = edges;
+        SetCapture(m_wnd);
+    }
+    void size_to(POINT screen) {
+        const pui::EdgeRect r = pui::resize_rect(m_sizeStart, m_sizeEdges, screen.x - m_sizeFrom.x,
+                                                 screen.y - m_sizeFrom.y, 160, 100);
+        SetWindowPos(m_wnd, nullptr, r.l, r.t, r.r - r.l, r.b - r.t, SWP_NOZORDER | SWP_NOACTIVATE);
+    }
 
     pui::SkinEngine m_skin;
 
@@ -364,16 +398,67 @@ private:
             return 0;
         case WM_LBUTTONDOWN:
             if (self) {
-                if (self->m_skin.handle_click(logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp)))) return 0;
+                const int x = logical(GET_X_LPARAM(lp)), y = logical(GET_Y_LPARAM(lp));
+                if (self->m_skin.press(x, y)) {
+                    SetCapture(wnd);
+                    InvalidateRect(wnd, nullptr, FALSE);
+                }
+                if (self->m_skin.handle_click(x, y)) return 0;
+                if (self->m_skin.release_press() && GetCapture() == wnd) ReleaseCapture();
                 self->begin_window_drag();
                 return 0;
             }
             break;
+        case WM_NCLBUTTONDOWN:
+            if (self && under_wine()) {
+                if (const int edges = resize_edges(wp)) {
+                    self->begin_size(edges, POINT{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) });
+                    return 0;
+                }
+            }
+            break;
+        case WM_LBUTTONUP:
+            if (self && self->m_sizeEdges) {
+                self->m_sizeEdges = 0;
+                if (GetCapture() == wnd) ReleaseCapture();
+                return 0;
+            }
+            if (self && self->m_skin.release_press()) {
+                if (GetCapture() == wnd) ReleaseCapture();
+                InvalidateRect(wnd, nullptr, FALSE);
+                return 0;
+            }
+            break;
+        case WM_CAPTURECHANGED:
+            if (self) self->m_sizeEdges = 0;
+            if (self && self->m_skin.release_press()) InvalidateRect(wnd, nullptr, FALSE);
+            break;
+        case WM_SETCURSOR:
+            if (self && LOWORD(lp) == HTCLIENT) {
+                POINT pt; GetCursorPos(&pt); ScreenToClient(wnd, &pt);
+                if (self->m_skin.over_button(logical(pt.x), logical(pt.y))) {
+                    SetCursor(LoadCursorW(nullptr, IDC_HAND));
+                    return TRUE;
+                }
+            }
+            break;
         case WM_MOUSEMOVE: {
+            if (self && self->m_sizeEdges) {
+                if (!(wp & MK_LBUTTON)) {
+                    self->m_sizeEdges = 0;
+                    if (GetCapture() == wnd) ReleaseCapture();
+                    return 0;
+                }
+                POINT p{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+                ClientToScreen(wnd, &p);
+                self->size_to(p);
+                return 0;
+            }
             TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, wnd, 0 };
             TrackMouseEvent(&tme);
-            if (self && self->m_skin.update_hover(logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp))))
-                InvalidateRect(wnd, nullptr, FALSE);
+            bool dirty = !(wp & MK_LBUTTON) && self && self->m_skin.release_press();
+            if (self && self->m_skin.update_hover(logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp)))) dirty = true;
+            if (dirty) InvalidateRect(wnd, nullptr, FALSE);
             break;
         }
         case WM_MOUSELEAVE:

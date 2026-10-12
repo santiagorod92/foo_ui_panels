@@ -12,6 +12,7 @@ struct Button {
     std::string pvarKey, pvarValue, litImage;
     int litW = 0, litH = 0;
     bool selected = false;
+    bool feedback = false;
 };
 
 struct Placement {
@@ -21,6 +22,12 @@ struct Placement {
 
 inline bool button_hit(const Button& b, int x, int y) {
     return x >= b.x && x < b.x + b.w && y >= b.y && y < b.y + b.h;
+}
+
+inline const Button* button_at(const std::vector<Button>& list, int x, int y) {
+    for (auto it = list.rbegin(); it != list.rend(); ++it)
+        if (button_hit(*it, x, y)) return &*it;
+    return nullptr;
 }
 
 inline std::string tooltip_at(const std::vector<Button>& list, int x, int y) {

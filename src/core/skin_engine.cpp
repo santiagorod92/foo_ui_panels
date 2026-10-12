@@ -112,7 +112,7 @@ void SkinEngine::hide_unrequested_panels() {
 
 static bool takes_keys(PanelKind k) {
     using K = PanelKind;
-    return k == K::Playlist || k == K::AlbumList || k == K::LibraryTree || k == K::QuickSearch || k == K::Lyrics;
+    return k == K::Playlist || k == K::Seekbar || k == K::Volume || k == K::AlbumList || k == K::LibraryTree || k == K::QuickSearch || k == K::Lyrics;
 }
 
 void SkinEngine::focus_next_panel(const std::string& from, bool back) {
@@ -148,7 +148,7 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
         break;
     }
     case Kind::Seekbar:     s.view = std::make_unique<Seekbar>(this); opts.cursor = ui::Cursor::Hand; break;
-    case Kind::Volume:      s.view = std::make_unique<Volume>(this); opts.cursor = ui::Cursor::Hand; break;
+    case Kind::Volume:      s.view = std::make_unique<Volume>(this); opts.cursor = ui::Cursor::Hand; opts.double_clicks = true; break;
     case Kind::Playlist:    s.view = std::make_unique<PlaylistView>(this); opts.double_clicks = true; opts.accept_files = true; break;
     case Kind::Spectrum:    s.view = std::make_unique<Spectrum>(this); opts.render_fps = 60; break;
     case Kind::PeakMeter:   s.view = std::make_unique<PeakMeter>(this); opts.render_fps = 60; break;

@@ -74,6 +74,9 @@ public:
     bool handle_click(int x, int y);
 
     bool update_hover(int x, int y);
+    bool over_button(int x, int y) const;
+    bool press(int x, int y);
+    bool release_press();
 
     bool run_button_action(const std::string& action);
 
@@ -186,6 +189,8 @@ private:
     struct PanelFrame { gfx::ImagePtr img; gfx::Rect bounds; };
     std::map<std::string, PanelFrame> m_frames; mutable std::mutex m_framesMx;
     int m_hoverX = -1, m_hoverY = -1;
+    int m_pressX = -1, m_pressY = -1;
+    void draw_button_feedback(gfx::Canvas& cv) const;
     std::map<std::string, service_ptr_t<titleformat_object>> m_subcache;
     std::map<std::string, Slot> m_panels;
     std::set<std::string> m_childShown;

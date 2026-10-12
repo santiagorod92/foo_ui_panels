@@ -170,6 +170,55 @@ int star_at(const StarStrip& s, int x) {
     return std::clamp((x - s.x) * 5 / s.w + 1, 1, 5);
 }
 
+std::vector<HeaderColumn> playlist_header_columns(int view_w, bool stars) {
+    const int albumW = std::min(64, std::max(0, view_w / 4));
+    const int lengthX = std::max(albumW, view_w - 50);
+    const int ratingX = stars ? std::max(albumW, star_strip(view_w).x - 4) : lengthX;
+    std::vector<HeaderColumn> v;
+    v.push_back({ PlaylistColumn::Album, 0, albumW, "Album" });
+    v.push_back({ PlaylistColumn::Title, albumW, ratingX - albumW, "Title" });
+    if (stars) v.push_back({ PlaylistColumn::Rating, ratingX, lengthX - ratingX, "Rating" });
+    v.push_back({ PlaylistColumn::Length, lengthX, std::max(0, view_w - lengthX), "Length" });
+    return v;
+}
+
+PlaylistColumn header_column_at(const std::vector<HeaderColumn>& cols, int x) {
+    for (const auto& c : cols)
+        if (c.w > 0 && x >= c.x && x < c.x + c.w) return c.col;
+    return PlaylistColumn::None;
+}
+
+const char* playlist_sort_format(PlaylistColumn c) {
+    switch (c) {
+    case PlaylistColumn::Album:
+        return "[%album artist%]|[%date%]|[%album%]|$num(%discnumber%,3)|$num(%tracknumber%,4)";
+    case PlaylistColumn::Title:  return "[%title%]";
+    case PlaylistColumn::Rating: return "$num($if2(%navidrome_rating%,%rating%),1)";
+    case PlaylistColumn::Length: return "$num(%length_seconds%,9)";
+    default: return "";
+    }
+}
+
+SortState next_sort(SortState cur, PlaylistColumn clicked) {
+    if (clicked == PlaylistColumn::None) return cur;
+    if (cur.col == clicked) return { clicked, !cur.desc };
+    return { clicked, clicked == PlaylistColumn::Rating };
+}
+
+std::vector<size_t> sort_order(const std::vector<std::string>& keys, bool desc) {
+    std::vector<std::string> folded(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i) {
+        folded[i] = keys[i];
+        for (char& ch : folded[i]) ch = (char)std::tolower((unsigned char)ch);
+    }
+    std::vector<size_t> order(keys.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return desc ? folded[b] < folded[a] : folded[a] < folded[b];
+    });
+    return order;
+}
+
 int TreeRows::add(int parent, std::string label, int kind, int a, int b) {
     TreeItem it;
     it.label = std::move(label);

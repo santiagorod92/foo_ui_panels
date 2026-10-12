@@ -84,3 +84,70 @@ TEST("album_sort_from / album_sort_name round-trip") {
     CHECK(album_sort_from("") == AlbumSort::Artist);
     CHECK(album_sort_from("YEAR") == AlbumSort::Year);
 }
+
+TEST("format_time / seek helpers") {
+    CHECK_EQ(format_time(0), std::string("0:00"));
+    CHECK_EQ(format_time(5.9), std::string("0:05"));
+    CHECK_EQ(format_time(83), std::string("1:23"));
+    CHECK_EQ(format_time(3723), std::string("1:02:03"));
+    CHECK_EQ(format_time(-3), std::string("0:00"));
+    CHECK_EQ(seek_position_at(50, 100, 200.0), 100.0);
+    CHECK_EQ(seek_position_at(-10, 100, 200.0), 0.0);
+    CHECK_EQ(seek_position_at(150, 100, 200.0), 200.0);
+    CHECK_EQ(seek_position_at(50, 0, 200.0), 0.0);
+    CHECK_EQ(seek_by(10, 200, -5), 5.0);
+    CHECK_EQ(seek_by(3, 200, -5), 0.0);
+    CHECK_EQ(seek_by(198, 200, 5), 200.0);
+    CHECK_EQ(seek_by(10, 0, 5), 0.0);
+    CHECK_EQ(seek_tooltip(83, 296), std::string("1:23 / 4:56"));
+    CHECK_EQ(seek_tooltip(10, 0), std::string());
+}
+
+TEST("volume_label") {
+    CHECK_EQ(volume_label(-100.0f), std::string("Muted"));
+    CHECK_EQ(volume_label(0.0f), std::string("0 dB"));
+    CHECK_EQ(volume_label(-6.0f), std::string("-6.0 dB"));
+    CHECK_EQ(volume_label(-12.34f), std::string("-12.3 dB"));
+}
+
+TEST("volume_step: 2.5 dB per step, clamped") {
+    CHECK_EQ(volume_step(-10.0f, 1), -7.5f);
+    CHECK_EQ(volume_step(-10.0f, -2), -15.0f);
+    CHECK_EQ(volume_step(-1.0f, 1), 0.0f);
+    CHECK_EQ(volume_step(-99.0f, -1), -100.0f);
+}
+
+TEST("wheel_steps: whole notches pass through, fractions accumulate, reversal resets") {
+    float acc = 0;
+    CHECK_EQ(wheel_steps(acc, 2.0f), 2);
+    CHECK_EQ(wheel_steps(acc, 0.4f), 0);
+    CHECK_EQ(wheel_steps(acc, 0.4f), 0);
+    CHECK_EQ(wheel_steps(acc, 0.4f), 1);
+    CHECK_EQ(wheel_steps(acc, -0.5f), 0);
+    CHECK_EQ(wheel_steps(acc, -0.6f), -1);
+    CHECK_EQ(wheel_steps(acc, -3.0f), -3);
+}
+
+TEST("folder_picker_start: skip the wizard's own folder") {
+    CHECK_EQ(folder_picker_start("", "/p/skins"), std::string());
+    CHECK_EQ(folder_picker_start("/p/skins", "/p/skins"), std::string());
+    CHECK_EQ(folder_picker_start("/p/skins/Playlist", "/p/skins"), std::string());
+    CHECK_EQ(folder_picker_start("C:\\p\\skins\\x", "C:\\p\\skins"), std::string());
+    CHECK_EQ(folder_picker_start("/p/skins2", "/p/skins"), std::string("/p/skins2"));
+    CHECK_EQ(folder_picker_start("/home/me/Documents", "/p/skins"), std::string("/home/me/Documents"));
+    CHECK_EQ(folder_picker_start("/home/me/Documents", ""), std::string("/home/me/Documents"));
+}
+
+TEST("resize_rect: dragged edges move, the others stay, minimum size kept") {
+    const EdgeRect s{ 100, 100, 500, 400 };
+    EdgeRect r = resize_rect(s, kEdgeRight | kEdgeBottom, 50, -20, 200, 100);
+    CHECK_EQ(r.l, 100); CHECK_EQ(r.t, 100); CHECK_EQ(r.r, 550); CHECK_EQ(r.b, 380);
+    r = resize_rect(s, kEdgeLeft | kEdgeTop, -30, 40, 200, 100);
+    CHECK_EQ(r.l, 70); CHECK_EQ(r.t, 140); CHECK_EQ(r.r, 500); CHECK_EQ(r.b, 400);
+    r = resize_rect(s, kEdgeLeft, 390, 0, 200, 100);
+    CHECK_EQ(r.l, 300); CHECK_EQ(r.r, 500);
+    r = resize_rect(s, kEdgeBottom, 0, -500, 200, 100);
+    CHECK_EQ(r.b, 200);
+    r = resize_rect(s, 0, 50, 50, 200, 100);
+    CHECK_EQ(r.r, 500); CHECK_EQ(r.b, 400);
+}
