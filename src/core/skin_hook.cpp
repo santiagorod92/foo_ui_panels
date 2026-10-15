@@ -135,7 +135,7 @@ public:
         auto it = cache.find(text);
         if (it == cache.end()) {
             it = cache.emplace(text, titleformat_object::ptr()).first;
-            titleformat_compiler::get()->compile_safe(it->second, text.c_str());
+            titleformat_compiler::get()->compile_safe(it->second, defer_button_images(text).c_str());
         }
         return it->second;
     }

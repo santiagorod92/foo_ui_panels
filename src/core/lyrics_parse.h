@@ -54,5 +54,6 @@ private:
 bool json_string(const std::string& j, const char* key, std::string& out);
 bool json_true(const std::string& j, const char* key);
 std::string url_encode(const std::string& s);
+std::string lyrics_text(bool synced, const std::vector<std::pair<int, std::string>>& lines);
 
 }

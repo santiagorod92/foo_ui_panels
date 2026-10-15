@@ -23,12 +23,14 @@ glow 248,100,84,18
 text "no none" 250,102,80,14 f24 #00ffff
 img images/btn.png 10,130,24,24
 img images/btn.png 40,130,24,24
+img images/btn.png 70,130,24,24
 text "Play" 70,130,80,24 f29 #00ffff
 img images/btn.png 160,130,0,0
 glow 248,116,84,18
 text "ffffff 323232" 250,118,80,14 f24 #00ffff
 button 10,130,24,24 PVAR:SET:syn.panel:2 tooltip=Second panel
 button 40,130,24,24 POPUP:Popup tooltip=Open the popup
+button 70,130,24,24 POPUP:Popup tooltip=Sized state images
 button 70,130,80,24 Playback/Play tooltip=Start playback
 button 160,130,11,15 Playback/Stop tooltip=Stop
 panel display Track Display 10,160,200,60

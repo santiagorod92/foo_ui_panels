@@ -1,5 +1,6 @@
 #include "test.h"
 #include "mini_titleformat.h"
+#include "core/script_util.h"
 #include "core/builtin_skin.h"
 #include "core/fs_util.h"
 #include "core/skin_lint.h"
@@ -24,7 +25,7 @@ void check_golden(const std::string& name, const std::string& script, int w, int
     ScriptState st;
     {
         ScriptRuntime rt(st, env, cv, w, h);
-        env.render(rt, script);
+        env.render(rt, defer_button_images(script));
     }
     for (auto& b : st.buttons)
         cv.ops.push_back("button " + t::rect(gfx::Rect{ b.x, b.y, b.w, b.h }) + " " + b.action +

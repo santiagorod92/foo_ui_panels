@@ -63,6 +63,7 @@ std::string ini(const char* name) {
     return std::string("# ") + name + R"PUI( — made by the layout wizard. Settings for the built-in panels; the keys are
 # listed in the Panels UI README ("Skin configuration"). Colours: r g b.
 script = main.txt
+playlist.header = 1
 color.background = 24 25 30
 color.text = 225 228 235
 color.text_secondary = 160 165 175

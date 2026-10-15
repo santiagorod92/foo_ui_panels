@@ -28,7 +28,7 @@ private:
     struct Lyrics { std::vector<LyricLine> lines; bool synced = false; };
 
     void refresh_track();
-    void start_fetch();
+    void start_fetch(bool web = true);
     void begin_sync();
     void sync_stamp();
     void sync_undo();
@@ -44,7 +44,7 @@ private:
     Lyrics m_lyrics;
     double m_scroll = 0;
     unsigned long long m_holdUntil = 0;
-    bool m_settling = false, m_overLink = false;
+    bool m_settling = false, m_overLink = false, m_navidrome = false;
     int m_idle = 0;
     gfx::Rect m_link;
     LrcSync m_sync;

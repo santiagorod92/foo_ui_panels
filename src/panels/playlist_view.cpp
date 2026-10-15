@@ -188,7 +188,7 @@ void PlaylistView::paint(gfx::Canvas& cv) {
 }
 
 int PlaylistView::header_h() const {
-    return m_engine && m_engine->config().num("playlist.header", 1) ? 20 : 0;
+    return m_engine && m_engine->config().num("playlist.header", 0) ? 20 : 0;
 }
 
 int PlaylistView::view_h() const {

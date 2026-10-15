@@ -222,4 +222,90 @@ int best_menu_match(const std::vector<std::string>& paths, const std::string& ac
     return best;
 }
 
+namespace {
+
+size_t skip_quote(const std::string& s, size_t i) {
+    const size_t e = s.find('\'', i + 1);
+    return e == std::string::npos ? s.size() : e + 1;
+}
+
+size_t call_end(const std::string& s, size_t open) {
+    int depth = 0;
+    for (size_t i = open; i < s.size();) {
+        const char c = s[i];
+        if (c == '\'') { i = skip_quote(s, i); continue; }
+        if (c == '(') ++depth;
+        else if (c == ')' && --depth == 0) return i;
+        ++i;
+    }
+    return std::string::npos;
+}
+
+std::vector<std::pair<size_t, size_t>> split_args(const std::string& s, size_t open, size_t close) {
+    std::vector<std::pair<size_t, size_t>> out;
+    int depth = 0;
+    size_t start = open + 1;
+    for (size_t i = open + 1; i < close;) {
+        const char c = s[i];
+        if (c == '\'') { i = skip_quote(s, i); continue; }
+        if (c == '(') ++depth;
+        else if (c == ')') --depth;
+        else if (c == ',' && depth == 0) { out.push_back({ start, i }); start = i + 1; }
+        ++i;
+    }
+    out.push_back({ start, close });
+    return out;
+}
+
+bool starts_call(const std::string& s, size_t i, const char* name) {
+    const size_t n = strlen(name);
+    if (i + n >= s.size() || s[i] != '$' || s[i + n] != '(') return false;
+    for (size_t k = 1; k < n; ++k)
+        if (tolower((unsigned char)s[i + k]) != name[k]) return false;
+    return true;
+}
+
+std::string quote_images(const std::string& arg) {
+    std::string out;
+    for (size_t i = 0; i < arg.size();) {
+        if (arg[i] == '\'') { const size_t e = skip_quote(arg, i); out.append(arg, i, e - i); i = e; continue; }
+        if (!starts_call(arg, i, "$imageabs2")) { out += arg[i++]; continue; }
+        const size_t open = i + 10, close = call_end(arg, open);
+        if (close == std::string::npos) { out.append(arg, i, std::string::npos); break; }
+        out += "'$imageabs2('";
+        const auto parts = split_args(arg, open, close);
+        for (size_t k = 0; k < parts.size(); ++k) {
+            if (k) out += "','";
+            out.append(arg, parts[k].first, parts[k].second - parts[k].first);
+        }
+        out += "')'";
+        i = close + 1;
+    }
+    return out;
+}
+
+}
+
+std::string defer_button_images(const std::string& s) {
+    std::string out;
+    out.reserve(s.size());
+    for (size_t i = 0; i < s.size();) {
+        if (s[i] == '\'') { const size_t e = skip_quote(s, i); out.append(s, i, e - i); i = e; continue; }
+        const char* name = starts_call(s, i, "$button2") ? "$button2" : starts_call(s, i, "$button") ? "$button" : nullptr;
+        if (!name) { out += s[i++]; continue; }
+        const size_t open = i + strlen(name), close = call_end(s, open);
+        if (close == std::string::npos) { out.append(s, i, std::string::npos); break; }
+        const auto parts = split_args(s, open, close);
+        out.append(s, i, open + 1 - i);
+        for (size_t k = 0; k < parts.size(); ++k) {
+            if (k) out += ',';
+            const std::string arg = s.substr(parts[k].first, parts[k].second - parts[k].first);
+            out += (k == 6 || k == 7) ? quote_images(arg) : defer_button_images(arg);
+        }
+        out += ')';
+        i = close + 1;
+    }
+    return out;
+}
+
 }

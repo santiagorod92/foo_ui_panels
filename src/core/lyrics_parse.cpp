@@ -329,4 +329,15 @@ bool json_true(const std::string& j, const char* key) {
     return false;
 }
 
+std::string lyrics_text(bool synced, const std::vector<std::pair<int, std::string>>& lines) {
+    std::string o;
+    for (const auto& [ms, raw] : lines) {
+        std::string t = raw;
+        for (auto& c : t) if (c == '\r' || c == '\n') c = ' ';
+        if (synced && ms >= 0) o += "[" + format_lrc_time(ms / 1000.0) + "]";
+        o += t + "\n";
+    }
+    return o;
+}
+
 }

@@ -4,7 +4,7 @@
 namespace pui {
 
 void PopupView::set_script(const char* script) {
-    titleformat_compiler::get()->compile_safe(m_script, script);
+    titleformat_compiler::get()->compile_safe(m_script, defer_button_images(script ? script : "").c_str());
 }
 
 void PopupView::paint(gfx::Canvas& cv) {

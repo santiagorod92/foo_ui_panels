@@ -190,3 +190,13 @@ TEST("LrcSync: stamps skip blanks, never go back, undo, to_lrc") {
     CHECK(!empty.active());
     CHECK_EQ(empty.undo(), -1);
 }
+
+TEST("lyrics_text: synced lines become LRC, unsynced stay plain") {
+    CHECK_EQ(lyrics_text(true, { { 5000, "One" }, { 7250, "Two\nlines" }, { -1, "Loose" } }),
+             std::string("[00:05.00]One\n[00:07.25]Two lines\nLoose\n"));
+    CHECK_EQ(lyrics_text(false, { { -1, "A" }, { 3000, "" }, { -1, "B" } }), std::string("A\n\nB\n"));
+    std::vector<LyricLine> l; bool synced = false;
+    CHECK(parse_lyrics(lyrics_text(true, { { 1000, "X" }, { 2500, "Y" } }), l, synced));
+    CHECK(synced && l.size() == 2 && near(l[1].t, 2.5) && l[1].text == "Y");
+    CHECK(lyrics_text(false, {}).empty());
+}

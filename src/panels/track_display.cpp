@@ -24,7 +24,8 @@ void TrackDisplay::on_timer(int) {
 }
 
 void TrackDisplay::set_script(const char* spec) {
-    const char* text = spec && *spec ? spec : kDefaultScript;
+    const std::string deferred = defer_button_images(spec && *spec ? spec : kDefaultScript);
+    const char* text = deferred.c_str();
     if (!titleformat_compiler::get()->compile(m_script, text)) {
         if (m_engine && spec && *spec)
             m_engine->add_script_problem(m_engine->panel_script_label(m_name),

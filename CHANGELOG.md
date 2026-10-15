@@ -3,6 +3,53 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.12.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.11.1...v1.12.0) (2026-10-15)
+
+### Highlights
+- **Lyrics from your Navidrome server**: with [foo_navidrome](https://github.com/santiagorod92/foo_navidrome)
+  installed, the lyrics panel shows a Navidrome track's lyrics straight from the server, synced
+  ones scrolling and highlighting the current line.
+- **fooAvA looks right again**: no column header over its playlist, the lyrics view inside the
+  CD case, no stray copy of the case behind it, and a working settings window.
+
+### New
+- **Navidrome lyrics in the lyrics panel**: for a `navidrome://` track the panel asks
+  foo_navidrome for the lyrics as soon as the track plays — no need to turn on online search, it
+  is your own server. Synced lyrics scroll, highlight the current line and work with the karaoke
+  highlight, timing offsets and *Sync lyrics by tapping*; they are kept in the lyrics cache like
+  lrclib.net results. When the server has none, lrclib.net is tried if online search is on, or
+  from the panel's *Search online* link. While looking them up the panel says *Searching
+  Navidrome...*. Works on Windows and macOS; without foo_navidrome nothing changes.
+
+### Changed
+- **Playlist column header is now off by default**: the sortable Album / Title / Rating / Length
+  header added in 1.11.0 showed up on every skin, on top of designs that never had it (fooAvA's
+  playlist). Skins turn it on with `playlist.header = 1` in their `foo_ui_panels.ini`; layouts
+  made by the layout wizard do. A layout made with the wizard before this version needs that
+  line added (or the layout made again) to keep the header.
+- **fooAvA's lyrics view inside the CD case** (`tools/setup_fooava.py`): the left column's **L**
+  view now shows the CD case like the main view, with the lyrics over the cover inside it,
+  instead of lyrics across the whole column. Run the setup again to get it in an existing
+  fooAvA folder.
+
+### Fixed
+- **A copy of a button's image at the panel's top-left corner**: a skin button whose normal or
+  hover image is a sized `$imageabs2(...)` (fooAvA's CD case is one) also drew that image at the
+  panel's corner, which looked like a shadow of the CD case shifted up and to the left. Button
+  images are now only drawn on the button. Fixed for every skin, on Windows and macOS.
+- **fooAvA settings window** (`tools/setup_fooava.py`): its background was drawn over the
+  options, washing them out, and *CHOOSE FONT* was cut off at the right edge. Run the setup
+  again to get the fixed window.
+
+### For contributors
+- **`navidrome_lyrics_api`**: vendored GUID-matched contract (`src/core/navidrome_lyrics_api.h`),
+  found with `service_enum_t` and called from a worker thread; the lines become LRC through the
+  new SDK-free `lyrics_text()` (unit-tested).
+- **`defer_button_images()`** (`script_util`, unit-tested): foobar2000 evaluates a hook
+  function's arguments before calling it, so every skin-script compile now quotes the
+  `$imageabs2` state images of `$button`/`$button2` into literal text. The synthetic skin has a
+  button with sized state images and its golden output checks they land on the button.
+
 ## [1.11.1](https://github.com/santiagorod92/foo_ui_panels/compare/v1.11.0...v1.11.1) (2026-10-15)
 
 ### Fixed

@@ -144,7 +144,51 @@ def tidy_display(text):
                         "PLAY A SONG TO SHOW INFORMATION)),2)),$sub(%_width%,13),")
     return text.replace("']']),2)),$sub(%_width%,2),", "']']),2)),$add($sub(%_width%,13),18),")
 
-PANEL_TIDY = {"Display": tidy_display}
+SETTINGS_BACKGROUND = ("$ifequal($getpvar(backgroundd),1,$imageabs2(%_width%,%_height%,,,,,0,0,/images\\fooAVA\\$getpvar(background),"
+                       "NOKEEPASPECT alpha-$getpvar(alpha.bgr)),$drawrect(0,0,%_width%,%_height%,brushcolor-0-0-0 pencolor-0-0-0))")
+
+def tidy_settings_popup(text):
+    i = text.find(SETTINGS_BACKGROUND)
+    if i > 0:
+        j = text.find("$alignabs(", i)
+        if j > i: text = text[i:j] + text[:i] + text[j:]
+    return text.replace("$alignabs(-45,79,%_width%,%_height%,right,top)",
+                        "$alignabs($sub(%_width%,117),79,%_width%,%_height%,left,top)")
+
+LYRICS_CD_FLAG = "$puts(lyrcd,$ifequal($getpvar(showPanel),3,$getpvar(lyricshow),0))"
+
+def lyrics_in_cd_case(text):
+    head = "$panel(Album,Album Art,"
+    i = text.find(head)
+    if i < 0: return text
+    depth, j = 0, i
+    while j < len(text):
+        if text[j] == '(': depth += 1
+        elif text[j] == ')':
+            depth -= 1
+            if depth == 0: break
+        j += 1
+    args = text[i + len(head):j]
+    lyrics = "$ifequal($get(lyrcd),1,$panel(LyricsCD,Lyric Show," + args + "),)"
+    art = "$ifequal($get(lyrcd),1,,$panel(Album,Album Art," + args + "))"
+    k = text.rfind("$ifequal($getpvar(albumart),1,", 0, i)
+    if k < 0: k = i
+    text = text[:i] + art + text[j + 1:]
+    return LYRICS_CD_FLAG + text[:k] + lyrics + text[k:]
+
+PANEL_TIDY = {"Display": lambda t: lyrics_in_cd_case(tidy_display(t))}
+
+LEFT_LYRICS = [
+    ("$panel(Lyrics,Lyric Show,1,24,$sub(%_width%,5),$sub(%_height%,$ifequal($getpvar(spectrum.off),1,90,137)),)",
+     "$panel(Display,Track Display,1,24,$sub(%_width%,4),$sub(%_height%,90),)"),
+    ("$panel(Lyrics,Lyric Show,1,24,$eval({%_width%}/2+3),$sub(%_height%,$ifequal($getpvar(spectrum.off),1,90,137)),)",
+     "$panel(Display,Track Display,1,24,$eval({%_width%}/2+3),$sub(%_height%,90),)"),
+]
+
+def left_lyrics_in_display(text):
+    for old, new in LEFT_LYRICS:
+        text = text.replace(old, new)
+    return text
 
 def tidy_coverflow(text):
     out, pos, search = [], 0, 0
@@ -275,8 +319,8 @@ def main(src, out):
                 globals_txt = cand
                 break
 
-    body = remember_window_size(
-        align_volume_bar(tidy_coverflow(tidy_collection(keep_search_open(scrub_author_paths(preprocess(master)))))))
+    body = tidy_settings_popup(left_lyrics_in_display(remember_window_size(
+        align_volume_bar(tidy_coverflow(tidy_collection(keep_search_open(scrub_author_paths(preprocess(master)))))))))
     gvars = preprocess(globals_txt) if globals_txt else ''
 
     prefix = ''.join(f'$if($strcmp($getpvar({k}),),$setpvar({k},{v}),)' for k, v in pvars)

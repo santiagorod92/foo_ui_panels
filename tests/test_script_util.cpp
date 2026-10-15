@@ -142,3 +142,15 @@ TEST("parse_argb: A-R-G-B, opaque R-G-B, malformed") {
     CHECK(!parse_argb("10-20", c, a) && a == 7);
     CHECK(!parse_argb("", c, a));
 }
+
+TEST("defer_button_images: sized button state images become literal text, nothing else changes") {
+    CHECK_EQ(defer_button_images("$button2(1,2,0,0,5,6,$imageabs2($get(w),9,0,0,0,0,0,0,a.png,nokeepaspect),"
+                                 "$imageabs2(3,4,0,0,0,0,0,0,b.png),ACT,TOOLTIP:x)"),
+             std::string("$button2(1,2,0,0,5,6,'$imageabs2('$get(w)','9','0','0','0','0','0','0','a.png','nokeepaspect')',"
+                         "'$imageabs2('3','4','0','0','0','0','0','0','b.png')',ACT,TOOLTIP:x)"));
+    CHECK_EQ(defer_button_images("$imageabs2(1,2,0,0,0,0,0,0,x.png)$BUTTON(0,0,0,0,0,0,n.png,h.png,A)"),
+             std::string("$imageabs2(1,2,0,0,0,0,0,0,x.png)$BUTTON(0,0,0,0,0,0,n.png,h.png,A)"));
+    CHECK_EQ(defer_button_images("$if(1,$button($eval(1+2),0,0,0,0,0,$imageabs2(1,1,0,0,0,0,0,0,'a,b.png'),,X),)"),
+             std::string("$if(1,$button($eval(1+2),0,0,0,0,0,'$imageabs2('1','1','0','0','0','0','0','0',''a,b.png'')',,X),)"));
+    CHECK_EQ(defer_button_images("'$button2(' $buttons(1)"), std::string("'$button2(' $buttons(1)"));
+}

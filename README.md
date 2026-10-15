@@ -115,6 +115,8 @@ needs no permission.
 
 fooAvA's fonts (Calibri, Swis721 Cn BT) are optional: without them it uses the stand-ins its
 `foo_ui_panels.ini` names. Cover flow needed the long-gone foo_chronflow; the native one replaces it.
+The left column's lyrics view (**L**) shows the lyrics inside the CD case, over the cover, instead
+of across the whole column. A skin set up with an older version gets this by running the setup again.
 The lower-level tools it runs are `tools/recover_fooava_images.py` (unpacks the installer) and
 `tools/extract_fooava.py` (converts one configuration).
 
@@ -138,7 +140,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
 | `asset.nocover`, `asset.cd_case`, `asset.cd_case_window` | Album browser: missing-cover art, case art and the cover's window inside it (`x y w h`, case pixels). |
-| `playlist.header` | Show the playlist's sortable column header (`1`; `0` hides it). |
+| `playlist.header` | Show the playlist's sortable column header (`1`; default `0`, so classic skins keep their look — the layout wizard's layouts turn it on). |
 | `button.feedback` | Light up buttons with no hover art under the pointer and darken them while pressed (`1`; `0` turns it off). |
 | `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
 | `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
@@ -173,7 +175,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - Playlist **column header**: click **Album**, **Title**, **Rating** or **Length** to sort the
   playlist by it, click again to reverse (an arrow shows which way); right-click it for the same
   choices. Sorting by anything but the album splits the
-  album groups, as in any grouped view. Skins can hide it (`playlist.header = 0`).
+  album groups, as in any grouped view. Off unless the skin turns it on (`playlist.header = 1`; the layout wizard's layouts do).
 - Seek bar: hover to see the time under the pointer (and a marker), drag to scrub and release to
   seek, the mouse wheel jumps 5 seconds, and with the bar focused (Tab) ←/→ seek 5 seconds
   (Shift: 30), Home restarts the track.
@@ -266,6 +268,10 @@ own):
   with their cover art; clicking one plays it.
 - **Playlist switcher panel**: browse Navidrome artists and albums and play them straight from
   the skin.
+- **Lyrics panel**: a Navidrome track's lyrics come from your server (synced ones scroll and
+  highlight like a local `.lrc`), looked up as soon as the track plays — no need to turn on
+  online search. When the server has none, lrclib.net is tried if online search is on, or from
+  the panel's "Search online" link.
 
 ## Reporting a problem
 

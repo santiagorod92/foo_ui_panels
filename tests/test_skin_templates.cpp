@@ -42,6 +42,7 @@ TEST("templates: unique ids and names, each with a thumbnail, script and config"
         CHECK(!t.thumbnail.empty());
         CHECK(t.script.find("$panel(") != std::string::npos);
         CHECK(t.ini.find("script = main.txt") != std::string::npos);
+        CHECK(t.ini.find("playlist.header = 1") != std::string::npos);
         CHECK_EQ(find_skin_template(t.id), &t);
         CHECK(layout_wizard_script().find(std::string("SKIN:TEMPLATE:") + t.id) != std::string::npos);
         CHECK(std::filesystem::is_regular_file(std::string("res/wizard/") + t.id + ".png"));

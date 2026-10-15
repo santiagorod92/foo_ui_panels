@@ -5,6 +5,7 @@
 #include "../core/list_logic.h"
 #include "../core/lyrics_parse.h"
 #include "../core/log.h"
+#include "../core/navidrome_lyrics_api.h"
 #include <algorithm>
 #include <cmath>
 #include <cstdio>
@@ -215,6 +216,21 @@ bool http_get(const std::string& url, std::string& body, abort_callback& ab) {
     } catch (...) { return false; }
 }
 
+service_ptr_t<navidrome::navidrome_lyrics_api> navidrome_lyrics_for(const metadb_handle_ptr& h) {
+    service_enum_t<navidrome::navidrome_lyrics_api> e;
+    service_ptr_t<navidrome::navidrome_lyrics_api> api;
+    if (h.is_valid())
+        while (e.next(api)) if (api->is_navidrome_track(h)) return api;
+    return {};
+}
+
+struct LineCollector : navidrome::lyrics_sink {
+    bool synced = false;
+    std::vector<std::pair<int, std::string>> lines;
+    void on_begin(bool s, unsigned count) override { synced = s; lines.reserve(count); }
+    void on_line(int startMs, const char* text) override { lines.emplace_back(startMs, text ? text : ""); }
+};
+
 void finish_fetch(const std::string& key, bool ok, const std::string& text, const std::string& cacheFile) {
     g_fetching.erase(key);
     if (ok && !cacheFile.empty()) {
@@ -245,25 +261,44 @@ void LyricsPanel::refresh_track() {
     if (trackChanged) { m_scroll = 0; m_holdUntil = 0; m_sync.cancel(); }
     m_lyrics = Lyrics();
     m_idsKey.clear();
+    m_navidrome = false;
     if (!np.is_valid()) return;
     TrackIds ids = ids_for(np);
     m_idsKey = ids.key;
-    if (!load_local(np, ids, m_lyrics.lines, m_lyrics.synced) && read_settings(m_engine).online
+    m_navidrome = navidrome_lyrics_for(np).is_valid();
+    const bool online = read_settings(m_engine).online;
+    if (!load_local(np, ids, m_lyrics.lines, m_lyrics.synced) && (online || m_navidrome)
         && !ids.title.empty() && !g_failed.count(ids.key))
-        start_fetch();
+        start_fetch(online);
 }
 
-void LyricsPanel::start_fetch() {
+void LyricsPanel::start_fetch(bool web) {
     metadb_handle_ptr np; playback_control::get()->get_now_playing(np);
     if (!np.is_valid()) return;
     TrackIds ids = ids_for(np);
     if (ids.title.empty() || g_fetching.count(ids.key)) return;
+    auto navidrome = navidrome_lyrics_for(np);
+    if (!web && navidrome.is_empty()) return;
     g_fetching.insert(ids.key); g_failed.erase(ids.key);
     invalidate();
-    fb2k::splitTask([ids]() {
+    fb2k::splitTask([ids, np, navidrome, web]() {
         std::string body, text;
         bool ok = false;
-        try {
+        if (navidrome.is_valid()) {
+            try {
+                LineCollector lines;
+                pfc::string8 err;
+                if (navidrome->get_lyrics(np, lines, fb2k::mainAborter(), err) && !lines.lines.empty()) {
+                    text = lyrics_text(lines.synced, lines.lines);
+                    ok = true;
+                }
+                log::info("lyrics", std::string("Navidrome ") + (ok ? "has" : "has no") + (ok && lines.synced ? " synced" : "")
+                          + " lyrics for " + ids.artist + " - " + ids.title + (err.is_empty() ? "" : std::string(" (") + err.c_str() + ")"));
+            } catch (const std::exception& e) {
+                log::warn("lyrics", std::string("Navidrome lyrics lookup failed: ") + e.what());
+            } catch (...) {}
+        }
+        if (!ok && web) try {
             abort_callback& ab = fb2k::mainAborter();
             const std::string base = "https://lrclib.net/api/";
             std::string q = "artist_name=" + url_encode(ids.artist) + "&track_name=" + url_encode(ids.title);
@@ -321,7 +356,7 @@ void LyricsPanel::paint(gfx::Canvas& cv) {
         std::string msg, link;
         const TrackIds ids = np.is_valid() ? ids_for(np) : TrackIds();
         if (!np.is_valid()) msg = "Nothing playing";
-        else if (g_fetching.count(ids.key)) msg = "Searching lrclib.net...";
+        else if (g_fetching.count(ids.key)) msg = m_navidrome ? "Searching Navidrome..." : "Searching lrclib.net...";
         else if (g_failed.count(ids.key)) { msg = "No lyrics found online"; link = "Search again"; }
         else { msg = "No lyrics found"; link = "Search online (lrclib.net)"; }
         const int th = cv.text_height(msg, tw, dtf);

@@ -57,8 +57,8 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   interface, its consumers and its vendored copies.
 - **Current links:** `navidrome_rating_api` drives Panels UI's star ratings on `navidrome://`
   tracks, which also read the `NAVIDROME_RATING` field. `navidrome_library_api` feeds the
-  Panels UI album grid (`album_list`) and `library_tree`. `navidrome_lyrics_api` is published
-  but not wired into Panels UI's `lyrics_panel` yet.
+  Panels UI album grid (`album_list`) and `library_tree`. `navidrome_lyrics_api` feeds Panels
+  UI's `lyrics_panel`.
 - **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
   lands in both repos in the same round, and the vendored copy stays byte-identical to the
   original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.
@@ -232,6 +232,9 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   drives dispatch, skin diagnostics and the generated `docs/SCRIPT_FUNCTIONS.md` (`make docs`; a
   test fails if stale). Needs from fb2k/platform go through `ScriptEnv`; engine state is
   `ScriptState`. New function = table row + `f_<name>` + test (`tests/recording_canvas.h`).
+  fb2k evaluates a hook function's params before calling it, so a sized `$imageabs2` used as a
+  `$button`/`$button2` state image would draw at 0,0: every skin-script compile goes through
+  `defer_button_images()` (script_util), which quotes those into literal button-state text.
 - `src/core/skin_engine.{h,cpp}` — `SkinEngine`: panel registry/dispatch, mini mode, theme/assets,
   shared frames. Split by concern: `skin_hook.cpp` (titleformat hook = `ScriptEnv` impl, render,
   draw_script, diagnostics), `skin_actions.cpp` (button actions, clicks, rating, tray),
@@ -284,7 +287,8 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   `render_fps`), `album_art` (now-playing cover, "Album Art"), `popup`
   (settings popup), `album_list` ("Graphical Browser"/"Album list"/"Chronflow" — no stock DUI
   element; Media Library + Navidrome albums, grid or cover flow), `lyrics_panel` ("Lyric Show":
-  LRC sync, tags → sidecar → cache → lrclib.net; `lyr.*` pvars), `quick_search`, `library_tree`
+  LRC sync, tags → sidecar → cache → `navidrome_lyrics_api` (navidrome:// tracks, always on, worker
+  thread, result cached as LRC via `lyrics_text`) → lrclib.net; `lyr.*` pvars), `quick_search`, `library_tree`
   ("Playlist switcher", self-drawn tree), `cover_menu` (now-playing cover right-click menu +
   full-size viewer, shared by album_art/track_display).
 - Engine extras: script problems + "!" marker (`script_problems`, `draw_problem_marker`), per-panel
@@ -316,6 +320,10 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   `tools/setup_fooava.py` = the user-facing one-step wrapper (installer → skin folder, default
   `Documents/fooava`). Per-panel records are cut only at names some `$panel(name,` uses: stray
   length-prefixed bytes inside a script (e.g. `\x02\0\0\0ts`) otherwise split it (lost `ChronTIM`).
+  Left-column **L** view: the extractor swaps the full-column `Lyric Show` for `Display` and puts a
+  `LyricsCD` Lyric Show in the case's cover rect (`lyrics_in_cd_case`, `$get(lyrcd)`).
+  Settings popup (`tidy_settings_popup`): its background + frame block is moved first (drawn late
+  it covers the options) and CHOOSE FONT is left-aligned (right-aligned at -45 it's cut off).
 - `scripts/ui-test.sh <wine|win11|mac> <scenario>` — one UI test driver for every platform
   (see Shared conventions › Test environments): `smoke` turns verbose logging on
   (`cfg_var.2F6C9A41-…` in configInts), deploys, relaunches and asserts the session banner,

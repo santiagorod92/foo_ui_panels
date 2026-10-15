@@ -14,7 +14,7 @@ namespace pui {
 
 bool SkinEngine::load(const char* script) {
     service_ptr_t<titleformat_object> obj;
-    if (!titleformat_compiler::get()->compile(obj, script)) {
+    if (!titleformat_compiler::get()->compile(obj, defer_button_images(script).c_str())) {
         log::console(log::Level::Error, "skin", "skin script failed to compile");
         return false;
     }

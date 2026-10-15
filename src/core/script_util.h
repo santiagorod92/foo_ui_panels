@@ -28,6 +28,7 @@ const char* panel_kind_name(PanelKind k);
 const char* map_type(const std::string& t);
 
 std::string menu_label(const char* s);
+std::string defer_button_images(const std::string& script);
 int best_menu_match(const std::vector<std::string>& paths, const std::string& action);
 
 }
