@@ -266,7 +266,7 @@ own):
   web UI and every other client.
 - **Album browser / cover flow**: your Navidrome albums appear next to the Media Library ones,
   with their cover art; clicking one plays it. *Recently added* orders them by the date the server
-  added them (needs foo_navidrome 1.30 or newer; older versions don't send that date).
+  added them (needs foo_navidrome 1.31 or newer; older versions don't send that date).
 - **Playlist switcher panel**: browse Navidrome artists and albums and play them straight from
   the skin.
 - **Lyrics panel**: a Navidrome track's lyrics come from your server (synced ones scroll and
