@@ -148,6 +148,38 @@ void request_art(const std::string& key, const metadb_handle_ptr& track, bool no
     });
 }
 
+void request_thumb(const std::string& key, const std::string& path, const metadb_handle_ptr& track, int side) {
+    if (g_shutdown || g_artPending.count(key) || g_artInflight >= kMaxArtInflight) return;
+    g_artPending.insert(key);
+    ++g_artInflight;
+    fb2k::splitTask([key, path, track, side]() {
+        gfx::ImagePtr img;
+        try {
+            std::string file = path.empty() ? path : resolve_wildcard(path);
+            if (!file.empty() && file.find('*') == std::string::npos) img = gfx::decode_image_file(file);
+            if (!img && track.is_valid()) {
+                abort_callback& abort = fb2k::mainAborter();
+                pfc::list_t<GUID> ids; ids.add_item(album_art_ids::cover_front);
+                auto extractor = album_art_manager_v2::get()->open(pfc::list_single_ref_t(track), ids, abort);
+                album_art_data_ptr data = extractor->query(album_art_ids::cover_front, abort);
+                if (data.is_valid()) img = gfx::decode_image_memory(data->data(), data->size());
+            }
+            if (img) {
+                const Size2 t = thumb_size(img->width(), img->height(), side);
+                gfx::ImagePtr scaled = gfx::resample_image(*img, t.w, t.h);
+                if (scaled) img = scaled;
+            }
+        } catch (...) {}
+        fb2k::inMainThread([key, img]() {
+            if (g_shutdown) return;
+            --g_artInflight;
+            g_artPending.erase(key);
+            cache_put(key, img, kArtMissTtl);
+            if (g_onArtReady) g_onArtReady();
+        });
+    });
+}
+
 bool wild_match(const char* pat, const char* s) {
     auto low = [](char c) { return (c >= 'A' && c <= 'Z') ? (char)(c + 32) : c; };
     const char *star = nullptr, *resume = nullptr;
@@ -309,6 +341,24 @@ bool draw_cover_art(gfx::Canvas& cv, const std::string& path, const metadb_handl
 
 gfx::ImagePtr cover_image(const std::string& path, const metadb_handle_ptr& track) {
     return resolve_cover(path, track);
+}
+
+gfx::ImagePtr cover_thumb(const std::string& path, const metadb_handle_ptr& track, int side) {
+    ensure_started();
+    std::string key = "\x03" "thumb:" + std::to_string(side) + ":" + path + "|" +
+                      (track.is_valid() ? std::string(track->get_path()) : std::string());
+    gfx::ImagePtr img;
+    if (cache_get(key, img)) return img;
+    request_thumb(key, path, track, side);
+    return nullptr;
+}
+
+bool draw_cover_thumb(gfx::Canvas& cv, const std::string& path, const metadb_handle_ptr& track, int side,
+                      int x, int y, int w, int h) {
+    gfx::ImagePtr img = cover_thumb(path, track, side);
+    if (!img) return false;
+    blit(cv, img, x, y, w, h, 255, 0);
+    return true;
 }
 
 gfx::ImagePtr data_image(const std::string& key, const void* data, size_t size) {

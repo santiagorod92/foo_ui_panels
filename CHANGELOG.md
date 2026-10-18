@@ -3,6 +3,19 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.13.2](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.1...v1.13.2) (2026-10-18)
+
+### Highlights
+- **Smooth scrolling in the album browser with large cover art**.
+
+### Fixed
+- **Album browser / cover flow: scrolling lagged with high-resolution covers**: every cover that
+  scrolled back into view was decoded again at full size, which stalled the window while it
+  scrolled. The album browser, cover flow and the playlist's group headers now load covers in the
+  background and keep a small copy, so scrolling stays smooth and a cover is only read once
+  (the Album Art panel and the full-size viewer still use the original). Reported in
+  [#18](https://github.com/santiagorod92/foo_ui_panels/issues/18).
+
 ## [1.13.1](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.0...v1.13.1) (2026-10-18)
 
 ### Highlights

@@ -48,4 +48,7 @@ EdgeRect resize_rect(EdgeRect start, int edges, int dx, int dy, int min_w, int m
 struct CacheItem { uint64_t used = 0; size_t bytes = 0; bool in_use = false; };
 std::vector<size_t> cache_victims(const std::vector<CacheItem>& items, size_t total, size_t budget);
 
+struct Size2 { int w = 0, h = 0; };
+Size2 thumb_size(int w, int h, int side);
+
 }

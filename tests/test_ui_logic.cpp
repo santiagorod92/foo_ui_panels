@@ -173,3 +173,16 @@ TEST("cache_victims: images still on screen are never evicted, even over budget"
     for (auto& i : items) i.in_use = true;
     CHECK(cache_victims(items, 144, 100).empty());
 }
+
+TEST("thumb_size: fits the longer side, keeps the aspect, never upscales") {
+    Size2 t = thumb_size(3000, 3000, 600);
+    CHECK_EQ(t.w, 600); CHECK_EQ(t.h, 600);
+    t = thumb_size(3000, 1500, 600);
+    CHECK_EQ(t.w, 600); CHECK_EQ(t.h, 300);
+    t = thumb_size(1000, 4000, 600);
+    CHECK_EQ(t.w, 150); CHECK_EQ(t.h, 600);
+    t = thumb_size(400, 300, 600);
+    CHECK_EQ(t.w, 400); CHECK_EQ(t.h, 300);
+    t = thumb_size(0, 300, 600);
+    CHECK_EQ(t.w, 0); CHECK_EQ(t.h, 0);
+}

@@ -28,6 +28,7 @@ struct ALScripts {
 };
 
 static const char* kSortPvar = "_albumlist.sort";
+static const int kThumbSide = 600;
 static ALScripts g_al;
 
 static pfc::string8 fmt(const metadb_handle_ptr& h, const service_ptr_t<titleformat_object>& s) {
@@ -313,7 +314,7 @@ void AlbumList::paint(gfx::Canvas& cv) {
             }
         } else {
             pfc::string8 cov = fmt(g.cover_track, g_al.cover);
-            drew = draw_cover_art(cv, cov.get_ptr(), g.cover_track, cx, cy, cw, ch);
+            drew = draw_cover_thumb(cv, cov.get_ptr(), g.cover_track, kThumbSide, cx, cy, cw, ch);
         }
         if (!drew && !nocover.empty()) drew = draw_image(cv, nocover, cx, cy, cw, ch);
         if (!drew) fill_alpha(cv, cx, cy, cw, ch, color_of("placeholder", gfx::Color(40, 42, 52)), 200);
@@ -391,7 +392,7 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
             else request_cover(g.remote_cover, 300);
         } else {
             pfc::string8 cov = fmt(g.cover_track, g_al.cover);
-            im = cover_image(cov.get_ptr(), g.cover_track);
+            im = cover_thumb(cov.get_ptr(), g.cover_track, kThumbSide);
         }
         if (im) {
             draw_image_strips(cv, *im, x0, x1, yMid, h0, h1, 255, false);

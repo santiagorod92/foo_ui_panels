@@ -222,4 +222,11 @@ std::vector<size_t> cache_victims(const std::vector<CacheItem>& items, size_t to
     return out;
 }
 
+Size2 thumb_size(int w, int h, int side) {
+    if (w <= 0 || h <= 0) return {};
+    if (side <= 0 || (w <= side && h <= side)) return { w, h };
+    if (w >= h) return { side, std::max(1, (int)std::lround((double)h * side / w)) };
+    return { std::max(1, (int)std::lround((double)w * side / h)), side };
+}
+
 }

@@ -19,6 +19,9 @@ bool draw_image_region(gfx::Canvas& cv, const gfx::Image& img, int x, int y, int
 void set_art_ready_callback(std::function<void()> cb);
 
 gfx::ImagePtr cover_image(const std::string& path, const metadb_handle_ptr& track);
+gfx::ImagePtr cover_thumb(const std::string& path, const metadb_handle_ptr& track, int side);
+bool draw_cover_thumb(gfx::Canvas& cv, const std::string& path, const metadb_handle_ptr& track, int side,
+                      int x, int y, int w, int h);
 gfx::ImagePtr data_image(const std::string& key, const void* data, size_t size);
 
 void draw_image_strips(gfx::Canvas& cv, const gfx::Image& img, float x0, float x1, float yMid,

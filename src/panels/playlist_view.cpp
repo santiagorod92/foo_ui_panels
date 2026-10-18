@@ -125,7 +125,7 @@ void PlaylistView::paint(gfx::Canvas& cv) {
             metadb_handle_ptr h0; pm->activeplaylist_get_item_handle(h0, first);
             {
                 pfc::string8 cov = fmt(h0, g_pl.cover);
-                draw_cover_art(cv, cov.get_ptr(), h0, 5, y + 4, 38, 38);
+                draw_cover_thumb(cv, cov.get_ptr(), h0, 160, 5, y + 4, 38, 38);
             }
             cv.set_font(kHdrFont);
             pfc::string8 art = fmt(h0, g_pl.artist);
