@@ -151,3 +151,25 @@ TEST("resize_rect: dragged edges move, the others stay, minimum size kept") {
     r = resize_rect(s, 0, 50, 50, 200, 100);
     CHECK_EQ(r.r, 500); CHECK_EQ(r.b, 400);
 }
+
+TEST("cache_victims: under budget nothing goes") {
+    std::vector<CacheItem> items{ { 1, 40, false }, { 2, 40, false } };
+    CHECK(cache_victims(items, 80, 100).empty());
+}
+
+TEST("cache_victims: least recently used first, down to three quarters of the budget") {
+    std::vector<CacheItem> items{ { 3, 30, false }, { 1, 30, false }, { 2, 30, false }, { 4, 30, false } };
+    std::vector<size_t> v = cache_victims(items, 120, 100);
+    CHECK_EQ(v.size(), (size_t)2);
+    CHECK_EQ(v[0], (size_t)1);
+    CHECK_EQ(v[1], (size_t)2);
+}
+
+TEST("cache_victims: images still on screen are never evicted, even over budget") {
+    std::vector<CacheItem> items{ { 1, 36, true }, { 2, 36, true }, { 3, 36, false }, { 4, 36, true } };
+    std::vector<size_t> v = cache_victims(items, 144, 100);
+    CHECK_EQ(v.size(), (size_t)1);
+    CHECK_EQ(v[0], (size_t)2);
+    for (auto& i : items) i.in_use = true;
+    CHECK(cache_victims(items, 144, 100).empty());
+}

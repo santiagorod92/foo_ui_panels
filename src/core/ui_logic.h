@@ -45,4 +45,7 @@ enum ResizeEdge : int { kEdgeLeft = 1, kEdgeTop = 2, kEdgeRight = 4, kEdgeBottom
 struct EdgeRect { int l = 0, t = 0, r = 0, b = 0; };
 EdgeRect resize_rect(EdgeRect start, int edges, int dx, int dy, int min_w, int min_h);
 
+struct CacheItem { uint64_t used = 0; size_t bytes = 0; bool in_use = false; };
+std::vector<size_t> cache_victims(const std::vector<CacheItem>& items, size_t total, size_t budget);
+
 }

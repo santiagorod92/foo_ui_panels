@@ -208,4 +208,18 @@ EdgeRect resize_rect(EdgeRect start, int edges, int dx, int dy, int min_w, int m
     return r;
 }
 
+std::vector<size_t> cache_victims(const std::vector<CacheItem>& items, size_t total, size_t budget) {
+    std::vector<size_t> out;
+    if (total <= budget) return out;
+    std::vector<size_t> order;
+    for (size_t i = 0; i < items.size(); ++i) if (!items[i].in_use) order.push_back(i);
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) { return items[a].used < items[b].used; });
+    for (size_t i : order) {
+        if (total <= budget / 4 * 3) break;
+        total -= std::min(total, items[i].bytes);
+        out.push_back(i);
+    }
+    return out;
+}
+
 }

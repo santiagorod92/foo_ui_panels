@@ -3,6 +3,20 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.13.1](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.0...v1.13.1) (2026-10-18)
+
+### Highlights
+- **The album browser no longer keeps reloading its covers**: with large cover art foobar2000
+  stayed busy after start-up and clicks and keys lagged. Fixed.
+
+### Fixed
+- **Album browser / cover flow with high-resolution covers** (embedded art or `cover.jpg` of
+  ~2000 px and up): the covers on screen kept disappearing and coming back, one CPU core stayed
+  busy and the rest of the window (playlist, buttons) reacted late or not at all, as if a folder
+  scan never ended. Covers that are on screen now stay loaded, so the grid loads once and
+  foobar2000 goes idle. Reported in
+  [#18](https://github.com/santiagorod92/foo_ui_panels/issues/18).
+
 ## [1.13.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.12.0...v1.13.0) (2026-10-18)
 
 ### Highlights

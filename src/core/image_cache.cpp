@@ -1,6 +1,7 @@
 #include "image_cache.h"
 #include "builtin_images.h"
 #include "fs_util.h"
+#include "ui_logic.h"
 #include <algorithm>
 #include <cmath>
 #include <chrono>
@@ -21,12 +22,14 @@ struct Entry {
     gfx::ImagePtr img;
     size_t bytes = 0;
     uint64_t used = 0;
+    Clock::time_point touched;
     Clock::time_point retry;
 };
 std::unordered_map<std::string, Entry> g_cache;
 size_t g_bytes = 0;
 uint64_t g_clock = 0;
 constexpr size_t kBudget = 256u << 20;
+constexpr auto kInUse = std::chrono::seconds(2);
 constexpr auto kMissTtl = std::chrono::seconds(30);
 constexpr auto kArtMissTtl = std::chrono::minutes(5);
 constexpr auto kNowPlayingRetry = std::chrono::seconds(1);
@@ -43,6 +46,7 @@ bool cache_get(const std::string& key, gfx::ImagePtr& out) {
     Entry& e = it->second;
     if (!e.img && Clock::now() >= e.retry) { g_cache.erase(it); return false; }
     e.used = ++g_clock;
+    e.touched = Clock::now();
     out = e.img;
     return true;
 }
@@ -56,16 +60,16 @@ void cache_drop(const std::string& key) {
 
 void cache_evict() {
     if (g_bytes <= kBudget) return;
-    std::vector<std::pair<uint64_t, const std::string*>> order;
-    order.reserve(g_cache.size());
-    for (auto& [k, e] : g_cache) if (e.img) order.emplace_back(e.used, &k);
-    std::sort(order.begin(), order.end());
-    std::vector<std::string> victims;
-    size_t bytes = g_bytes;
-    for (size_t i = 0; i + 1 < order.size() && bytes > kBudget / 4 * 3; ++i) {
-        bytes -= g_cache[*order[i].second].bytes;
-        victims.push_back(*order[i].second);
+    const auto recent = Clock::now() - kInUse;
+    std::vector<const std::string*> keys;
+    std::vector<CacheItem> items;
+    for (auto& [k, e] : g_cache) {
+        if (!e.img) continue;
+        keys.push_back(&k);
+        items.push_back({ e.used, e.bytes, e.touched >= recent });
     }
+    std::vector<std::string> victims;
+    for (size_t i : cache_victims(items, g_bytes, kBudget)) victims.push_back(*keys[i]);
     for (auto& k : victims) cache_drop(k);
 }
 
@@ -75,6 +79,7 @@ gfx::ImagePtr cache_put(const std::string& key, gfx::ImagePtr img, Clock::durati
     e.img = img;
     e.bytes = image_bytes(img);
     e.used = ++g_clock;
+    e.touched = Clock::now();
     if (!img) e.retry = Clock::now() + missTtl;
     g_bytes += e.bytes;
     g_cache[key] = std::move(e);
