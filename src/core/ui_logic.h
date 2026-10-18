@@ -31,6 +31,7 @@ const char* album_sort_name(AlbumSort s);
 
 struct AlbumKeys { std::string artist, album, year, added; };
 std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort, const std::string& filter);
+std::string added_from_iso(const std::string& iso);
 
 std::string format_time(double seconds);
 double seek_position_at(int x, int width, double length);

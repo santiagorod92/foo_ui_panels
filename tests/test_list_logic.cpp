@@ -256,6 +256,20 @@ TEST("album_view: filter and sort orders") {
     CHECK(album_view(all, AlbumSort::Year, "zeppelin").empty());
 }
 
+TEST("album_view: recently added mixes server and local dates") {
+    CHECK(added_from_iso("2024-05-01T12:34:56.123456Z") == "2024-05-01 12:34:56.123456");
+    CHECK(added_from_iso("2024-05-01T12:34:56Z") == "2024-05-01 12:34:56");
+    CHECK(added_from_iso("").empty());
+    std::vector<AlbumKeys> all = {
+        { "ABBA", "Waterloo", "1974", added_from_iso("2023-02-01T08:00:00Z") },
+        { "Blur", "Parklife", "1994", "2024-06-01 10:00:00" },
+        { "Cake", "Fashion Nugget", "1996", added_from_iso("2024-06-01T09:00:00.5Z") },
+        { "Dido", "No Angel", "1999", "" },
+        { "Eels", "Beautiful Freak", "1996", added_from_iso("2024-06-01T09:00:00.57Z") },
+    };
+    CHECK(album_view(all, AlbumSort::Added, "") == std::vector<size_t>({ 1, 4, 2, 0, 3 }));
+}
+
 TEST("album_view: decade sort keeps artist order inside a decade") {
     std::vector<AlbumKeys> all = {
         { "ABBA", "Waterloo", "1974", "" },

@@ -147,6 +147,13 @@ std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort
     return v;
 }
 
+std::string added_from_iso(const std::string& iso) {
+    std::string s = iso;
+    if (!s.empty() && s.back() == 'Z') s.pop_back();
+    if (s.size() > 10 && s[10] == 'T') s[10] = ' ';
+    return s;
+}
+
 std::string format_time(double seconds) {
     long long t = seconds > 0 ? (long long)seconds : 0;
     const long long h = t / 3600, m = (t / 60) % 60, sec = t % 60;

@@ -150,14 +150,19 @@ void AlbumList::start_remote_load() {
     const unsigned gen = m_gen;
     auto alive = m_alive; auto abort = m_abort; AlbumList* self = this;
     fb2k::splitTask([=]() {
-        struct Sink : navidrome::library_album_sink {
+        struct Sink : navidrome::library_album_sink, navidrome::library_album_sink_v2 {
             std::vector<Group> batch;
             std::function<void(std::vector<Group>&&)> post;
             void on_album(const char* albumId, const char* albumName, const char* artistName,
-                          const char*, const char* coverArtId, int year, int) override {
+                          const char* artistId, const char* coverArtId, int year, int songCount) override {
+                on_album(albumId, albumName, artistName, artistId, coverArtId, year, songCount, "");
+            }
+            void on_album(const char* albumId, const char* albumName, const char* artistName,
+                          const char*, const char* coverArtId, int year, int, const char* created) override {
                 Group g; g.remote = true; g.remote_id = albumId; g.remote_cover = coverArtId;
                 g.artist = artistName; g.album = albumName;
                 if (year > 0) g.year = std::to_string(year);
+                g.added = added_from_iso(created ? created : "");
                 g.key = (lower_str(artistName) + "|" + lower_str(albumName)).c_str();
                 batch.push_back(std::move(g));
                 if (batch.size() >= 120) flush();
@@ -173,7 +178,13 @@ void AlbumList::start_remote_load() {
         };
         pfc::string8 err;
         bool ok = false;
-        try { ok = api->list_albums(sink, *abort, err); } catch (...) { err = "Navidrome library request failed."; }
+        navidrome::navidrome_library_api_v2::ptr v2;
+        try {
+            if (api->service_query_t(v2))
+                ok = v2->list_albums_v2(static_cast<navidrome::library_album_sink_v2&>(sink), *abort, err);
+            else
+                ok = api->list_albums(static_cast<navidrome::library_album_sink&>(sink), *abort, err);
+        } catch (...) { err = "Navidrome library request failed."; }
         sink.flush();
         std::string errs = ok ? std::string() : std::string(err.c_str());
         if (!ok) log::warn("navidrome", "album list request failed: " + errs);
