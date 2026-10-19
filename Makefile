@@ -45,10 +45,10 @@ help:
 	@echo ""
 	@echo "  Windows 11 ARM VM on an Apple Silicon Mac (../foo_navidrome/scripts/win11-arm.sh, set up from foo_navidrome):"
 	@echo "  win11-arm         start the VM and open its screen (VNC=0: no browser)"
-	@echo "  win11-arm-deploy  build ARCH=arm64ec (default) or x64, install the DLL + skins/\$$SKIN in the guest, restart foobar2000, screenshot"
+	@echo "  win11-arm-deploy  build ARCH=arm64ec (default), x64 or x86 (32-bit portable foobar2000), install the DLL + skins/\$$SKIN in the guest, restart foobar2000, screenshot"
 	@echo "  win11-arm-skin    copy skins/\$$SKIN, or SKIN_DIR=<folder>, into the guest's component folder"
 	@echo "  win11-arm-test    unit tests built for Windows, run in the guest"
-	@echo "  win11-arm-<cmd>   any win11-arm.sh command: -up, -down, -status, -shot, -ssh, -fb2k ARGS=start, -fb2k ARGS='log 60 ERROR', ..."
+	@echo "  win11-arm-<cmd>   any win11-arm.sh command: -up, -down, -status, -shot, -ssh, -fb2k ARGS=start, -fb2k ARGS='log 60 ERROR', ... (ARCH=x86: the 32-bit install, set up once with win11-arm-provision ARCH=x86)"
 	@echo "  win11-<cmd>     any wvm command: win11-shot, -ssh, -down, -theme ARGS=dark, -dpi ARGS=144, -click ARGS='x y', ..."
 
 build:
@@ -201,7 +201,6 @@ win11-skin:
 	$(WVM) fb2k start
 
 WIN11_ARM ?= $(abspath ../foo_navidrome/scripts/win11-arm.sh)
-WIN11_ARM_COMPONENT_DIR = AppData/Roaming/foobar2000-v2/user-components-arm64ec/foo_ui_panels
 
 win11-arm:
 	$(WIN11_ARM) up
@@ -209,6 +208,8 @@ win11-arm:
 
 ARCH ?= arm64ec
 WIN11_ARM_DLL = $(if $(filter x64,$(ARCH)),build,build-$(ARCH))/foo_ui_panels.dll
+WIN11_ARM_COMPONENT_DIR = $(if $(filter x86,$(ARCH)),C:/fb2k-x86/profile/user-components,AppData/Roaming/foobar2000-v2/user-components-arm64ec)/foo_ui_panels
+win11-arm-%: export FB2K_ARCH = $(if $(filter x86,$(ARCH)),x86,arm64ec)
 
 win11-arm-deploy:
 	WIN_ARCH=$(ARCH) ./build.sh

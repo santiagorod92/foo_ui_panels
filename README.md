@@ -452,6 +452,8 @@ make win11-arm                 # start the VM and open its screen in the browser
 make win11-arm-test            # unit tests built for Windows, run in the guest
 make win11-arm-deploy          # build ARM64EC, install it (+ skins/$SKIN) in the guest, restart, screenshot
 make win11-arm-deploy ARCH=x64 # the x64 build instead (foobar2000 for ARM runs it emulated)
+make win11-arm-provision ARCH=x86  # once: a portable 32-bit foobar2000 in C:\fb2k-x86 for the x86 build
+make win11-arm-deploy ARCH=x86 # the x86 build, in that 32-bit foobar2000
 make win11-arm-status          # any win11-arm.sh command: -down, -shot, -ssh, -fb2k ARGS='log 60 ERROR', ...
 ```
 

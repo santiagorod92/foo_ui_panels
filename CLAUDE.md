@@ -22,7 +22,7 @@ lands on BOTH platforms, all builds + CI legs green, release zip = `mac/` bundle
   (`make mac-vm` / `make mac-vm-test`, `mvm click|key|shot`); real Windows 11 (`make win11-test`)
   when the change touches theming, DPI or native controls. On an Apple Silicon Mac host the same
   round is `make test`, `make mac-build`, `make build`, then `make win11-arm-test` (the unit
-  tests on real Windows) and `make win11-arm-deploy` in the Windows 11 ARM VM. Exercise the changed feature
+  tests on real Windows) and `make win11-arm-deploy` (`ARCH=x64`, `ARCH=x86` for the other builds) in the Windows 11 ARM VM. Exercise the changed feature
   itself, not just "it loads". Anything that couldn't be checked (and why) goes in the PR.
 - macOS integration: a `user_interface` module ("Panels UI (reborn)", Preferences › Display —
   verified in the VM) owning its window, plus a `ui_element_mac` layout element ("Panels UI").
@@ -156,6 +156,10 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
   points at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
   `user-components-arm64ec/<dll name>`, `push` copies a folder in, `COMPONENT=` picks the log
   `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest.
+- **All three Windows builds run in that one VM:** ARM64EC natively, x64 in the same ARM
+  foobar2000 (an ARM64EC process loads x64 DLLs), x86 in a portable 32-bit foobar2000 at
+  `C:\fb2k-x86` (`FB2K_ARCH=x86`, foo_ui_panels: `ARCH=x86`; `provision` installs it once and
+  seeds its profile from the ARM one). `fb2k stop` closes whichever build is running.
 - **UI tests:** both repos drive the real foobar2000 with one script,
   `scripts/ui-test.sh <wine|win11|mac> <scenario>`: each scenario is written once over a small
   per-platform driver and asserts on the component log, the process and crash reports.
@@ -354,9 +358,10 @@ holds only what's true for both; anything repo-specific stays in the repo's own 
 - Build: `./build.sh` (or `make build`) → `build/foo_ui_panels.dll` (PE32+ x64, exports `foobar2000_get_interface`).
   `WIN_ARCH=arm64ec ./build.sh` (`make build-arm64ec`) → `build-arm64ec/` (Windows on ARM, native).
   `WIN_ARCH=x86` (`make build-x86`) → `build-x86/` (32-bit fb2k v2, links `shared-Win32.lib`).
-  xwin must be splatted `--arch x86,x86_64,aarch64`. No ARM runtime test env (Wine is x86) — CI only builds it.
-  x86 runtime: the 32-bit fb2k installer unpacks with `7z x` into a portable folder; components go in
-  `profile/user-components/` (no `-x64`).
+  xwin must be splatted `--arch x86,x86_64,aarch64` (an arch missing locally can be splatted alone into a
+  scratch dir and its `crt/lib/<arch>`, `sdk/lib/{um,ucrt}/<arch>` copied in). Runtime for every arch: the
+  Windows 11 ARM VM (`make win11-arm-deploy ARCH=arm64ec|x64|x86`). x86 runs in a portable 32-bit fb2k,
+  components in `profile/user-components/` (no `-x64`).
 - macOS: `./scripts/mac-build.sh` (`make mac-build`) → `build-mac/foo_ui_panels.component`
   (universal; per-arch trees in `build-mac/<arch>`). `make check-portable` = core/panels compile
   with the host clang, no Windows headers.
