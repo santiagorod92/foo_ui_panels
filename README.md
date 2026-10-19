@@ -232,8 +232,9 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /
   `screenshot.png` in its folder), else a picture the component takes of it the first time it is
   shown (kept in the profile's `foo_ui_panels-previews` folder).
-- The Preferences page follows foobar2000's **Dark Mode** (Preferences › Display › Default User
-  Interface; on *Auto* it tracks Windows' app theme live, also with Panels UI as the UI module).
+- The Preferences page and the main window's title bar, menu bar and menus follow foobar2000's
+  **Dark Mode** (Preferences › Display › Default User Interface; on *Auto* it tracks Windows' app
+  theme live, also with Panels UI as the UI module).
 - Album browser / cover flow: type to search by artist or album (Backspace edits, Esc clears),
   right-click empty space to sort by artist, album, year, decade or recently added (remembered), arrow
   keys / Page Up/Down / Home/End move through the grid.

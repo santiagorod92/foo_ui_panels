@@ -5,6 +5,7 @@
 #include "drop_files.h"
 #include "tray.h"
 #include "zoom.h"
+#include "dark_mode.h"
 #include "../../core/skin_engine.h"
 #include "../../core/skin_paths.h"
 #include "../../core/image_cache.h"
@@ -13,6 +14,7 @@
 #include "../../core/ui_settings.h"
 #include "../../core/log.h"
 #include <cmath>
+#include <memory>
 #include <vector>
 #include <string>
 #include <cstdio>
@@ -90,6 +92,7 @@ public:
             throw exception_win32(err);
         }
         pui::log::info("ui", "main window created");
+        m_theme = std::make_unique<pui::win::dark::WindowTheme>(m_wnd);
         DragAcceptFiles(m_wnd, TRUE);
         build_menu();
         const int show = restore_placement(m_wnd);
@@ -117,6 +120,7 @@ public:
         m_skin.destroy_panels();
         m_tooltip.destroy();
         m_tray.remove();
+        m_theme.reset();
         if (m_wnd) { DestroyWindow(m_wnd); m_wnd = nullptr; }
         if (m_menubar) { DestroyMenu(m_menubar); m_menubar = nullptr; }
         m_groups.clear();
@@ -257,6 +261,7 @@ private:
     std::string m_title;
     pui::win::Tooltip m_tooltip;
     pui::win::TrayIcon m_tray;
+    std::unique_ptr<pui::win::dark::WindowTheme> m_theme;
     int         m_sizeEdges = 0;
     POINT       m_sizeFrom{};
     pui::EdgeRect m_sizeStart;
@@ -526,6 +531,12 @@ private:
             pui::win::refresh_zoom(wnd);
             if (self) self->m_skin.repaint_all();
             return 0;
+        }
+        case WM_NCPAINT:
+        case WM_NCACTIVATE: {
+            const LRESULT r = DefWindowProcW(wnd, msg, wp, lp);
+            pui::win::dark::paint_menubar_line(wnd);
+            return r;
         }
         case WM_SETTINGCHANGE:
             if (lp && !wcscmp(reinterpret_cast<const wchar_t*>(lp), L"ImmersiveColorSet")) {

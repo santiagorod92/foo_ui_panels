@@ -139,4 +139,38 @@ void subclass_tab(HWND tab, const bool* dark) {
     SetWindowSubclass(tab, tab_proc, 1, reinterpret_cast<DWORD_PTR>(dark));
 }
 
+void set_app_mode(bool dark) {
+    static bool applied = false;
+    if (!dark && !applied) return;
+    using SetModeFn = int(WINAPI*)(int);
+    using FlushFn = void(WINAPI*)();
+    static HMODULE ux = LoadLibraryExW(L"uxtheme.dll", nullptr, LOAD_LIBRARY_SEARCH_SYSTEM32);
+    static auto set_mode = ux ? reinterpret_cast<SetModeFn>(reinterpret_cast<void*>(GetProcAddress(ux, MAKEINTRESOURCEA(135)))) : nullptr;
+    static auto flush = ux ? reinterpret_cast<FlushFn>(reinterpret_cast<void*>(GetProcAddress(ux, MAKEINTRESOURCEA(136)))) : nullptr;
+    if (!set_mode) return;
+    set_mode(dark ? 2 : 3);
+    if (flush) flush();
+    applied = true;
+}
+
+void paint_menubar_line(HWND wnd) {
+    if (!GetMenu(wnd) || !enabled()) return;
+    RECT client, window;
+    GetClientRect(wnd, &client);
+    MapWindowPoints(wnd, nullptr, reinterpret_cast<POINT*>(&client), 2);
+    GetWindowRect(wnd, &window);
+    OffsetRect(&client, -window.left, -window.top);
+    RECT line = { client.left, client.top - 1, client.right, client.top };
+    HDC dc = GetWindowDC(wnd);
+    FillRect(dc, &line, palette(true).bgBrush);
+    ReleaseDC(wnd, dc);
+}
+
+WindowTheme::WindowTheme(HWND wnd) {
+    set_app_mode(enabled());
+    m_hooks.AddDialog(wnd);
+}
+
+void WindowTheme::ui_colors_changed() { set_app_mode(enabled()); }
+
 }
