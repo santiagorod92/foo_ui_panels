@@ -3,6 +3,31 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.13.4](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.3...v1.13.4) (2026-10-19)
+
+### Highlights
+- **Dark Mode now covers the whole main window on Windows**: title bar, menu bar and menus.
+
+### Fixed
+- **Windows: the main window stayed light in Dark Mode**: only the Preferences page followed
+  foobar2000's Dark Mode, so the title bar, the menu bar (File, Edit, View…) and its menus, and
+  the right-click menus stayed light. They now follow it too, including the switch when Windows'
+  app theme changes while foobar2000 is running (Dark Mode on *Auto*). Reported in
+  [#18](https://github.com/santiagorod92/foo_ui_panels/issues/18).
+
+### For contributors
+- **Every Windows build runs in the Windows 11 ARM VM**: ARM64EC natively, x64 in the same ARM
+  foobar2000, x86 in a portable 32-bit foobar2000 at `C:\fb2k-x86`
+  (`make win11-arm-provision ARCH=x86` once, then `make win11-arm-deploy ARCH=x86`).
+
+## [1.13.3](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.2...v1.13.3) (2026-10-18)
+
+### Fixed
+- **Album browser: Recently added didn't sort Navidrome albums**: they had no date and stayed in
+  artist order. With foo_navidrome 1.31 or later they now sort by the date they were added to the
+  server, mixed with local albums. Reported in
+  [#21](https://github.com/santiagorod92/foo_ui_panels/issues/21).
+
 ## [1.13.2](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.1...v1.13.2) (2026-10-18)
 
 ### Highlights
