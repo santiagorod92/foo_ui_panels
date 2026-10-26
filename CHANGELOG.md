@@ -3,6 +3,50 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.16.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.15.0...v1.16.0) (2026-10-26)
+
+### Highlights
+- **Panels UI in 8 languages**: Português, 中文, 日本語, Français, Deutsch and Русский join
+  English and Spanish.
+
+### Added
+- **Six more UI languages**: **Português** (Brazilian), **中文** (Simplified Chinese),
+  **日本語**, **Français**, **Deutsch** and **Русский**. The menus, Preferences, the native
+  panels' menus and messages (album browser, library tree, lyrics, playlist, quick search), the
+  welcome screen and the layout wizard are translated. By default Panels UI follows the system
+  language (Windows: the display language; macOS: the first preferred language); to pick one,
+  use **Preferences › Display › Panels UI (reborn) › General › Language**, where each language is
+  listed by its own name, and restart foobar2000. Any Chinese locale gets Simplified Chinese
+  (Traditional included) and any Portuguese locale gets Brazilian Portuguese. Skins draw their
+  own text, so a skin's labels stay as the skin wrote them. Logs and Copy Diagnostics stay in
+  English. The new translations are a first pass: corrections from native speakers are welcome
+  in an issue.
+
+### For contributors
+- **One translation table for every language**: `src/core/i18n_spanish.cpp` is replaced by
+  `src/core/i18n_table.cpp`, where each row is the English text followed by one string per
+  language, in the order of `kLanguages` (`src/core/i18n.h`), the single list of languages that
+  also feeds the Language setting and the system-language detection. Adding a language is a
+  `Language` value, a `kLanguages` entry and one more string per row. `make i18n-check` fails on
+  any missing cell, `make i18n-missing ARGS=<code>` lists one language's gaps, and the unit tests
+  check that every cell is filled and keeps the key's `{n}` placeholders.
+
+## [1.15.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.14.0...v1.15.0) (2026-10-23)
+
+### Added
+- **macOS: updates through foo_component_updater_mac**:
+  [foo_component_updater_mac](https://github.com/alies-dev/foo_component_updater_mac) can update
+  Panels UI straight from its GitHub releases. The component now names its release source in its
+  `Info.plist`, which the updater trusts over the foobar2000.org catalog; foobar2000 itself
+  ignores it. Requested in [#24](https://github.com/santiagorod92/foo_ui_panels/issues/24).
+
+## [1.14.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.4...v1.14.0) (2026-10-20)
+
+### Added
+- **Spanish UI**: the menus, Preferences, the native panels' menus and messages, the welcome
+  screen and the layout wizard follow the system language, or pick one in **Preferences ›
+  Display › Panels UI (reborn) › General › Language** and restart foobar2000.
+
 ## [1.13.4](https://github.com/santiagorod92/foo_ui_panels/compare/v1.13.3...v1.13.4) (2026-10-19)
 
 ### Highlights

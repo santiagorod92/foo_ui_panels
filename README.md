@@ -157,7 +157,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 
 ## What's implemented
 
-- **English and Spanish UI**: menus, Preferences, the native panels' menus and messages, the
+- **UI in 8 languages** (English, Español, Português, 中文, 日本語, Français, Deutsch, Русский): menus, Preferences, the native panels' menus and messages, the
   welcome screen and the layout wizard follow the system language (Windows: the display
   language; macOS: the first preferred language), or pick one in **Preferences › Display ›
   Panels UI (reborn) › General › Language** and restart foobar2000. Skins draw their own text,
@@ -353,9 +353,11 @@ things smooth:
   `tests/skins/synthetic/synthetic.txt` (a test checks); run `make docs` after.
 - UI text goes through `tr("English text")` / `trf("… {0} …", { args })` / `N_()` (for a
   constant used later), `src/core/i18n.h`: the English text is the key and
-  `src/core/i18n_spanish.cpp` holds the Spanish. `make test` first runs `make i18n-check`
-  (`scripts/i18n-check.py`), which fails on a string without a Spanish entry;
-  `make i18n-missing` lists them.
+  each row of `src/core/i18n_table.cpp` holds its text in every other language, in the order of
+  `kLanguages` (`src/core/i18n.h`). `make test` first runs `make i18n-check`
+  (`scripts/i18n-check.py`), which fails on a string missing in any language;
+  `make i18n-missing` lists them (`ARGS=ja` for one language). Adding a language = a
+  `Language` value, a `kLanguages` entry and one more string in every row.
 - Use [Conventional Commits](https://www.conventionalcommits.org/) (`feat:`, `fix:`, …): they
   drive the automated releases (see [Releases](#releases)).
 - Update this README when you add or change a feature (e.g. *What's implemented*, *Roadmap*),
