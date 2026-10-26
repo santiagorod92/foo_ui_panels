@@ -15,8 +15,8 @@ help:
 	@echo "  clean     remove build/, build-arm64ec/, build-x86/ and build-mac/"
 	@echo "  check-portable  compile the platform-free sources (core/panels) for a non-Windows host"
 	@echo "  test            build + run the host-side unit tests (tests/, ASan/UBSan; Linux and macOS)"
-	@echo "  i18n-check      every tr()/N_() UI string has a Spanish entry (also run by the unit tests)"
-	@echo "  i18n-missing    print the UI strings that still lack a Spanish translation"
+	@echo "  i18n-check      every tr()/N_() UI string is translated into every language (also run by the unit tests)"
+	@echo "  i18n-missing    print the UI strings missing a translation (ARGS=<code> for one language)"
 	@echo "  win-test        the same unit tests built for Windows with clang-cl, run under wine (Linux)"
 	@echo "  skin-lint       build build/tools/skin_lint; LINT_DIR=<folder> also runs it on that skin"
 	@echo "  docs            regenerate docs/SCRIPT_FUNCTIONS.md from the engine's function table"
@@ -91,13 +91,13 @@ i18n-check:
 	python3 scripts/i18n-check.py
 
 i18n-missing:
-	python3 scripts/i18n-check.py --missing
+	python3 scripts/i18n-check.py --missing $(ARGS)
 
 win-test:
 	./scripts/run-unit-tests.sh win
 
 LINT_SRC = tools/skin_lint.cpp src/core/script_runtime.cpp src/core/script_util.cpp src/core/skin_config.cpp src/core/skin_lint.cpp \
-           src/core/i18n.cpp src/core/i18n_spanish.cpp
+           src/core/i18n.cpp src/core/i18n_table.cpp
 LINT_BIN = build/tools/skin_lint
 $(LINT_BIN): $(LINT_SRC) $(wildcard src/core/*.h)
 	@mkdir -p $(dir $(LINT_BIN))
