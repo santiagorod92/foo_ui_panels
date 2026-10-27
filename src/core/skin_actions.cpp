@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "skin_engine.h"
+#include "diagnostics.h"
 #include "script_util.h"
 #include "navidrome_rating_api.h"
 #include "ui_settings.h"
@@ -224,6 +225,10 @@ bool SkinEngine::run_button_action(const std::string& action) {
         const SkinTemplate* t = find_skin_template(a.substr(14));
         const std::string parent = layout_skins_dir();
         if (!t || parent.empty()) return true;
+        if (t->needs_js_panel && !js_panel_installed()) {
+            ui::message_box(nullptr, "Panels UI", tr("This layout needs JS Panel (foo_js_panel). Install it and try again."));
+            return true;
+        }
         std::string err;
         const std::string dir = install_skin_template(*t, parent, &err);
         if (dir.empty()) { ui::message_box(nullptr, "Panels UI", err); return true; }

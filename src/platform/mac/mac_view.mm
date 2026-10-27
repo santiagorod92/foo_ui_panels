@@ -1,5 +1,6 @@
 #import <Cocoa/Cocoa.h>
 #include "../../fb2k.h"
+#include "../../core/js_panel_api.h"
 #include "mac_view.h"
 #include "mac_canvas.h"
 #include "../../ui/host_input.h"
@@ -569,7 +570,7 @@ std::unique_ptr<TextField> create_text_field(ViewHost& owner, TextFieldDelegate*
     return std::make_unique<MacTextField>((__bridge NSView*)owner.native(), delegate, style);
 }
 
-std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name) {
+std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name, const std::string& script) {
     if (!name || strcasecmp(name, "Panels UI") == 0) return nullptr;
     NSString* want = ns(name).lowercaseString;
     service_enum_t<ui_element_mac> e;
@@ -579,7 +580,8 @@ std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, cons
         if (!el->match_name(name) && ![got containsString:want]) continue;
         if (strcasecmp(el->get_name()->c_str(), "Panels UI") == 0) continue;
         try {
-            id obj = fb2k::unwrapNSObject(el->instantiate(fb2k::wrapNSObject(@{})));
+            NSDictionary* args = script.empty() ? @{} : @{ @(js_panel::script_key) : ns(script) };
+            id obj = fb2k::unwrapNSObject(el->instantiate(fb2k::wrapNSObject(args)));
             if ([obj isKindOfClass:[NSViewController class]])
                 return std::make_unique<MacEmbeddedPanel>((NSViewController*)obj, (__bridge NSView*)root.native());
         } catch (...) {}

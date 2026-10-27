@@ -45,11 +45,13 @@ std::vector<std::string> installed_components() {
     return out;
 }
 
-bool navidrome_installed() {
+bool component_installed(const char* file) {
     const auto components = installed_components();
     return std::any_of(components.begin(), components.end(),
-                       [](const std::string& c) { return c.find("foo_navidrome") != std::string::npos; });
+                       [file](const std::string& c) { return c.find(file) != std::string::npos; });
 }
+
+bool navidrome_installed() { return component_installed("foo_navidrome"); }
 
 std::string session_summary() {
     const std::string wine = ui::wine_version();
@@ -57,7 +59,8 @@ std::string session_summary() {
            core_version_info::g_get_version_string() + ", " + platform_name() + " " + ui::os_version() +
            (wine.empty() ? "" : ", Wine " + wine) + ", verbose=" + (verbose_logging() ? "on" : "off") +
            ", ui=" + i18n::language_code(i18n::language()) +
-           ", navidrome=" + (navidrome_installed() ? "yes" : "no");
+           ", navidrome=" + (navidrome_installed() ? "yes" : "no") +
+           ", js_panel=" + (js_panel_installed() ? "yes" : "no");
 }
 
 class LogInit : public initquit {
@@ -68,6 +71,8 @@ public:
 FB2K_SERVICE_FACTORY(LogInit);
 
 }
+
+bool js_panel_installed() { return component_installed("foo_js_panel"); }
 
 void start_logging() {
     static bool started = false;

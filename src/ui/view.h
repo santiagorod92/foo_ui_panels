@@ -138,7 +138,7 @@ std::unique_ptr<ViewHost> create_popup_window(MainWindow& root, View* view, int 
                                               const std::string& title, std::function<void()> on_closed);
 std::unique_ptr<TextField> create_text_field(ViewHost& owner, TextFieldDelegate* delegate,
                                              const TextFieldStyle& style);
-std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name);
+std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name, const std::string& script = {});
 
 int popup_menu(ViewHost* anchor, int x, int y, const Menu& menu);
 int popup_menu_at_cursor(MainWindow& root, const Menu& menu);

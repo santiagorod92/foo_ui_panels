@@ -9,76 +9,76 @@ round_rect 250,100,110,32 6,6 #3a3e48
 font Segoe UI 10 bold
 text "Use my own skin folder..." 28,100,210,32 f29 #ffffff
 text "Close" 250,100,110,32 f29 #ffffff
-round_rect 28,150,270,207 8,8 #22252d
-fill_rect 40,162,246,127 #18191e
-frame_rect 40,162,246,127 #464a56
-fill_rect 40,162,246,11 #3a3e48
-fill_rect 44,177,63,43 #0078d7
-fill_rect 113,173,172,109 #262932
-fill_rect 40,282,246,6 #30333c
-img builtin:wizard/playlist-cover.png 40,162,246,127
-frame_rect 40,162,246,127 #464a56
+round_rect 71,150,242,209 8,8 #22252d
+fill_rect 83,162,218,113 #18191e
+frame_rect 83,162,218,113 #464a56
+fill_rect 83,162,218,10 #3a3e48
+fill_rect 87,175,56,38 #0078d7
+fill_rect 148,172,152,97 #262932
+fill_rect 83,269,218,5 #30333c
+img builtin:wizard/playlist-cover.png 83,162,218,113
+frame_rect 83,162,218,113 #464a56
 font Segoe UI 11 bold
-text "Playlist and cover" 40,297,246,20 f32 #ebeef5
+text "Playlist and cover" 83,283,218,20 f32 #ebeef5
 font Segoe UI 9
-text "Album art and track info beside the playlist." 40,319,246,34 f160 #969ba5
-round_rect 314,150,270,207 8,8 #22252d
-fill_rect 326,162,246,127 #18191e
-frame_rect 326,162,246,127 #464a56
-fill_rect 326,162,246,11 #3a3e48
-fill_rect 326,173,54,109 #2e323e
-fill_rect 380,173,127,109 #262932
-fill_rect 512,177,54,38 #0078d7
-fill_rect 326,282,246,6 #30333c
-img builtin:wizard/library.png 326,162,246,127
-frame_rect 326,162,246,127 #464a56
+text "Album art and track info beside the playlist." 83,305,218,50 f160 #969ba5
+round_rect 329,150,242,209 8,8 #22252d
+fill_rect 341,162,218,113 #18191e
+frame_rect 341,162,218,113 #464a56
+fill_rect 341,162,218,10 #3a3e48
+fill_rect 341,172,47,97 #2e323e
+fill_rect 388,172,113,97 #262932
+fill_rect 506,175,47,33 #0078d7
+fill_rect 341,269,218,5 #30333c
+img builtin:wizard/library.png 341,162,218,113
+frame_rect 341,162,218,113 #464a56
 font Segoe UI 11 bold
-text "Library" 326,297,246,20 f32 #ebeef5
+text "Library" 341,283,218,20 f32 #ebeef5
 font Segoe UI 9
-text "Playlists on the left, the playlist, album art on the right." 326,319,246,34 f160 #969ba5
-round_rect 600,150,270,207 8,8 #22252d
-fill_rect 612,162,246,127 #18191e
-frame_rect 612,162,246,127 #464a56
-fill_rect 612,162,246,11 #3a3e48
-fill_rect 612,173,147,109 #005faa
-fill_rect 759,173,98,109 #262932
-fill_rect 612,282,246,6 #30333c
-img builtin:wizard/albums.png 612,162,246,127
-frame_rect 612,162,246,127 #464a56
+text "Playlists on the left, the playlist, album art on the right." 341,305,218,50 f160 #969ba5
+round_rect 587,150,242,209 8,8 #22252d
+fill_rect 599,162,218,113 #18191e
+frame_rect 599,162,218,113 #464a56
+fill_rect 599,162,218,10 #3a3e48
+fill_rect 599,172,130,97 #005faa
+fill_rect 729,172,87,97 #262932
+fill_rect 599,269,218,5 #30333c
+img builtin:wizard/albums.png 599,162,218,113
+frame_rect 599,162,218,113 #464a56
 font Segoe UI 11 bold
-text "Album browser" 612,297,246,20 f32 #ebeef5
+text "Album browser" 599,283,218,20 f32 #ebeef5
 font Segoe UI 9
-text "Your albums as a cover grid, the playlist beside it." 612,319,246,34 f160 #969ba5
-round_rect 28,373,270,207 8,8 #22252d
-fill_rect 40,385,246,127 #18191e
-frame_rect 40,385,246,127 #464a56
-fill_rect 40,385,246,11 #3a3e48
-fill_rect 40,396,246,109 #262932
-fill_rect 40,505,246,6 #30333c
-img builtin:wizard/playlist.png 40,385,246,127
-frame_rect 40,385,246,127 #464a56
+text "Your albums as a cover grid, the playlist beside it." 599,305,218,50 f160 #969ba5
+round_rect 71,375,242,209 8,8 #22252d
+fill_rect 83,387,218,113 #18191e
+frame_rect 83,387,218,113 #464a56
+fill_rect 83,387,218,10 #3a3e48
+fill_rect 83,397,218,97 #262932
+fill_rect 83,494,218,5 #30333c
+img builtin:wizard/playlist.png 83,387,218,113
+frame_rect 83,387,218,113 #464a56
 font Segoe UI 11 bold
-text "Playlist" 40,520,246,20 f32 #ebeef5
+text "Playlist" 83,508,218,20 f32 #ebeef5
 font Segoe UI 9
-text "Just the playlist, with the controls on top." 40,542,246,34 f160 #969ba5
-round_rect 314,373,270,207 8,8 #22252d
-fill_rect 326,385,246,127 #18191e
-frame_rect 326,385,246,127 #464a56
-fill_rect 326,385,246,11 #3a3e48
-fill_rect 330,400,98,71 #0078d7
-fill_rect 436,397,130,81 #463e6e
-fill_rect 326,484,246,21 #009688
-fill_rect 326,505,246,6 #30333c
-img builtin:wizard/now-playing.png 326,385,246,127
-frame_rect 326,385,246,127 #464a56
+text "Just the playlist, with the controls on top." 83,530,218,50 f160 #969ba5
+round_rect 329,375,242,209 8,8 #22252d
+fill_rect 341,387,218,113 #18191e
+frame_rect 341,387,218,113 #464a56
+fill_rect 341,387,218,10 #3a3e48
+fill_rect 345,400,87,63 #0078d7
+fill_rect 439,398,115,72 #463e6e
+fill_rect 341,475,218,19 #009688
+fill_rect 341,494,218,5 #30333c
+img builtin:wizard/now-playing.png 341,387,218,113
+frame_rect 341,387,218,113 #464a56
 font Segoe UI 11 bold
-text "Now playing" 326,520,246,20 f32 #ebeef5
+text "Now playing" 341,508,218,20 f32 #ebeef5
 font Segoe UI 9
-text "A large cover, synced lyrics and a spectrum." 326,542,246,34 f160 #969ba5
+text "A large cover, synced lyrics and a spectrum." 341,530,218,50 f160 #969ba5
 button 28,100,210,32 SKIN:CHOOSE_FOLDER tooltip=Load a skin from a folder
 button 250,100,110,32 WIZARD:CLOSE
-button 28,150,270,207 SKIN:TEMPLATE:playlist-cover tooltip=Album art and track info beside the playlist.
-button 314,150,270,207 SKIN:TEMPLATE:library tooltip=Playlists on the left, the playlist, album art on the right.
-button 600,150,270,207 SKIN:TEMPLATE:albums tooltip=Your albums as a cover grid, the playlist beside it.
-button 28,373,270,207 SKIN:TEMPLATE:playlist tooltip=Just the playlist, with the controls on top.
-button 314,373,270,207 SKIN:TEMPLATE:now-playing tooltip=A large cover, synced lyrics and a spectrum.
+button 71,150,242,209 SKIN:TEMPLATE:playlist-cover tooltip=Album art and track info beside the playlist.
+button 329,150,242,209 SKIN:TEMPLATE:library tooltip=Playlists on the left, the playlist, album art on the right.
+button 587,150,242,209 SKIN:TEMPLATE:albums tooltip=Your albums as a cover grid, the playlist beside it.
+button 71,375,242,209 SKIN:TEMPLATE:playlist tooltip=Just the playlist, with the controls on top.
+button 329,375,242,209 SKIN:TEMPLATE:now-playing tooltip=A large cover, synced lyrics and a spectrum.

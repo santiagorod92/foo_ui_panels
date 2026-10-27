@@ -77,8 +77,12 @@ makes it the skin and opens the **layout wizard** over it. The wizard (also **Vi
 Layout wizard…**, or the **Layout wizard…** button in Preferences › Display › Panels UI (reborn),
 like the Default UI's *Quick Setup*) offers ready-made layouts — *Playlist and cover*, *Library* (playlists, playlist,
 album art), *Album browser* (cover grid + playlist), *Playlist*, *Now playing* (large cover, synced
-lyrics, spectrum) — each with a screenshot of it. Picking one writes it out as a skin folder of its own
-(`main.txt` + `foo_ui_panels.ini`, a new folder each time, so edits are never overwritten): it is an
+lyrics, spectrum) — each with a screenshot of it. With [JS Panel](#works-with-js-panel) installed it
+also offers *Albums + JS*, *Playlist + JS* and *Library + Navidrome* (marked **JS**). The wizard
+fits its cards to the window; in a short window they show just the preview and the name (the
+description is in the tooltip). Picking one writes it out as a skin folder of its own
+(`main.txt` + `foo_ui_panels.ini`, plus `js/` for the JS Panel layout, a new folder each time, so
+edits are never overwritten): it is an
 ordinary skin from then on, to edit like any other. **Use my own skin folder…** loads any other skin
 instead (fooAvA, see below).
 
@@ -150,6 +154,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `command.<label>` | A skin command listed under **View › Panels UI › Skin commands** (so it can get a keyboard shortcut): one button action, or several separated by `;`. |
 | `cover.pvar`, `cover.pattern` | Set this variable to the track folder's cover (`*folder*.*`) before each panel script runs. |
 | `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
+| `panel.<name>.script` | Script for a hosted [JS Panel](#works-with-js-panel) `$panel(<name>,JS Panel,…)`, relative to the skin folder (e.g. `js/now_playing.js`). Unset: JS Panel's own script. |
 | `action.remap.<action>` | Run another button action instead. |
 | `onboarding.pvars` | First-run flags set to 1 when a popup opens: names, `prefix*`, `!exclusion`. |
 | `pvar.once.<name>` | Set this variable once, then leave it to the user. |
@@ -280,6 +285,23 @@ own):
   highlight like a local `.lrc`), looked up as soon as the track plays — no need to turn on
   online search. When the server has none, lrclib.net is tried if online search is on, or from
   the panel's "Search online" link.
+
+## Works with JS Panel
+
+[JS Panel](https://github.com/santiagorod92/foo_js_panel) (`foo_js_panel`, same author) draws panels
+with JavaScript, on Windows and macOS. A skin places one like any other UI element,
+`$panel(<name>,JS Panel,x,y,w,h)`, and `panel.<name>.script` in `foo_ui_panels.ini` picks the
+script it runs, so each JS Panel in a skin runs its own file. With JS Panel installed the layout
+wizard offers three layouts that use it, scripts included in the skin's `js/` folder (right-click
+any of them › *Edit script…*):
+- *Albums + JS*: the Album browser with a now-playing bar (album cover, title, artist, progress)
+  instead of the status bar.
+- *Playlist + JS*: the playlist with that bar.
+- *Library + Navidrome*: the Media Library as artists › albums and the Navidrome artists, in two
+  JS Panels left of the playlist, plus the bar. Click one of them, then double-click or Enter plays
+  and Ctrl+double-click / Ctrl+Enter adds; arrows, Page Up/Down and Home/End move, ←/→ fold and
+  unfold an artist in the library tree. Each component works without the other: without JS Panel such a panel stays
+empty and the skin's problem list says why.
 
 ## Reporting a problem
 

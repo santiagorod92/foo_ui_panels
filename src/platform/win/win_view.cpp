@@ -446,7 +446,7 @@ LRESULT CALLBACK WinViewHost::WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) 
 class WinEmbeddedPanel : public EmbeddedPanel {
 public:
     ~WinEmbeddedPanel() override { m_host.destroy(); }
-    bool create(HWND parent, const char* name) { return m_host.create(parent, name) != nullptr; }
+    bool create(HWND parent, const char* name, const std::string& script) { return m_host.create(parent, name, script) != nullptr; }
     void set_bounds(const gfx::Rect& r, bool to_top) override {
         const int x0 = dev(r.x), y0 = dev(r.y);
         if (HWND w = m_host.wnd())
@@ -641,9 +641,9 @@ std::unique_ptr<TextField> create_text_field(ViewHost& owner, TextFieldDelegate*
     return std::make_unique<WinTextField>((HWND)owner.native(), delegate, style);
 }
 
-std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name) {
+std::unique_ptr<EmbeddedPanel> create_embedded_ui_element(MainWindow& root, const char* name, const std::string& script) {
     auto p = std::make_unique<WinEmbeddedPanel>();
-    if (!p->create((HWND)root.native(), name)) return nullptr;
+    if (!p->create((HWND)root.native(), name, script)) return nullptr;
     return p;
 }
 

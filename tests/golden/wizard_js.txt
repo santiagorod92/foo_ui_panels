@@ -1,0 +1,135 @@
+fill_rect 0,0,1000,700 #16181e
+gradient 0,0,1000,4 #0078d7>#005aaa
+font Segoe UI 20 bold
+text "Choose a layout" 28,22,916,12 f24 #f0f0f0
+font Segoe UI 10
+text "Pick a starting point. It becomes a skin folder of its own, so anything in it can be changed later. Or use a skin you already have." 28,60,944,36 f160 #afb4be
+round_rect 28,100,210,32 6,6 #0078d7
+round_rect 250,100,110,32 6,6 #3a3e48
+font Segoe UI 10 bold
+text "Use my own skin folder..." 28,100,210,32 f29 #ffffff
+text "Close" 250,100,110,32 f29 #ffffff
+round_rect 28,150,224,200 8,8 #22252d
+fill_rect 40,162,200,104 #18191e
+frame_rect 40,162,200,104 #464a56
+fill_rect 40,162,200,9 #3a3e48
+fill_rect 44,174,52,35 #0078d7
+fill_rect 100,171,140,89 #262932
+fill_rect 40,260,200,5 #30333c
+img builtin:wizard/playlist-cover.png 40,162,200,104
+frame_rect 40,162,200,104 #464a56
+font Segoe UI 11 bold
+text "Playlist and cover" 40,274,200,20 f32 #ebeef5
+font Segoe UI 9
+text "Album art and track info beside the playlist." 40,296,200,50 f160 #969ba5
+round_rect 268,150,224,200 8,8 #22252d
+fill_rect 280,162,200,104 #18191e
+frame_rect 280,162,200,104 #464a56
+fill_rect 280,162,200,9 #3a3e48
+fill_rect 280,171,44,89 #2e323e
+fill_rect 324,171,104,89 #262932
+fill_rect 432,174,44,31 #0078d7
+fill_rect 280,260,200,5 #30333c
+img builtin:wizard/library.png 280,162,200,104
+frame_rect 280,162,200,104 #464a56
+font Segoe UI 11 bold
+text "Library" 280,274,200,20 f32 #ebeef5
+font Segoe UI 9
+text "Playlists on the left, the playlist, album art on the right." 280,296,200,50 f160 #969ba5
+round_rect 508,150,224,200 8,8 #22252d
+fill_rect 520,162,200,104 #18191e
+frame_rect 520,162,200,104 #464a56
+fill_rect 520,162,200,9 #3a3e48
+fill_rect 520,171,120,89 #005faa
+fill_rect 640,171,80,89 #262932
+fill_rect 520,260,200,5 #30333c
+img builtin:wizard/albums.png 520,162,200,104
+frame_rect 520,162,200,104 #464a56
+font Segoe UI 11 bold
+text "Album browser" 520,274,200,20 f32 #ebeef5
+font Segoe UI 9
+text "Your albums as a cover grid, the playlist beside it." 520,296,200,50 f160 #969ba5
+round_rect 748,150,224,200 8,8 #22252d
+fill_rect 760,162,200,104 #18191e
+frame_rect 760,162,200,104 #464a56
+fill_rect 760,162,200,9 #3a3e48
+fill_rect 760,171,200,89 #262932
+fill_rect 760,260,200,5 #30333c
+img builtin:wizard/playlist.png 760,162,200,104
+frame_rect 760,162,200,104 #464a56
+font Segoe UI 11 bold
+text "Playlist" 760,274,200,20 f32 #ebeef5
+font Segoe UI 9
+text "Just the playlist, with the controls on top." 760,296,200,50 f160 #969ba5
+round_rect 28,366,224,200 8,8 #22252d
+fill_rect 40,378,200,104 #18191e
+frame_rect 40,378,200,104 #464a56
+fill_rect 40,378,200,9 #3a3e48
+fill_rect 44,390,80,58 #0078d7
+fill_rect 130,388,106,66 #463e6e
+fill_rect 40,459,200,17 #009688
+fill_rect 40,476,200,5 #30333c
+img builtin:wizard/now-playing.png 40,378,200,104
+frame_rect 40,378,200,104 #464a56
+font Segoe UI 11 bold
+text "Now playing" 40,490,200,20 f32 #ebeef5
+font Segoe UI 9
+text "A large cover, synced lyrics and a spectrum." 40,512,200,50 f160 #969ba5
+round_rect 268,366,224,200 8,8 #22252d
+fill_rect 280,378,200,104 #18191e
+frame_rect 280,378,200,104 #464a56
+fill_rect 280,378,200,9 #3a3e48
+fill_rect 280,387,120,83 #005faa
+fill_rect 400,387,80,83 #262932
+fill_rect 280,470,200,11 #d6a000
+img builtin:wizard/albums-js.png 280,378,200,104
+frame_rect 280,378,200,104 #464a56
+round_rect 446,384,28,16 4,4 #d6a000
+font Segoe UI 8 bold
+text "JS" 446,385,28,14 f33 #18191e
+font Segoe UI 11 bold
+text "Albums + JS" 280,490,200,20 f32 #ebeef5
+font Segoe UI 9
+text "The album browser with an editable JS now-playing bar." 280,512,200,50 f160 #969ba5
+round_rect 508,366,224,200 8,8 #22252d
+fill_rect 520,378,200,104 #18191e
+frame_rect 520,378,200,104 #464a56
+fill_rect 520,378,200,9 #3a3e48
+fill_rect 520,387,200,83 #262932
+fill_rect 520,470,200,11 #d6a000
+img builtin:wizard/playlist-js.png 520,378,200,104
+frame_rect 520,378,200,104 #464a56
+round_rect 686,384,28,16 4,4 #d6a000
+font Segoe UI 8 bold
+text "JS" 686,385,28,14 f33 #18191e
+font Segoe UI 11 bold
+text "Playlist + JS" 520,490,200,20 f32 #ebeef5
+font Segoe UI 9
+text "The playlist with a JS now-playing bar and the album cover." 520,512,200,50 f160 #969ba5
+round_rect 748,366,224,200 8,8 #22252d
+fill_rect 760,378,200,104 #18191e
+frame_rect 760,378,200,104 #464a56
+fill_rect 760,378,200,9 #3a3e48
+fill_rect 760,387,48,45 #d6a000
+fill_rect 760,434,48,36 #d6a000
+fill_rect 808,387,152,83 #262932
+fill_rect 760,470,200,11 #d6a000
+img builtin:wizard/library-js.png 760,378,200,104
+frame_rect 760,378,200,104 #464a56
+round_rect 926,384,28,16 4,4 #d6a000
+font Segoe UI 8 bold
+text "JS" 926,385,28,14 f33 #18191e
+font Segoe UI 11 bold
+text "Library + Navidrome" 760,490,200,20 f32 #ebeef5
+font Segoe UI 9
+text "Library and Navidrome artists in two JS Panels, beside the playlist." 760,512,200,50 f160 #969ba5
+button 28,100,210,32 SKIN:CHOOSE_FOLDER tooltip=Load a skin from a folder
+button 250,100,110,32 WIZARD:CLOSE
+button 28,150,224,200 SKIN:TEMPLATE:playlist-cover tooltip=Album art and track info beside the playlist.
+button 268,150,224,200 SKIN:TEMPLATE:library tooltip=Playlists on the left, the playlist, album art on the right.
+button 508,150,224,200 SKIN:TEMPLATE:albums tooltip=Your albums as a cover grid, the playlist beside it.
+button 748,150,224,200 SKIN:TEMPLATE:playlist tooltip=Just the playlist, with the controls on top.
+button 28,366,224,200 SKIN:TEMPLATE:now-playing tooltip=A large cover, synced lyrics and a spectrum.
+button 268,366,224,200 SKIN:TEMPLATE:albums-js tooltip=The album browser with an editable JS now-playing bar.
+button 508,366,224,200 SKIN:TEMPLATE:playlist-js tooltip=The playlist with a JS now-playing bar and the album cover.
+button 748,366,224,200 SKIN:TEMPLATE:library-js tooltip=Library and Navidrome artists in two JS Panels, beside the playlist.
