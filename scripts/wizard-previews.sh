@@ -25,7 +25,8 @@ if pgrep -x foobar2000.exe >/dev/null; then echo "close foobar2000 first (one in
 TOOL="$REPO/build/tools/install_templates"
 mkdir -p "$(dirname "$TOOL")"
 "${CXX_HOST:-clang++}" -std=c++20 -O1 -I"$REPO/src" "$REPO/tools/install_templates.cpp" \
-  "$REPO/src/core/skin_templates.cpp" "$REPO/src/core/skin_config.cpp" -o "$TOOL"
+  "$REPO/src/core/skin_templates.cpp" "$REPO/src/core/skin_config.cpp" "$REPO/src/core/script_util.cpp" \
+  "$REPO/src/core/i18n.cpp" "$REPO/src/core/i18n_table.cpp" -o "$TOOL"
 "$REPO/scripts/wizard-demo-library.sh" "$MUSIC"
 
 hyprctl eval 'hl.window_rule({ match = { class = "^foobar2000\\.exe$" }, tag = "-default-opacity", opacity = "1 1" })' >/dev/null 2>&1 || true

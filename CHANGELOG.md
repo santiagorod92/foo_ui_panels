@@ -3,6 +3,48 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.17.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.16.0...v1.17.0) (2026-10-27)
+
+### Highlights
+- **Works with JS Panel**: skins can host [JS Panel](https://github.com/santiagorod92/foo_js_panel)
+  (JavaScript panels for foobar2000 on Windows and macOS) and give each one its own script, and the
+  layout wizard offers three layouts built on it when it's installed.
+
+### Added
+- **JS Panel in skins**: `$panel(<name>,JS Panel,x,y,w,h)` places a JS Panel, and
+  `panel.<name>.script = js/<file>.js` in the skin's `foo_ui_panels.ini` picks the script that panel
+  runs (relative to the skin folder), so each JS Panel in a skin runs its own file.
+- **Three JS layouts in the layout wizard**, offered only when JS Panel is installed and marked
+  **JS**. Each is written out with its scripts in the skin's `js/` folder, ready to edit
+  (right-click a JS panel › *Edit script…*):
+  - *Albums + JS*: the album browser with a now-playing bar (album cover, title, artist and album,
+    progress; click to play/pause, wheel for next/previous) instead of the status bar.
+  - *Playlist + JS*: the playlist with that bar.
+  - *Library + Navidrome*: your Media Library as artists › albums and your Navidrome artists, in two
+    panels left of the playlist. Double-click or Enter plays, Ctrl+double-click or Ctrl+Enter adds,
+    the arrows, Page Up/Down and Home/End move, ←/→ fold and unfold an artist.
+- The session line in `foo_ui_panels.log` says whether JS Panel is installed (`js_panel=yes`).
+
+### Changed
+- **Layout wizard cards fit the window**: they size to both its width and its height and stay
+  centred; in a short window a card shows just its preview and name, with the description in the
+  tooltip. Descriptions now have room for three lines, and a German layout name was shortened
+  ("Playlist und Cover") so it fits.
+
+### Fixed
+- **Windows: foobar2000 could crash on exit** right after starting, while the Navidrome album
+  list was still loading: a cover released after GDI+ had shut down. Found on Windows 11 ARM.
+
+### For contributors
+- `src/core/js_panel_api.h` is the contract with JS Panel (its element GUID, and how a host hands
+  it a script: the element's config data on Windows, the `script` key on macOS), vendored
+  byte-identical from foo_js_panel. The JS of the wizard's JS layouts lives in
+  `skin_templates.cpp` as raw strings that foo_js_panel's tests extract and run.
+- A unit test checks that every layout's name and description fit the narrowest wizard card in
+  every language; new goldens cover the wizard with 8 cards at two window sizes.
+- `scripts/wizard-previews.sh` builds again (it lacked the i18n sources). The JS layouts' previews
+  are composites made with JS Panel's renderer over the demo library, not captures from the script.
+
 ## [1.16.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.15.0...v1.16.0) (2026-10-26)
 
 ### Highlights
