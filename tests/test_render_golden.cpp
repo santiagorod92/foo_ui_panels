@@ -54,6 +54,8 @@ TEST("golden: the welcome screen at another size") {
 
 TEST("golden: the layout wizard") {
     check_golden("wizard", layout_wizard_script(), 900, 600);
+    check_golden("wizard_js", layout_wizard_script(true), 1000, 700);
+    check_golden("wizard_js_small", layout_wizard_script(true), 800, 507);
 }
 
 TEST("golden: every layout template, stopped") {

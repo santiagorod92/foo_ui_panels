@@ -58,7 +58,12 @@ public:
         return Color(c.GetR(), c.GetG(), c.GetB());
     }
     Gdiplus::Bitmap* bitmap() const { return m_bmp.get(); }
-    ~GdipImage() override { if (m_dib) DeleteObject(m_dib); }
+    ~GdipImage() override {
+        if (m_dib) DeleteObject(m_dib);
+        std::lock_guard<std::mutex> lk(g_gdipMx);
+        if (g_gdipStarted) m_bmp.reset();
+        else (void)m_bmp.release();
+    }
     HBITMAP dib() const {
         std::call_once(m_dibOnce, [this] {
             const UINT w = m_bmp->GetWidth(), h = m_bmp->GetHeight();

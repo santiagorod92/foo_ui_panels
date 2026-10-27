@@ -46,5 +46,6 @@ std::string new_issue_url();
 
 std::string collect_diagnostics();
 void start_logging();
+bool js_panel_installed();
 
 }

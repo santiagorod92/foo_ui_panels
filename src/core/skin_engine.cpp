@@ -163,7 +163,7 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     case Kind::Embedded: {
         const char* dui = map_type(p.type);
         if (!dui) return nullptr;
-        s.embedded = ui::create_embedded_ui_element(*m_main, dui);
+        s.embedded = ui::create_embedded_ui_element(*m_main, dui, panel_script(name));
         if (!s.embedded)
             report_once("panel '" + name + "' (" + p.type +
                         "): no installed UI element can host it, left empty");

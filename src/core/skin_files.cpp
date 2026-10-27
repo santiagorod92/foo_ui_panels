@@ -61,7 +61,7 @@ bool SkinEngine::load_skin(const std::string& dirIn) {
 }
 
 bool SkinEngine::load_main_script() {
-    if (m_wizard) return load(layout_wizard_script().c_str());
+    if (m_wizard) return load(layout_wizard_script(js_panel_installed()).c_str());
     std::string skin = m_mainPath.empty() ? std::string() : read_file(m_mainPath);
     if (m_mainPath.empty() || skin.empty())
         log::console(log::Level::Warn, "skin", "no main script in " + m_st.base + ", using the built-in test skin");
@@ -75,6 +75,13 @@ bool SkinEngine::load_main_script() {
         add_script_problem(script_label(m_mainPath), N_("Doesn't compile (unbalanced parentheses or quotes?) — the previous version keeps running"));
     }
     return ok;
+}
+
+std::string SkinEngine::panel_script(const std::string& panel) const {
+    const std::string rel = m_st.cfg.str("panel." + panel + ".script");
+    if (rel.empty() || m_st.base.empty()) return rel;
+    if (fs_path(rel).is_absolute()) return rel;
+    return fs_utf8((fs_path(m_st.base) / fs_path(rel)).make_preferred());
 }
 
 std::string SkinEngine::script_label(const std::string& path) const {

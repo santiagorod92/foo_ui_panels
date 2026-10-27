@@ -1,11 +1,12 @@
 #pragma once
+#include <string>
 #include "win_sdk.h"
 
 namespace pui {
 
 class PanelHost : public ui_element_instance_callback_receiver {
 public:
-    HWND create(HWND parent, const char* name);
+    HWND create(HWND parent, const char* name, const std::string& script = {});
     HWND wnd() const { return m_inst.is_valid() ? m_inst->get_wnd() : nullptr; }
     void destroy() { m_inst.release(); }
 

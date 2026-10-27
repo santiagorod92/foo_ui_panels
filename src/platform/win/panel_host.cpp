@@ -1,4 +1,5 @@
 #include "panel_host.h"
+#include "../../core/js_panel_api.h"
 #include "../../core/log.h"
 
 namespace pui {
@@ -21,7 +22,7 @@ void PanelHost::log_available() {
     log::console(log::Level::Info, "panel", line);
 }
 
-HWND PanelHost::create(HWND parent, const char* name) {
+HWND PanelHost::create(HWND parent, const char* name, const std::string& script) {
     service_enum_t<ui_element> e;
     service_ptr_t<ui_element> p, found;
     while (e.next(p)) {
@@ -33,7 +34,9 @@ HWND PanelHost::create(HWND parent, const char* name) {
         return nullptr;
     }
     try {
-        ui_element_config::ptr cfg = found->get_default_configuration();
+        ui_element_config::ptr cfg = !script.empty() && found->get_guid() == js_panel::element_guid
+                                         ? js_panel::make_config(script.c_str())
+                                         : found->get_default_configuration();
         m_inst = found->instantiate(parent, cfg, ui_element_instance_callback_get_ptr());
     } catch (std::exception const& ex) {
         log::console(log::Level::Error, "panel", std::string("failed to host \"") + name + "\": " + ex.what());
