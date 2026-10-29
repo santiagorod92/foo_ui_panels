@@ -23,6 +23,13 @@ struct MiniPlan {
 };
 MiniPlan mini_mode_plan(int curW, int curH, int miniW, int miniH, int savedW, int savedH);
 
+struct SkinSizePlan {
+    bool act = false;
+    int w = 0, h = 0;
+    std::string stamp;
+};
+SkinSizePlan skin_size_plan(const std::string& dir, const std::vector<int>& size, const std::string& applied);
+
 bool filter_matches(const std::string& filter, const std::string& text);
 
 enum class AlbumSort { Artist, Album, Year, Decade, Added };

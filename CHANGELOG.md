@@ -3,6 +3,16 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.18.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.17.0...v1.18.0) (2026-10-29)
+
+### Added
+- **A skin can set the window's size**: `window.size = W H` in the skin's `foo_ui_panels.ini` sizes
+  the window's client area when you switch to that skin (or change the value). You can still
+  resize the window afterwards, and your size is kept when foobar2000 restarts
+  ([#28](https://github.com/santiagorod92/foo_ui_panels/issues/28)).
+- The README now documents the `WINDOWSIZE:<w>:<h>[:<anchor>]` button action, which resizes the
+  window from a skin button.
+
 ## [1.17.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.16.0...v1.17.0) (2026-10-27)
 
 ### Highlights

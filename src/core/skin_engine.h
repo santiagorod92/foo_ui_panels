@@ -164,6 +164,7 @@ private:
     std::string panel_script(const std::string& panel) const;
     std::string script_label(const std::string& path) const;
     void seed_pvars();
+    void apply_skin_size();
     std::string m_mainPath;
     FileTimes m_fileTimes;
     unsigned long long m_nextScan = 0;
@@ -188,6 +189,7 @@ private:
 
     bool m_pvars_loaded = false;
     bool m_wizard = false;
+    bool m_sizeDue = false;
     std::string first_run_setup(const std::string& dir);
     void apply_skin_choice(PrefsModel& prefs);
     ui::MainWindow* m_main = nullptr;

@@ -70,6 +70,17 @@ TEST("mini_mode_plan: enter, leave, nothing to do") {
     CHECK(!mini_mode_plan(950, 750, 0, 0, 0, 0).act);
 }
 
+TEST("skin_size_plan: once per skin and size") {
+    SkinSizePlan p = skin_size_plan("/skins/np", { 286, 426 }, "");
+    CHECK(p.act && p.w == 286 && p.h == 426);
+    CHECK(!skin_size_plan("/skins/np", { 286, 426 }, p.stamp).act);
+    CHECK(skin_size_plan("/skins/np", { 300, 426 }, p.stamp).act);
+    CHECK(skin_size_plan("/skins/other", { 286, 426 }, p.stamp).act);
+    CHECK(!skin_size_plan("/skins/np", {}, "").act);
+    CHECK(!skin_size_plan("/skins/np", { 0, 426 }, "").act);
+    CHECK(!skin_size_plan("", { 286, 426 }, "").act);
+}
+
 TEST("filter_matches: every word, case-insensitive") {
     CHECK(filter_matches("", "anything"));
     CHECK(filter_matches("pink", "Pink Floyd|The Wall"));

@@ -6,6 +6,7 @@
 #include "diagnostics.h"
 #include "skin_paths.h"
 #include "skin_templates.h"
+#include "ui_logic.h"
 #include "../panels/track_display.h"
 #include "../panels/popup.h"
 #include <foobar2000/SDK/cfg_var.h>
@@ -52,6 +53,7 @@ bool SkinEngine::load_skin(const std::string& dirIn) {
     m_mainPath = resolve_main_script(dir, m_st.cfg, &why);
     if (!why.empty()) log::console(log::Level::Warn, "skin", why);
     bool ok = load_main_script();
+    m_sizeDue = true;
     m_previewAt = m_wizard ? 0 : tick_ms() + 3000;
     m_previewBy = m_previewAt + 60000;
     m_fileTimes = scan_skin_files();
@@ -128,6 +130,7 @@ void SkinEngine::save_preview() {
 }
 
 void SkinEngine::check_skin_changes() {
+    apply_skin_size();
     save_preview();
     if (m_wizard || m_st.base.empty() || tick_ms() < m_nextScan) return;
     m_nextScan = tick_ms() + 1000;
@@ -211,6 +214,17 @@ void SkinEngine::seed_pvars() {
         m_st.pvars[name] = value; mark = "1"; changed = true;
     }
     if (changed) save_pvars();
+}
+
+void SkinEngine::apply_skin_size() {
+    if (!m_sizeDue || m_wizard || !m_main) return;
+    m_sizeDue = false;
+    const SkinSizePlan p = skin_size_plan(m_st.base, m_st.cfg.nums("window.size"), pvar_str("_window.sized"));
+    if (!p.act) return;
+    m_st.pvars["_window.sized"] = p.stamp;
+    save_pvars();
+    log::info("skin", "window.size " + std::to_string(p.w) + "x" + std::to_string(p.h));
+    m_main->resize_client(p.w, p.h, "", "");
 }
 
 void SkinEngine::save_pvars() {

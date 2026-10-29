@@ -149,6 +149,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
 | `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
 | `popup.size`, `popup.size.<file>` | Size of a `POPUP:` window, `W H` (`400 500`). |
+| `window.size` | Client size `W H` the window takes when you switch to this skin (or the value changes); you can resize it afterwards, and your size is kept across restarts. Unset: the window keeps its size. |
 | `mini.size`, `mini.anchor` | The skin's compact layout for **View › Panels UI › Mini mode**: client size `W H`, and the corner that stays put (`RIGHT TOP`, …; default top-left). Unset: no mini mode. |
 | `mini.saved_w_pvar`, `mini.saved_h_pvar` | Variables that remember the full size while in mini mode — name the skin's own if its restore button reads them (default: reserved ones). |
 | `command.<label>` | A skin command listed under **View › Panels UI › Skin commands** (so it can get a keyboard shortcut): one button action, or several separated by `;`. |
@@ -238,6 +239,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   Preferences page.
 - Skins can use these from their own buttons too: `ONTOP:TOGGLE`, `ZOOM:IN`/`ZOOM:OUT`/
   `ZOOM:RESET`, `MINIMODE:TOGGLE`, `PVAR:TOGGLE:<variable>` (flips a 0/1 variable),
+  `WINDOWSIZE:<w>:<h>[:<LEFT|CENTER|RIGHT>:<TOP|CENTER|BOTTOM>]` (resizes the window's client area,
+  keeping that corner in place; default top-left),
   `PREFERENCES` (this component's Preferences page), `URL:<address>` and `SKIN:CHOOSE_FOLDER`.
 - Switching skin or main script in Preferences applies immediately (no restart). The skin picker
   shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /

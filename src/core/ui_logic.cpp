@@ -84,6 +84,15 @@ MiniPlan mini_mode_plan(int curW, int curH, int miniW, int miniH, int savedW, in
     return p;
 }
 
+SkinSizePlan skin_size_plan(const std::string& dir, const std::vector<int>& size, const std::string& applied) {
+    SkinSizePlan p;
+    if (dir.empty() || size.size() != 2 || size[0] <= 0 || size[1] <= 0) return p;
+    p.stamp = dir + "|" + std::to_string(size[0]) + "x" + std::to_string(size[1]);
+    if (p.stamp == applied) return p;
+    p.act = true; p.w = size[0]; p.h = size[1];
+    return p;
+}
+
 static std::string lower(std::string s) {
     for (auto& c : s) c = (char)tolower((unsigned char)c);
     return s;
