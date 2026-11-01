@@ -145,6 +145,153 @@ bool same_face(const wchar_t* got, const std::wstring& want) {
 
 }
 
+namespace {
+
+class PixelsCanvas : public Canvas {
+public:
+    PixelsCanvas(Pixels& px, double scale) : m_px(px) {
+        BITMAPINFO bi = {};
+        bi.bmiHeader.biSize = sizeof(bi.bmiHeader);
+        bi.bmiHeader.biWidth = px.w;
+        bi.bmiHeader.biHeight = -px.h;
+        bi.bmiHeader.biPlanes = 1;
+        bi.bmiHeader.biBitCount = 32;
+        bi.bmiHeader.biCompression = BI_RGB;
+        const size_t n = (size_t)px.w * px.h;
+        for (int k = 0; k < 2; ++k) {
+            m_dc[k] = CreateCompatibleDC(nullptr);
+            void* bits = nullptr;
+            m_bmp[k] = CreateDIBSection(m_dc[k], &bi, DIB_RGB_COLORS, &bits, nullptr, 0);
+            m_bits[k] = static_cast<uint32_t*>(bits);
+            if (!m_bmp[k]) continue;
+            m_old[k] = SelectObject(m_dc[k], m_bmp[k]);
+            for (size_t i = 0; i < n; ++i) {
+                const uint32_t p = px.pargb[i];
+                const uint32_t under = k ? 255 - (p >> 24) : 0;
+                m_bits[k][i] = (p & 0xFFFFFFu) + under * 0x010101u;
+            }
+            m_canvas[k] = std::make_unique<GdiCanvas>(m_dc[k], px.w, px.h, scale);
+        }
+    }
+    ~PixelsCanvas() override {
+        m_canvas[0].reset();
+        m_canvas[1].reset();
+        GdiFlush();
+        if (m_bits[0] && m_bits[1]) {
+            const size_t n = (size_t)m_px.w * m_px.h;
+            for (size_t i = 0; i < n; ++i) {
+                const uint32_t b = m_bits[0][i], w = m_bits[1][i];
+                int cover = 0;
+                for (int s = 0; s < 24; s += 8) cover += 255 - std::clamp((int)((w >> s) & 0xFF) - (int)((b >> s) & 0xFF), 0, 255);
+                const uint32_t a = (uint32_t)((cover + 1) / 3);
+                uint32_t out = a << 24;
+                for (int s = 0; s < 24; s += 8) out |= std::min((b >> s) & 0xFF, a) << s;
+                m_px.pargb[i] = out;
+            }
+        }
+        for (int k = 0; k < 2; ++k) {
+            if (m_old[k]) SelectObject(m_dc[k], m_old[k]);
+            if (m_bmp[k]) DeleteObject(m_bmp[k]);
+            if (m_dc[k]) DeleteDC(m_dc[k]);
+        }
+    }
+    bool ok() const { return m_canvas[0] && m_canvas[1]; }
+
+    int width() const override { return m_canvas[0]->width(); }
+    int height() const override { return m_canvas[0]->height(); }
+    int dpi() const override { return m_canvas[0]->dpi(); }
+    double device_scale() const override { return m_canvas[0]->device_scale(); }
+
+    void fill_rect(const Rect& r, Color c) override { both([&](Canvas& cv) { cv.fill_rect(r, c); }); }
+    void fill_rect_alpha(const Rect& r, Color c, int alpha) override { both([&](Canvas& cv) { cv.fill_rect_alpha(r, c, alpha); }); }
+    void frame_rect(const Rect& r, Color c) override { both([&](Canvas& cv) { cv.frame_rect(r, c); }); }
+    void fill_round_rect(const Rect& r, int rx, int ry, Color c) override { both([&](Canvas& cv) { cv.fill_round_rect(r, rx, ry, c); }); }
+    void gradient_v(const Rect& r, Color top, Color bottom) override { both([&](Canvas& cv) { cv.gradient_v(r, top, bottom); }); }
+    void line(int x0, int y0, int x1, int y1, Color c) override { both([&](Canvas& cv) { cv.line(x0, y0, x1, y1, c); }); }
+    void fill_polygon(const PointF* pts, int n, Color c) override { both([&](Canvas& cv) { cv.fill_polygon(pts, n, c); }); }
+    bool set_font(const FontSpec& spec) override {
+        bool r = false;
+        both([&](Canvas& cv) { r = cv.set_font(spec); });
+        return r;
+    }
+    void draw_text(std::string_view text, const Rect& r, unsigned flags, Color c) override {
+        both([&](Canvas& cv) { cv.draw_text(text, r, flags, c); });
+    }
+    int text_width(std::string_view text) override { return m_canvas[0]->text_width(text); }
+    int text_height(std::string_view text, int w, unsigned flags) override { return m_canvas[0]->text_height(text, w, flags); }
+    bool text_coverage(std::string_view text, const Rect& r, unsigned flags, const Rect& area, std::vector<uint8_t>& mask) override {
+        return m_canvas[0]->text_coverage(text, r, flags, area, mask);
+    }
+    void blend_argb(const Rect& dst, const uint32_t* px, int stride) override { both([&](Canvas& cv) { cv.blend_argb(dst, px, stride); }); }
+    void draw_image(const Image& img, const RectF& dst, const RectF& src, int alpha, bool flip_v, Interp interp) override {
+        both([&](Canvas& cv) { cv.draw_image(img, dst, src, alpha, flip_v, interp); });
+    }
+    ImagePtr snapshot(const Rect& r) override { return m_canvas[0]->snapshot(r); }
+
+private:
+    template <typename F>
+    void both(F&& f) {
+        f(*m_canvas[0]);
+        f(*m_canvas[1]);
+    }
+    Pixels& m_px;
+    HDC m_dc[2] = {};
+    HBITMAP m_bmp[2] = {};
+    HGDIOBJ m_old[2] = {};
+    uint32_t* m_bits[2] = {};
+    std::unique_ptr<GdiCanvas> m_canvas[2];
+};
+
+}
+
+bool image_pixels(const Image& img, Pixels& out) {
+    if (auto* d = dynamic_cast<const DibImage*>(&img)) {
+        out.w = d->pixel_width();
+        out.h = d->pixel_height();
+        out.pargb.assign(d->bits(), d->bits() + (size_t)out.w * out.h);
+        for (uint32_t& p : out.pargb) p |= 0xFF000000u;
+        return true;
+    }
+    auto* g = dynamic_cast<const GdipImage*>(&img);
+    if (!g) return false;
+    ensure_gdiplus();
+    Gdiplus::Bitmap* b = g->bitmap();
+    const int w = (int)b->GetWidth(), h = (int)b->GetHeight();
+    if (w <= 0 || h <= 0) return false;
+    out.w = w;
+    out.h = h;
+    out.pargb.assign((size_t)w * h, 0);
+    Gdiplus::BitmapData bd = {};
+    bd.Width = (UINT)w; bd.Height = (UINT)h; bd.Stride = w * 4; bd.PixelFormat = PixelFormat32bppPARGB; bd.Scan0 = out.pargb.data();
+    Gdiplus::Rect all(0, 0, w, h);
+    if (b->LockBits(&all, Gdiplus::ImageLockModeRead | Gdiplus::ImageLockModeUserInputBuf, PixelFormat32bppPARGB, &bd) != Gdiplus::Ok)
+        return false;
+    b->UnlockBits(&bd);
+    return true;
+}
+
+ImagePtr image_from_pixels(const Pixels& px) {
+    if (px.w <= 0 || px.h <= 0 || px.pargb.size() < (size_t)px.w * px.h) return nullptr;
+    ensure_gdiplus();
+    auto bmp = std::make_unique<Gdiplus::Bitmap>(px.w, px.h, PixelFormat32bppPARGB);
+    if (bmp->GetLastStatus() != Gdiplus::Ok) return nullptr;
+    Gdiplus::BitmapData bd = {};
+    bd.Width = (UINT)px.w; bd.Height = (UINT)px.h; bd.Stride = px.w * 4; bd.PixelFormat = PixelFormat32bppPARGB;
+    bd.Scan0 = const_cast<uint32_t*>(px.pargb.data());
+    Gdiplus::Rect all(0, 0, px.w, px.h);
+    if (bmp->LockBits(&all, Gdiplus::ImageLockModeWrite | Gdiplus::ImageLockModeUserInputBuf, PixelFormat32bppPARGB, &bd) != Gdiplus::Ok)
+        return nullptr;
+    bmp->UnlockBits(&bd);
+    return std::make_shared<GdipImage>(std::move(bmp));
+}
+
+std::unique_ptr<Canvas> pixels_canvas(Pixels& px, double scale) {
+    if (px.w <= 0 || px.h <= 0 || px.pargb.size() < (size_t)px.w * px.h) return nullptr;
+    auto c = std::make_unique<PixelsCanvas>(px, scale > 0.01 ? scale : 1.0);
+    if (!c->ok()) return nullptr;
+    return c;
+}
+
 ImagePtr resample_image(const Image& img, int pw, int ph) {
     ensure_gdiplus();
     Gdiplus::Bitmap* src = nullptr;

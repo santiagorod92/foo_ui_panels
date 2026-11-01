@@ -3,6 +3,21 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.19.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.18.0...v1.19.0) (2026-10-31)
+
+### Added
+- **JS Panel scripts can drive the skin**: Panels UI publishes a small service that
+  [JS Panel](https://github.com/santiagorod92/foo_js_panel) 1.1 exposes as its `panelsui` object.
+  A script reads and writes the skin's persistent variables (what `$getpvar` / `$setpvar` use; the
+  skin repaints) and runs button actions such as `MINIMODE:TOGGLE`. JS Panel's conversion of the
+  Eole theme switches its Library, Playlists, Now playing and mini player views this way.
+- Off-screen images for JS Panel: the shared canvas can now read an image's pixels, build an image
+  from pixels and draw into a pixel buffer, on Windows (GDI, with the alpha recovered from a black
+  and a white pass) and macOS (CoreGraphics). JS Panel uses it for `gdi.CreateImage`,
+  `GetGraphics`, masks, blurs and translucent drawing.
+- foo_navidrome's library contract gains version 3 (every track of the server, artist info);
+  Panels UI keeps its copy of the header in step.
+
 ## [1.18.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.17.0...v1.18.0) (2026-10-29)
 
 ### Added

@@ -95,6 +95,15 @@ public:
     virtual ImagePtr snapshot(const Rect& r) = 0;
 };
 
+struct Pixels {
+    int w = 0, h = 0;
+    std::vector<uint32_t> pargb;
+};
+
+bool image_pixels(const Image& img, Pixels& out);
+ImagePtr image_from_pixels(const Pixels& px);
+std::unique_ptr<Canvas> pixels_canvas(Pixels& px, double scale = 1.0);
+
 ImagePtr decode_image_file(const std::string& utf8_path);
 ImagePtr decode_image_memory(const void* data, size_t size);
 void platform_images_shutdown();

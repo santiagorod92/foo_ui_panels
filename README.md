@@ -306,6 +306,10 @@ any of them › *Edit script…*):
   unfold an artist in the library tree. Each component works without the other: without JS Panel such a panel stays
 empty and the skin's problem list says why.
 
+A JS Panel script can also drive the skin: JS Panel's `panelsui` object reads and writes the skin's
+persistent variables (`$getpvar`, `$setpvar`; the skin repaints) and runs button actions such as
+`MINIMODE:TOGGLE`. That's how JS Panel's Eole conversion switches its views.
+
 ## Reporting a problem
 
 Bugs go to [GitHub issues](../../issues/new/choose) — the bug report form walks you through it.

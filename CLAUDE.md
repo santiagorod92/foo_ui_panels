@@ -166,7 +166,10 @@ anything repo-specific stays in the repo's own sections.
   HVF, launchd jobs). Every repo drives it with the same `make win11-arm*` targets; foo_ui_panels
   and foo_js_panel point at `../foo_navidrome/scripts/win11-arm.sh` (`WIN11_ARM=`). `deploy <dll>` installs into
   `user-components-arm64ec/<dll name>`, `push` copies a folder in, `COMPONENT=` picks the log
-  `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest.
+  `fb2k log` reads, `make win11-arm-test` runs each repo's unit tests in the guest. Windows
+  ignores the QEMU tablet, so `click [X Y]` and `tap 'X,Y;wait,MS;key,VK'` click from inside
+  the desktop session (scheduled task + `SetCursorPos`/`mouse_event`); `tap` runs a whole
+  sequence in one go so a popup menu stays open for the next click.
 - **All three Windows builds run in that one VM:** ARM64EC natively, x64 in the same ARM
   foobar2000 (an ARM64EC process loads x64 DLLs), x86 in a portable 32-bit foobar2000 at
   `C:\fb2k-x86` (`FB2K_ARCH=x86`, foo_ui_panels and foo_js_panel: `ARCH=x86`; `provision` installs it once and
@@ -315,6 +318,10 @@ anything repo-specific stays in the repo's own sections.
   (JS Panel's element GUID + how a host hands it a script; byte-identical to foo_js_panel's).
   `SkinEngine::panel_script()` reads `panel.<name>.script` and the embed passes it on
   (`create_embedded_ui_element(…, script)`).
+- `src/core/panels_ui_api.h` + `panels_ui_service.cpp` — `panels_ui::panels_ui_api` (GUID
+  `2f6a91c4-…`), Panels UI's own contract, published as a service: `is_active`, `get_variable` /
+  `set_variable` (pvars, through `SkinEngine::live()`; set saves and repaints) and `run_action`
+  (a button action string). JS Panel vendors it byte-identical as its `panelsui` object.
 - `src/panels/` — native panels, one `ui::View` each: `track_display`, `seekbar`, `volume`,
   `playlist_view`, `spectrum` and `peak_meter` (painted on the host's render thread,
   `render_fps`), `album_art` (now-playing cover, "Album Art"), `popup`

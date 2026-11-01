@@ -212,6 +212,74 @@ ImagePtr resample_image(const Image& img, int pw, int ph) {
     return out ? std::make_shared<MacImage>(out) : nullptr;
 }
 
+namespace {
+
+class PixelsCanvas : public CGCanvas {
+public:
+    PixelsCanvas(Pixels& px, double scale)
+        : CGCanvas((int)std::lround(px.w / scale), (int)std::lround(px.h / scale), scale), m_px(px) {
+        copy(true);
+    }
+    ~PixelsCanvas() override {
+        CGContextFlush(context());
+        copy(false);
+    }
+
+private:
+    void copy(bool in) {
+        auto* data = static_cast<uint8_t*>(CGBitmapContextGetData(context()));
+        if (!data) return;
+        const size_t stride = CGBitmapContextGetBytesPerRow(context());
+        const int rows = std::min<int>(m_px.h, (int)CGBitmapContextGetHeight(context()));
+        const size_t bytes = (size_t)std::min<int>(m_px.w, (int)CGBitmapContextGetWidth(context())) * 4;
+        if (in) memset(data, 0, stride * CGBitmapContextGetHeight(context()));
+        for (int y = 0; y < rows; ++y) {
+            uint8_t* row = data + y * stride;
+            uint32_t* px = m_px.pargb.data() + (size_t)y * m_px.w;
+            if (in) memcpy(row, px, bytes);
+            else memcpy(px, row, bytes);
+        }
+    }
+    Pixels& m_px;
+};
+
+}
+
+bool image_pixels(const Image& img, Pixels& out) {
+    auto* mi = dynamic_cast<const MacImage*>(&img);
+    if (!mi || !mi->image()) return false;
+    const int w = (int)CGImageGetWidth(mi->image()), h = (int)CGImageGetHeight(mi->image());
+    if (w <= 0 || h <= 0) return false;
+    out.w = w;
+    out.h = h;
+    out.pargb.assign((size_t)w * h, 0);
+    CGContextRef ctx = CGBitmapContextCreate(out.pargb.data(), (size_t)w, (size_t)h, 8, (size_t)w * 4, srgb(),
+                                             (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    if (!ctx) return false;
+    CGContextSetBlendMode(ctx, kCGBlendModeCopy);
+    CGContextDrawImage(ctx, CGRectMake(0, 0, w, h), mi->image());
+    CGContextRelease(ctx);
+    return true;
+}
+
+ImagePtr image_from_pixels(const Pixels& px) {
+    if (px.w <= 0 || px.h <= 0 || px.pargb.size() < (size_t)px.w * px.h) return nullptr;
+    std::vector<uint32_t> copy(px.pargb.begin(), px.pargb.begin() + (ptrdiff_t)px.w * px.h);
+    CGContextRef ctx = CGBitmapContextCreate(copy.data(), (size_t)px.w, (size_t)px.h, 8, (size_t)px.w * 4, srgb(),
+                                             (CGBitmapInfo)kCGImageAlphaPremultipliedFirst | kCGBitmapByteOrder32Little);
+    if (!ctx) return nullptr;
+    CGImageRef img = CGBitmapContextCreateImage(ctx);
+    CGContextRelease(ctx);
+    return img ? std::make_shared<MacImage>(img) : nullptr;
+}
+
+std::unique_ptr<Canvas> pixels_canvas(Pixels& px, double scale) {
+    if (px.w <= 0 || px.h <= 0 || px.pargb.size() < (size_t)px.w * px.h) return nullptr;
+    auto c = std::make_unique<PixelsCanvas>(px, scale > 0.01 ? scale : 1.0);
+    if (!c->context()) return nullptr;
+    return c;
+}
+
 ImagePtr image_from_cgimage(CGImageRef img, double scale) {
     return img ? std::make_shared<MacImage>(img, scale) : nullptr;
 }
