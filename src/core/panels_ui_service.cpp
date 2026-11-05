@@ -29,7 +29,19 @@ public:
 
     bool run_action(const char* action) override {
         const auto& live = SkinEngine::live();
-        return action && !live.empty() && live.front()->run_actions(action);
+        if (!action || live.empty()) return false;
+        const std::string a = action;
+        if (!replaces_panels(a)) return live.front()->run_actions(a);
+        fb2k::inMainThread([a] {
+            const auto& now = SkinEngine::live();
+            if (!now.empty()) now.front()->run_actions(a);
+        });
+        return true;
+    }
+
+private:
+    static bool replaces_panels(const std::string& a) {
+        return a.find("SKIN:") != std::string::npos || a.find("WIZARD:") != std::string::npos || a.find("MENU") != std::string::npos;
     }
 };
 
