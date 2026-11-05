@@ -97,6 +97,14 @@ public:
         w = it->second.first; h = it->second.second; return true;
     }
     bool file_exists(const std::string& p) override { return images.count(p) != 0; }
+    std::string find_file(const std::string& pattern) override {
+        const size_t star = pattern.find('*');
+        for (const auto& [path, size] : images)
+            if (star == std::string::npos ? path == pattern
+                                          : path.compare(0, star, pattern, 0, star) == 0 && path.size() >= pattern.size() - 1)
+                return path;
+        return {};
+    }
     void report(const std::string& m) override { reports.push_back(m); }
     void set_titlebar_visible(bool v) override { titlebar = v; }
     void set_tray(const std::string& s) override { tray = s; }

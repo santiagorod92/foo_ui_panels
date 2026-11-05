@@ -1,4 +1,4 @@
-.PHONY: help build build-arm64ec build-x86 deploy launch run kill clean check-portable test i18n-check i18n-missing skin-lint docs mac-build mac-vm mac-vm-open mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config \
+.PHONY: help build build-arm64ec build-x86 deploy launch run kill clean check-portable test i18n-check i18n-missing skin-lint fcl-skin docs mac-build mac-vm mac-vm-open mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config \
 	ui ui-smoke ui-compare mac-vm-smoke win11-smoke win11 win11-open win11-test win11-release win11-skin \
 	win-test win11-arm win11-arm-deploy win11-arm-skin win11-arm-test
 
@@ -19,6 +19,7 @@ help:
 	@echo "  i18n-missing    print the UI strings missing a translation (ARGS=<code> for one language)"
 	@echo "  win-test        the same unit tests built for Windows with clang-cl, run under wine (Linux)"
 	@echo "  skin-lint       build build/tools/skin_lint; LINT_DIR=<folder> also runs it on that skin"
+	@echo "  fcl-skin        FCL=<layout.fcl> SKIN=<folder> [PRESET=name] [OUTLINE=1]: a Columns UI layout as a skin"
 	@echo "  docs            regenerate docs/SCRIPT_FUNCTIONS.md from the engine's function table"
 	@echo "  mac-build       build the macOS bundle (build-mac/foo_ui_panels.component, universal)"
 	@echo "  ui              scripts/ui-test.sh wine ARGS='smoke' / 'click X Y' / 'shot FILE.png' / 'pvars k=v' / 'restart' / 'log 50'"
@@ -96,7 +97,7 @@ i18n-missing:
 win-test:
 	./scripts/run-unit-tests.sh win
 
-LINT_SRC = tools/skin_lint.cpp src/core/script_runtime.cpp src/core/script_util.cpp src/core/skin_config.cpp src/core/skin_lint.cpp \
+LINT_SRC = tools/skin_lint.cpp src/core/script_runtime.cpp src/core/script_util.cpp src/core/skin_config.cpp src/core/skin_lint.cpp src/core/fcl_import.cpp \
            src/core/i18n.cpp src/core/i18n_table.cpp
 LINT_BIN = build/tools/skin_lint
 $(LINT_BIN): $(LINT_SRC) $(wildcard src/core/*.h)
@@ -104,6 +105,9 @@ $(LINT_BIN): $(LINT_SRC) $(wildcard src/core/*.h)
 	$(CXX_HOST) -std=c++20 -O1 -Wall -Wextra -Isrc $(LINT_SRC) -o $(LINT_BIN)
 skin-lint: $(LINT_BIN)
 	@if [ -n "$(LINT_DIR)" ]; then ./$(LINT_BIN) "$(LINT_DIR)"; fi
+
+fcl-skin: $(LINT_BIN)
+	./$(LINT_BIN) --import-fcl "$(FCL)" "$(SKIN)" "$(PRESET)" $(if $(OUTLINE),--outline)
 
 docs: $(LINT_BIN)
 	@mkdir -p docs

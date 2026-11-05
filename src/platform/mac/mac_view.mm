@@ -679,6 +679,18 @@ std::string choose_folder(MainWindow&, const std::string& title, const std::stri
     return p.URL.fileSystemRepresentation;
 }
 
+std::string choose_file(MainWindow&, const std::string& title, const std::string& extension) {
+    NSOpenPanel* p = [NSOpenPanel openPanel];
+    p.canChooseDirectories = NO;
+    p.canChooseFiles = YES;
+    p.allowsMultipleSelection = NO;
+    p.message = ns(title);
+    if ([p runModal] != NSModalResponseOK || !p.URL.fileSystemRepresentation) return {};
+    NSString* got = p.URL.pathExtension.lowercaseString;
+    if (!extension.empty() && ![got isEqualToString:ns(extension).lowercaseString]) return {};
+    return p.URL.fileSystemRepresentation;
+}
+
 void open_url(const std::string& url) {
     if (NSURL* u = [NSURL URLWithString:ns(url)]) [[NSWorkspace sharedWorkspace] openURL:u];
 }

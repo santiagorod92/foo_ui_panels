@@ -37,6 +37,8 @@ public:
     void draw_image(const Image& img, const RectF& dst, const RectF& src,
                     int alpha, bool flip_v, Interp interp) override;
     ImagePtr snapshot(const Rect& r) override;
+    void push_clip(const Rect& r) override;
+    void pop_clip() override;
 
 private:
     void draw_image_gdip(Gdiplus::Bitmap& bmp, const RectF& dst, const RectF& src,

@@ -113,10 +113,16 @@ anything repo-specific stays in the repo's own sections.
   (`export-subst`). No version is kept by hand. CI checks out with `fetch-depth: 0`. Run
   `git fetch --tags` after each release.
 - **Release:** semantic-release with Conventional Commits (`feat` = minor;
-  `fix`/`perf`/`refactor` = patch; `chore`/`docs`/`ci`/`style`/`test` = no release). `main`
-  is protected (PRs only) and nothing is committed back. `CHANGELOG.md` is kept by hand in the
-  release PR. `notify-n8n` publishes to foobar2000.org. If the head commit is non-releasing,
-  dispatch the workflow by hand.
+  `fix`/`perf`/`refactor` = patch; `chore`/`docs`/`ci`/`style`/`test` = no release). Releases
+  are pushed straight to `main` (the owner bypasses the PR rule) and nothing is committed back.
+  `notify-n8n` publishes to foobar2000.org. If the head commit is non-releasing, dispatch the
+  workflow by hand.
+- **Changelog = release notes:** `CHANGELOG.md` is kept by hand: the release commit adds
+  `## [X.Y.Z](compare link) (date)` with `### Highlights`/`Added`/`Fixed`/`Changed`, written for
+  users. `scripts/release-notes.sh X.Y.Z` (same file in every repo) prints that section with
+  wrapped lines joined; it is the GitHub release body (`generateNotesCmd`) and therefore what
+  foobar2000.org gets. `verifyReleaseCmd` runs it first, so a release whose version has no
+  section fails before tagging: predict the next version from the commits and write it.
 - **Release asset:** one `<component>_<version>.fb2k-component` per release, labelled
   `<component> <version> (macOS + Windows x86/x64/ARM64)`. Every place that uploads it
   (`.releaserc.json`, any `gh release upload --clobber` re-upload) uses that same label.
@@ -213,6 +219,23 @@ anything repo-specific stays in the repo's own sections.
 - Transparent panels show what's beneath them from engine-kept frames, never by reading
   screen/sibling pixels: `snapshot_canvas`/`draw_canvas_snapshot` (master canvas) and
   `store_panel_frame`/`backdrop_for` (a panel's last frame, e.g. spectrum over the cover).
+- **Columns UI import:** `fcl_import.cpp` (SDK-free; `SKIN:IMPORT_FCL[:path]`, *View › Panels UI ›
+  Import Columns UI layout…*, `skin_lint --import-fcl`, `make fcl-skin`). `.fcl` format from Columns
+  UI's `fcl.cpp`/`splitter_*.cpp`: header GUID, panel list, datasets; the layout dataset's presets;
+  flat splitters' items + per-item extra size/DPI; tab stacks. Panel Stack Splitter is closed, its
+  blob was read from Eole's: 7 u32 (background at [4]), script, 24 bytes, LOGFONT (92), u32, child
+  count, then per child GUID, name, 72 bytes (visible flag at +4), x/y/w/h expression strings, 16
+  bytes, config blob. Output is one `main.txt`: every box is `$puts(<id>.x/y/w/h)` from its
+  parent's, PSS globals are `ps.*`, `$showpanel_c`/`$movepanel_c` set `vis.*`/`mv.*` before the
+  children are placed (names compared lowercased: Eole writes `shpeck` for `Shpeck`),
+  `%ps_user_profile_path%` → `%pui_profile_folder%` (`%foobar_path%` is a `~` display path on
+  macOS), a `pss.refresh` pvar toggle re-runs the layout for `RefreshPSS()`. SMP panels become JS
+  Panels with their properties seeded into the script. An `.fcl` under an unzipped theme
+  (`fcl_theme_root`: an ancestor with `themes/`) gets `themes/` copied over the profile's and
+  `wsh-data/` without overwriting.
+- **Actions from scripts:** `panels_ui_api::run_action` defers `SKIN:`/`WIZARD:`/`MENU` actions with
+  `fb2k::inMainThread`: they rebuild the skin, which would destroy the JS Panel still running the
+  call (QuickJS use-after-free, seen as a crash on Windows).
 - Cross-component integration (e.g. `foo_navidrome`, same author): when a track needs something
   only another of our own fb2k components can do correctly (e.g. rating a `navidrome://` track —
   a normal file-tag write fails, no real file backs it), that component exposes a small
@@ -445,10 +468,9 @@ anything repo-specific stays in the repo's own sections.
   `@semantic-release/git`/`changelog` plugins). `release-mac` passes `PUI_VERSION` itself. A PR
   squash-merged as `ci:`/`docs:`/`chore:` skips the release gate: dispatch the workflow by hand
   if earlier release-worthy commits are still unreleased.
-- `CHANGELOG.md` is kept by hand (no plugin can write it: `main` is protected): a release PR adds
-  its version's section (Highlights / New / Changed / Fixed / For contributors, user wording), and
-  after the release the GitHub release notes are replaced with that section (`gh release edit
-  v<ver> --notes-file`) — the generated notes only list commit subjects.
+- `CHANGELOG.md` is kept by hand (no plugin commits back): the release commits add the version's
+  section (Highlights / Added / Changed / Fixed, user wording); `scripts/release-notes.sh` makes it
+  the GitHub release body (Shared conventions › Changelog = release notes).
 - Shared CI setup: `.github/actions/fetch-sdk` (SDK sibling layout) and
   `.github/actions/setup-build` (that + clang-cl/xwin).
 - `notify-n8n` job → n8n workflow (infra-foundations `n8n/`) that uploads to foobar2000.org

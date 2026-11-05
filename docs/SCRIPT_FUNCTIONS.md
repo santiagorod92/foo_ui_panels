@@ -19,6 +19,7 @@ pixels; colours are `r-g-b` unless noted.
 | `$setpvar(name,value)` | yes | Sets a persistent variable. |
 | `$greater(a,b)` | yes | 1 if a > b (integers), else nothing. |
 | `$fileexists(path)` | yes | 1 if the file exists (relative to the skin folder). |
+| `$findfile(path)` | yes | The first file matching path (* and ? in the file name), or nothing (Panel Stack Splitter). A relative path starts in the skin folder. |
 | `$cwb_fileexists(path)` | yes | foo_cwb_hooks' spelling of $fileexists. |
 | `$calculate_blend_target(colour)` | yes | Black if the hex colour is light, else white (Columns UI). |
 | `$offset_colour(from,to,amount)` | yes | Shifts a hex colour toward another by amount 0..255 (Columns UI). |

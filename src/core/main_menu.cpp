@@ -42,7 +42,7 @@ GUID guid_for(const std::string& kind, const std::string& name) {
 }
 
 class panels_commands : public mainmenu_commands {
-    enum Cmd { kMini, kZoomIn, kZoomOut, kZoomReset, kReload, kProblems, kWizard, kOnTop };
+    enum Cmd { kMini, kZoomIn, kZoomOut, kZoomReset, kReload, kProblems, kWizard, kImport, kOnTop };
     struct Entry { Cmd cmd; GUID id; const char* name; const char* desc; };
     static const std::vector<Entry>& entries() {
         static const std::vector<Entry> e = {
@@ -60,6 +60,8 @@ class panels_commands : public mainmenu_commands {
               N_("Marks panels whose script doesn't compile, is missing or uses unknown functions.") },
             { kWizard, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x08 } }, N_("Layout wizard..."),
               N_("Start from a ready-made layout, or pick a skin folder.") },
+            { kImport, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x09 } }, N_("Import Columns UI layout..."),
+              N_("Turns a Columns UI layout export (.fcl), such as a theme's, into a skin and switches to it.") },
 #ifdef __APPLE__
             { kOnTop, { 0xe1a4c2b0, 0x3f51, 0x4d7a, { 0x9b, 0x26, 0x4c, 0x8e, 0x1d, 0x6f, 0x3a, 0x01 } }, N_("Always on top"),
               N_("Keeps the player window above other windows.") },
@@ -95,7 +97,7 @@ public:
             if (zoom_setting() == 0) flags |= flag_disabled;
             break;
         }
-        case kReload: case kWizard: if (!e) flags |= flag_disabled; break;
+        case kReload: case kWizard: case kImport: if (!e) flags |= flag_disabled; break;
         case kOnTop: if (always_on_top()) flags |= flag_checked; break;
         case kProblems: if (show_script_problems()) flags |= flag_checked; break;
         default: break;
@@ -112,6 +114,7 @@ public:
         case kZoomReset: step_zoom(0); break;
         case kReload: SkinEngine::reload_all(); break;
         case kWizard: if (e) e->show_layout_wizard(); break;
+        case kImport: if (e) e->run_actions("SKIN:IMPORT_FCL"); break;
         case kOnTop: set_always_on_top(!always_on_top()); break;
         case kProblems: set_show_script_problems(!show_script_problems()); break;
         }

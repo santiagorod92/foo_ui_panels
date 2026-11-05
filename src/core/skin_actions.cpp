@@ -9,6 +9,8 @@
 #include "prefs_store.h"
 #include "skin_paths.h"
 #include "skin_templates.h"
+#include "fcl_import.h"
+#include "fs_util.h"
 #include "ui_logic.h"
 #include "log.h"
 #include <cstdio>
@@ -200,6 +202,11 @@ bool SkinEngine::run_button_action(const std::string& action) {
         step_zoom(v == "IN" ? +1 : v == "OUT" ? -1 : 0);
         return true;
     }
+    if (a.compare(0, 12, "WINDOWSTYLE:") == 0) {
+        if (m_main && a.find("hidetitlebar", 12) != std::string::npos) m_main->set_titlebar_visible(false);
+        else if (m_main && a.find("showtitlebar", 12) != std::string::npos) m_main->set_titlebar_visible(true);
+        return true;
+    }
     if (a == "MINIMODE:TOGGLE") { toggle_mini_mode(); return true; }
     if (a == "PREFERENCES") { show_preferences_page(); return true; }
     if (a.compare(0, 4, "URL:") == 0) { ui::open_url(unquote(a.substr(4))); return true; }
@@ -236,6 +243,43 @@ bool SkinEngine::run_button_action(const std::string& action) {
         prefs.load();
         prefs.choose_skin_folder(dir);
         apply_skin_choice(prefs);
+        return true;
+    }
+    if (a == "SKIN:IMPORT_FCL" || a.compare(0, 16, "SKIN:IMPORT_FCL:") == 0) {
+        if (!m_main) return true;
+        const std::string file = a.size() > 16 ? unquote(a.substr(16)) : ui::choose_file(*m_main, tr("Choose a Columns UI layout (.fcl)"), "fcl");
+        if (file.empty()) return true;
+        std::string err;
+        const auto presets = parse_fcl(read_file(file), &err);
+        const ImportedSkin skin = presets.empty() ? ImportedSkin{} : convert_fcl(presets, "", false, &err);
+        if (!err.empty()) {
+            ui::message_box(nullptr, "Panels UI", trf("Couldn't read the layout: {0}", { err }));
+            return true;
+        }
+        if (skin.js_panels && !js_panel_installed()) {
+            ui::message_box(nullptr, "Panels UI", tr("This layout needs JS Panel (foo_js_panel). Install it and try again."));
+            return true;
+        }
+        pfc::string8 profile;
+        try { filesystem::g_get_native_path(core_api::get_profile_path(), profile); } catch (...) {}
+        const std::string root = fcl_theme_root(file, profile.get_ptr());
+        if (!root.empty() && !copy_theme_folders(root, profile.get_ptr(), &err)) {
+            ui::message_box(nullptr, "Panels UI", trf("Couldn't copy the theme's files into the profile folder: {0}", { err }));
+            return true;
+        }
+        const std::string dir = install_skin_files(fcl_skin_name(file), skin.main, skin.ini, skin.files, layout_skins_dir(), &err);
+        if (dir.empty()) { ui::message_box(nullptr, "Panels UI", err); return true; }
+        log::info("skin", "imported " + file + " (preset \"" + skin.preset + "\", " + std::to_string(skin.js_panels) + " JS panels" +
+                              (root.empty() ? std::string() : ", theme files copied from " + root) + ") into " + dir);
+        PrefsModel prefs(prefs_backend());
+        prefs.load();
+        prefs.choose_skin_folder(dir);
+        apply_skin_choice(prefs);
+        if (!skin.hosted_by_name.empty()) {
+            std::string names;
+            for (const auto& n : skin.hosted_by_name) names += (names.empty() ? "" : ", ") + n;
+            ui::message_box(nullptr, "Panels UI", trf("These panels have no Panels UI equivalent and are hosted by name: {0}", { names }));
+        }
         return true;
     }
     if (a == "MENU") {

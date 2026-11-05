@@ -227,6 +227,8 @@ public:
         both([&](Canvas& cv) { cv.draw_image(img, dst, src, alpha, flip_v, interp); });
     }
     ImagePtr snapshot(const Rect& r) override { return m_canvas[0]->snapshot(r); }
+    void push_clip(const Rect& r) override { both([&](Canvas& cv) { cv.push_clip(r); }); }
+    void pop_clip() override { both([](Canvas& cv) { cv.pop_clip(); }); }
 
 private:
     template <typename F>
@@ -389,6 +391,16 @@ GdiCanvas::~GdiCanvas() {
         SetWorldTransform(m_dc, &m_oldXform);
         if (m_oldMode) SetGraphicsMode(m_dc, m_oldMode);
     }
+}
+
+void GdiCanvas::push_clip(const Rect& r) {
+    SaveDC(m_dc);
+    IntersectClipRect(m_dc, r.x, r.y, r.right(), r.bottom());
+}
+
+void GdiCanvas::pop_clip() {
+    RestoreDC(m_dc, -1);
+    if (m_font) SelectObject(m_dc, m_font);
 }
 
 void GdiCanvas::fill_rect(const Rect& r, Color c) {

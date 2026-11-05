@@ -69,10 +69,81 @@ bool same_name(CFStringRef a, const std::string& b) {
     return [s caseInsensitiveCompare:[NSString stringWithUTF8String:b.c_str()]] == NSOrderedSame;
 }
 
-bool windows_ui_face(const std::string& f) {
-    static const char* faces[] = { "Segoe UI", "Tahoma", "MS Sans Serif", "Microsoft Sans Serif", "Verdana" };
-    for (auto* x : faces) if (strcasecmp(f.c_str(), x) == 0) return true;
-    return false;
+struct Substitute {
+    enum Kind { None, System, Mono, Named } kind = None;
+    CGFloat weight = 0;
+    bool italic = false;
+    const char* name = nullptr;
+};
+
+CTFontRef ui_font(CTFontUIFontType type, CGFloat px, CGFloat weight) {
+    CTFontRef base = CTFontCreateUIFontForLanguage(type, px, nullptr);
+    if (!base || weight == 0) return base;
+    CTFontDescriptorRef d = CTFontCopyFontDescriptor(base);
+    NSDictionary* attrs = @{ (__bridge id)kCTFontTraitsAttribute: @{ (__bridge id)kCTFontWeightTrait: @(weight) } };
+    CTFontDescriptorRef w = CTFontDescriptorCreateCopyWithAttributes(d, (__bridge CFDictionaryRef)attrs);
+    CTFontRef out = w ? CTFontCreateWithFontDescriptor(w, px, nullptr) : nullptr;
+    if (w) CFRelease(w);
+    CFRelease(d);
+    if (!out) return base;
+    CFRelease(base);
+    return out;
+}
+
+Substitute windows_substitute(const std::string& face) {
+    static const std::pair<const char*, Substitute::Kind> bases[] = {
+        { "segoe ui variable display", Substitute::System }, { "segoe ui variable text", Substitute::System },
+        { "segoe ui variable small", Substitute::System }, { "segoe ui variable", Substitute::System },
+        { "segoe ui symbol", Substitute::System }, { "segoe ui", Substitute::System }, { "tahoma", Substitute::System }, { "ms sans serif", Substitute::System },
+        { "microsoft sans serif", Substitute::System }, { "verdana", Substitute::System }, { "calibri", Substitute::System },
+        { "bahnschrift", Substitute::System }, { "consolas", Substitute::Mono }, { "lucida console", Substitute::Mono },
+        { "cascadia mono", Substitute::Mono }, { "cascadia code", Substitute::Mono },
+    };
+    static const std::pair<const char*, const char*> named[] = {
+        { "segoe ui emoji", "Apple Color Emoji" },
+    };
+    static const std::pair<const char*, CGFloat> weights[] = {
+        { "thin", -0.6 }, { "extralight", -0.5 }, { "light", -0.4 }, { "semilight", -0.2 }, { "regular", 0 },
+        { "normal", 0 }, { "medium", 0.23 }, { "semibold", 0.3 }, { "demibold", 0.3 }, { "bold", 0.4 },
+        { "extrabold", 0.5 }, { "heavy", 0.56 }, { "black", 0.62 },
+    };
+    std::string f(face);
+    std::transform(f.begin(), f.end(), f.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    Substitute s;
+    for (const auto& [n, real] : named)
+        if (f == n) {
+            s.kind = Substitute::Named;
+            s.name = real;
+            return s;
+        }
+    size_t rest = 0;
+    for (const auto& [base, kind] : bases) {
+        const size_t n = strlen(base);
+        if (f.compare(0, n, base) == 0 && (f.size() == n || f[n] == ' ')) {
+            s.kind = kind;
+            rest = n;
+            break;
+        }
+    }
+    if (s.kind == Substitute::None) return s;
+    size_t i = rest;
+    while (i < f.size()) {
+        while (i < f.size() && f[i] == ' ') ++i;
+        size_t j = f.find(' ', i);
+        if (j == std::string::npos) j = f.size();
+        const std::string word = f.substr(i, j - i);
+        i = j;
+        if (word.empty()) continue;
+        if (word == "italic" || word == "oblique") {
+            s.italic = true;
+            continue;
+        }
+        if (word.rfind("semicond", 0) == 0 || word.rfind("cond", 0) == 0) continue;
+        auto w = std::find_if(std::begin(weights), std::end(weights), [&](const auto& x) { return word == x.first; });
+        if (w == std::end(weights)) return {};
+        s.weight = w->second;
+    }
+    return s;
 }
 
 std::pair<CTFontRef, bool> cached_font(const std::string& face, CGFloat px, bool bold, bool italic) {
@@ -87,10 +158,20 @@ std::pair<CTFontRef, bool> cached_font(const std::string& face, CGFloat px, bool
     bool matched = same_name(fam, face) || same_name(full, face);
     if (fam) CFRelease(fam);
     if (full) CFRelease(full);
-    if (!matched && windows_ui_face(face)) {
-        CFRelease(f);
-        f = CTFontCreateUIFontForLanguage(kCTFontUIFontSystem, px, nullptr);
-        matched = true;
+    const Substitute sub = matched ? Substitute{} : windows_substitute(face);
+    if (sub.kind != Substitute::None) {
+        CTFontRef s = nullptr;
+        if (sub.kind != Substitute::Named) s = ui_font(sub.kind == Substitute::Mono ? kCTFontUIFontUserFixedPitch : kCTFontUIFontSystem, px, sub.weight);
+        else if (CFStringRef n = CFStringCreateWithCString(nullptr, sub.name, kCFStringEncodingUTF8)) {
+            s = CTFontCreateWithName(n, px, nullptr);
+            CFRelease(n);
+        }
+        if (s) {
+            CFRelease(f);
+            f = s;
+            matched = true;
+            italic = italic || sub.italic;
+        }
     }
     CTFontSymbolicTraits traits = (bold ? kCTFontBoldTrait : 0) | (italic ? kCTFontItalicTrait : 0);
     if (traits) {
@@ -335,6 +416,13 @@ CGCanvas::CGCanvas(int w, int h, double scale) : m_w(w), m_h(h), m_scale(scale >
 CGCanvas::~CGCanvas() {
     if (m_ctx) CGContextRelease(m_ctx);
 }
+
+void CGCanvas::push_clip(const Rect& r) {
+    CGContextSaveGState(m_ctx);
+    CGContextClipToRect(m_ctx, to_cg(r));
+}
+
+void CGCanvas::pop_clip() { CGContextRestoreGState(m_ctx); }
 
 void CGCanvas::fill_rect(const Rect& r, Color c) {
     if (r.empty()) return;

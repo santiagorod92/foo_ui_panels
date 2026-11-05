@@ -322,3 +322,13 @@ TEST("runtime: buttons without hover art of their own ask for hover feedback") {
     CHECK(button_at(r.st.buttons, 6, 6) == &r.st.buttons[6]);
     CHECK(button_at(r.st.buttons, 500, 500) == nullptr);
 }
+
+TEST("runtime: $findfile answers the first matching file, relative to the skin or absolute") {
+    Rig r;
+    r.st.base = "/skin";
+    r.env.images["/skin/state/LAYOUT_1"] = { 0, 0 };
+    r.env.images["/profile/wsh-data/MAINPANEL_2"] = { 0, 0 };
+    CHECK_EQ(r.call("findfile", { "state\\LAYOUT_*" }), std::string("/skin/state/LAYOUT_1"));
+    CHECK_EQ(r.call("findfile", { "/profile/wsh-data/MAINPANEL_*" }), std::string("/profile/wsh-data/MAINPANEL_2"));
+    CHECK_EQ(r.call("findfile", { "state/NOPE_*" }), std::string(""));
+}

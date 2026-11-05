@@ -44,6 +44,7 @@ bool image_avg_color(const std::string& path, gfx::Color& out);
 std::string resolve_wildcard(const std::string& path);
 
 bool file_exists(const std::string& path);
+std::string find_file(const std::string& pattern);
 
 void images_shutdown();
 

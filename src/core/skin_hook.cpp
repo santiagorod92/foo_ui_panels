@@ -111,6 +111,14 @@ public:
             return true;
         }
         if (eq(name, len, "pui_skin_folder")) { o.write(m_e->m_st.base); return true; }
+        if (eq(name, len, "pui_profile_folder")) {
+            pfc::string8 native;
+            try { filesystem::g_get_native_path(core_api::get_profile_path(), native); } catch (...) {}
+            std::string p = native.get_ptr();
+            while (!p.empty() && (p.back() == '/' || p.back() == '\\')) p.pop_back();
+            o.write(p);
+            return true;
+        }
         if (eq(name, len, "foobar_path")) {
             pfc::string8 p; filesystem::g_get_display_path(core_api::get_profile_path(), p);
             o.write(p.get_ptr()); return true;
@@ -192,6 +200,7 @@ public:
     }
     bool image_size(const std::string& path, int& w, int& h) override { return image_natural_size(path, w, h); }
     bool file_exists(const std::string& path) override { return pui::file_exists(path); }
+    std::string find_file(const std::string& pattern) override { return pui::find_file(pattern); }
     void report(const std::string& msg) override { m_e->report_once(msg); }
     void set_titlebar_visible(bool v) override { if (m_e->m_main) m_e->m_main->set_titlebar_visible(v); }
     void set_tray(const std::string& tip) override { if (m_e->m_main) m_e->m_main->set_tray(tip); }

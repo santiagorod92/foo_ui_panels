@@ -26,5 +26,8 @@ std::string layout_wizard_script(bool jsPanel = false);
 std::vector<const SkinTemplate*> wizard_templates(bool jsPanel);
 
 std::string install_skin_template(const SkinTemplate& t, const std::string& parent, std::string* err = nullptr);
+std::string install_skin_files(const std::string& name, const std::string& script, const std::string& ini,
+                               const std::vector<std::pair<std::string, std::string>>& files, const std::string& parent,
+                               std::string* err = nullptr);
 
 }

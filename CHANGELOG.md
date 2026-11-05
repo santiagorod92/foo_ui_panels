@@ -3,6 +3,43 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.20.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.19.0...v1.20.0) (2026-11-05)
+
+### Highlights
+- **Import a Columns UI layout from the menu**: *View › Panels UI › Import Columns UI layout…*
+  turns a theme's layout export (`.fcl`) into a Panels UI skin and switches to it. No Python or
+  command line needed. Pick the `.fcl` inside the unzipped theme (Eole:
+  `themes/eole/columnsUI_eole.fcl`): the theme's `themes` folder is copied into the foobar2000
+  profile folder and its `wsh-data` too, without overwriting settings you already have.
+  Splitters, tab stacks and Panel Stack Splitter containers (with their layout scripts) are
+  converted, each Spider Monkey Panel becomes a JS Panel with its script and properties, and
+  ESLyric/OpenLyrics and Shpeck become Panels UI's *Lyric Show* and *Spectrum*. A panel with no
+  Panels UI equivalent is placed by its name, and the import lists those.
+
+### Added
+- **Button actions** `SKIN:IMPORT_FCL[:<path>]` (the import, with or without the file dialog) and
+  `WINDOWSTYLE:hidetitlebar` / `WINDOWSTYLE:showtitlebar` (as `$windowstyle()`). JS Panel uses the
+  latter for `UIHacks.FrameStyle`, so Eole hides the system title bar and draws its own, as on
+  Columns UI.
+- **Skin script**: `%pui_profile_folder%` (the foobar2000 profile folder) and `$findfile(pattern)`
+  (the first file matching `*`/`?` in its name, as Panel Stack Splitter's).
+- **Windows fonts on macOS** without aliases: Segoe UI (Light, Semilight, Semibold, Bold, Black,
+  Italic), Tahoma, Verdana, Calibri and Bahnschrift draw with the system font at that weight,
+  Consolas and Cascadia with the system's monospaced font.
+- Clipping for JS Panel's JScript Panel 3 layer (`PushLayer`/`PopLayer`), on Windows and macOS.
+- `make fcl-skin FCL=… SKIN=… [PRESET=…] [OUTLINE=1]` writes the same skin from a source checkout.
+- The new menu command and messages are translated into every language Panels UI ships.
+
+### Fixed
+- **Crash when a JS Panel switched the skin**: a script that ran a skin action (such as the
+  import) was destroyed while it was still running, and foobar2000 crashed on Windows. Actions
+  that replace the skin (`SKIN:…`, `WIZARD:…`, `MENU`) now run right after the script's call
+  returns.
+
+### Changed
+- **GitHub release notes are this changelog's section** for the version, in full, instead of the
+  commit titles.
+
 ## [1.19.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.18.0...v1.19.0) (2026-10-31)
 
 ### Added

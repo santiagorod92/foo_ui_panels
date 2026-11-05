@@ -37,6 +37,7 @@ struct ScriptEnv {
                                  float sx, float sy, float sw, float sh, int alpha) = 0;
     virtual bool image_size(const std::string& path, int& w, int& h) = 0;
     virtual bool file_exists(const std::string& path) = 0;
+    virtual std::string find_file(const std::string& pattern) { return file_exists(pattern) ? pattern : std::string(); }
     virtual void report(const std::string& msg) = 0;
     virtual void set_titlebar_visible(bool) {}
     virtual void set_tray(const std::string&) {}
@@ -99,6 +100,7 @@ private:
     bool f_textcolor(const ScriptArgs&, ScriptOut&);
     bool f_imageabs(const ScriptArgs&, ScriptOut&);
     bool f_fileexists(const ScriptArgs&, ScriptOut&);
+    bool f_findfile(const ScriptArgs&, ScriptOut&);
     bool f_greater(const ScriptArgs&, ScriptOut&);
     bool f_imageabs2(const ScriptArgs&, ScriptOut&);
     bool f_button(const ScriptArgs&, ScriptOut&);

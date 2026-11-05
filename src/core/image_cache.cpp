@@ -420,6 +420,22 @@ bool file_exists(const std::string& path) {
     return std::filesystem::is_regular_file(fs_path(path), ec);
 }
 
+std::string find_file(const std::string& pattern) {
+    if (pattern.find_first_of("*?") == std::string::npos) return file_exists(pattern) ? pattern : std::string();
+    const size_t cut = pattern.find_last_of('/');
+    const std::string dir = cut == std::string::npos ? std::string(".") : pattern.substr(0, cut);
+    const std::string mask = cut == std::string::npos ? pattern : pattern.substr(cut + 1);
+    std::vector<std::string> hits;
+    std::error_code ec;
+    for (std::filesystem::directory_iterator it(fs_path(dir), ec), end; !ec && it != end; it.increment(ec)) {
+        const std::string name = fs_utf8(it->path().filename());
+        if (wild_match(mask.c_str(), name.c_str())) hits.push_back(dir + "/" + name);
+    }
+    if (hits.empty()) return {};
+    std::sort(hits.begin(), hits.end());
+    return hits.front();
+}
+
 void images_shutdown() {
     g_shutdown = true;
     g_onArtReady = nullptr;

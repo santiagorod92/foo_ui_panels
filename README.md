@@ -141,6 +141,10 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `font.face_pvar` | Variable holding the face when a script's `$font` names it through a variable. |
 | `font.default` | Face used when none is named (`Tahoma`). |
 | `font.alias.<face>` | Installed face to use when `<face>` isn't installed. |
+
+On macOS the Windows UI faces need no alias: Segoe UI (with its Light, Semilight, Semibold, Bold, Black
+and Italic variants), Tahoma, Verdana, Calibri and Bahnschrift draw with the system font at that weight,
+Consolas and Cascadia with the system's monospaced font.
 | `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
 | `asset.nocover`, `asset.cd_case`, `asset.cd_case_window` | Album browser: missing-cover art, case art and the cover's window inside it (`x y w h`, case pixels). |
@@ -176,6 +180,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 - The Panels UI script engine: titleformat-driven canvas with `$panel`, `$button`/`$button2`,
   `$imageabs2`, `$drawrect`, `$font` (incl. glow), `$alignabs`, persistent `$setpvar`/`$getpvar`
   variables and the skin's button actions (transport, playback order, window size, popups…).
+  Skins can also read `%pui_skin_folder%` and `%pui_profile_folder%` (the foobar2000 profile folder)
+  and look files up with `$findfile(pattern)` (Panel Stack Splitter's, `*`/`?` in the file name).
 - Native versions of the panels fooAvA uses: track display (CD case, rating stars), seek bar,
   volume, grouped playlist, spectrum analyser, peak meter, album art, album browser + cover
   flow, playlist switcher, quick search and a synced-lyrics panel — all drawn by the component
@@ -241,7 +247,9 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
   `ZOOM:RESET`, `MINIMODE:TOGGLE`, `PVAR:TOGGLE:<variable>` (flips a 0/1 variable),
   `WINDOWSIZE:<w>:<h>[:<LEFT|CENTER|RIGHT>:<TOP|CENTER|BOTTOM>]` (resizes the window's client area,
   keeping that corner in place; default top-left),
-  `PREFERENCES` (this component's Preferences page), `URL:<address>` and `SKIN:CHOOSE_FOLDER`.
+  `WINDOWSTYLE:hidetitlebar`/`WINDOWSTYLE:showtitlebar` (as `$windowstyle()`),
+  `PREFERENCES` (this component's Preferences page), `URL:<address>`, `SKIN:CHOOSE_FOLDER` and
+  `SKIN:IMPORT_FCL[:<path>]` (see [Importing a Columns UI layout](#importing-a-columns-ui-layout)).
 - Switching skin or main script in Preferences applies immediately (no restart). The skin picker
   shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /
   `screenshot.png` in its folder), else a picture the component takes of it the first time it is
@@ -308,7 +316,34 @@ empty and the skin's problem list says why.
 
 A JS Panel script can also drive the skin: JS Panel's `panelsui` object reads and writes the skin's
 persistent variables (`$getpvar`, `$setpvar`; the skin repaints) and runs button actions such as
-`MINIMODE:TOGGLE`. That's how JS Panel's Eole conversion switches its views.
+`MINIMODE:TOGGLE`. That's how an imported Eole switches its views. Actions that replace the skin
+(`SKIN:…`, `WIZARD:…`, `MENU`) run right after the script's call returns, since they replace the
+panel that asked.
+
+### Importing a Columns UI layout
+
+Themes made for Columns UI + Spider Monkey Panel (Eole and the like) ship a layout export, a
+`.fcl` file. **View › Panels UI › Import Columns UI layout…** turns one into a Panels UI skin and
+switches to it, no tools needed:
+
+1. Download the theme and unzip it anywhere (for Eole, the folder that has `themes` and
+   `wsh-data` in it).
+2. Install JS Panel if you don't have it (the theme's panels are JavaScript).
+3. **View › Panels UI › Import Columns UI layout…** and pick the theme's `.fcl` (Eole:
+   `themes/eole/columnsUI_eole.fcl`).
+
+The theme's `themes` folder is copied into the foobar2000 profile folder (replacing an older copy)
+and its `wsh-data` too, without overwriting settings you already have. The skin is written to
+`foo_ui_panels-skins/<theme name>` and stays there: pick it again in Preferences like any other.
+Splitters, tab stacks and Panel Stack Splitter containers (with their layout scripts) become the
+skin's `main.txt`; each Spider Monkey Panel becomes a JS Panel running its script, with its
+properties; ESLyric/OpenLyrics and Shpeck/spectrum panels become Panels UI's own *Lyric Show* and
+*Spectrum*, playlist/library/album art panels their Panels UI equivalents. A panel with no known
+equivalent is placed by its name, and the import tells you which ones those are. A script that sets
+`UIHacks.FrameStyle` (Eole does) hides the window's title bar, as on Columns UI.
+
+From a source checkout, `make fcl-skin FCL=theme.fcl SKIN=<folder> [PRESET=name] [OUTLINE=1]`
+writes the same skin without foobar2000 (`OUTLINE=1` draws each panel's box and name instead).
 
 ## Reporting a problem
 

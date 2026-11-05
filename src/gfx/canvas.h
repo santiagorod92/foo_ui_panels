@@ -93,6 +93,9 @@ public:
     virtual void draw_image(const Image& img, const RectF& dst, const RectF& src,
                             int alpha = 255, bool flip_v = false, Interp interp = Interp::High) = 0;
     virtual ImagePtr snapshot(const Rect& r) = 0;
+
+    virtual void push_clip(const Rect&) {}
+    virtual void pop_clip() {}
 };
 
 struct Pixels {

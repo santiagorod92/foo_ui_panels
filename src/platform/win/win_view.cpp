@@ -686,6 +686,25 @@ std::string choose_folder(MainWindow& root, const std::string& title, const std:
     return win::pick_folder((HWND)root.native(), title, start);
 }
 
+std::string choose_file(MainWindow& root, const std::string& title, const std::string& extension) {
+    wchar_t file[MAX_PATH * 4] = {};
+    const std::wstring ext = widen(extension), wtitle = widen(title);
+    std::wstring filter = L"*." + ext;
+    filter.push_back(L'\0');
+    filter += L"*." + ext;
+    filter.push_back(L'\0');
+    filter.push_back(L'\0');
+    OPENFILENAMEW ofn{};
+    ofn.lStructSize = sizeof ofn;
+    ofn.hwndOwner = (HWND)root.native();
+    ofn.lpstrFilter = filter.c_str();
+    ofn.lpstrFile = file;
+    ofn.nMaxFile = (DWORD)std::size(file);
+    ofn.lpstrTitle = wtitle.c_str();
+    ofn.Flags = OFN_FILEMUSTEXIST | OFN_PATHMUSTEXIST | OFN_NOCHANGEDIR;
+    return GetOpenFileNameW(&ofn) ? std::string(pfc::stringcvt::string_utf8_from_wide(file)) : std::string();
+}
+
 void open_url(const std::string& url) {
     ShellExecuteW(nullptr, L"open", widen(url).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
 }

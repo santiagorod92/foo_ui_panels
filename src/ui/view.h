@@ -146,6 +146,7 @@ void track_context_menu(ViewHost& anchor, int x, int y, const metadb_handle_list
 bool choose_color(ViewHost* owner, gfx::Color& c);
 void message_box(ViewHost* owner, const std::string& title, const std::string& text);
 std::string choose_folder(MainWindow& root, const std::string& title, const std::string& start);
+std::string choose_file(MainWindow& root, const std::string& title, const std::string& extension);
 void open_url(const std::string& url);
 void open_file(const std::string& path);
 void reveal_in_file_manager(const std::string& path);

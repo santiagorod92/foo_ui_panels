@@ -95,6 +95,8 @@ const std::vector<ScriptFunction>& script_functions() {
         { "greater", 2, S::Implemented, &R::f_greater, "$greater(a,b)", "1 if a > b (integers), else nothing." },
         { "fileexists", 1, S::Implemented, &R::f_fileexists, "$fileexists(path)",
           "1 if the file exists (relative to the skin folder)." },
+        { "findfile", 1, S::Implemented, &R::f_findfile, "$findfile(path)",
+          "The first file matching path (* and ? in the file name), or nothing (Panel Stack Splitter). A relative path starts in the skin folder." },
         { "cwb_fileexists", 1, S::Implemented, &R::f_fileexists, "$cwb_fileexists(path)",
           "foo_cwb_hooks' spelling of $fileexists." },
         { "calculate_blend_target", 1, S::Implemented, &R::f_blend_target, "$calculate_blend_target(colour)",
@@ -290,6 +292,14 @@ bool ScriptRuntime::f_greater(const ScriptArgs& a, ScriptOut& out) {
 
 bool ScriptRuntime::f_fileexists(const ScriptArgs& a, ScriptOut& out) {
     if (m_env.file_exists(resolve(a.str(0)))) out.write("1");
+    return true;
+}
+
+bool ScriptRuntime::f_findfile(const ScriptArgs& a, ScriptOut& out) {
+    std::string p = a.str(0);
+    for (auto& c : p) if (c == '\\') c = '/';
+    const bool absolute = (p.size() >= 2 && p[1] == ':') || (!p.empty() && p[0] == '/');
+    out.write(m_env.find_file(absolute ? p : resolve(p)));
     return true;
 }
 

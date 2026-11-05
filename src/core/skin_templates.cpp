@@ -776,17 +776,23 @@ $textbutton(250,100,110,32,{4},,WIZARD:CLOSE)
 }
 
 std::string install_skin_template(const SkinTemplate& t, const std::string& parent, std::string* err) {
+    return install_skin_files(tr(t.name), t.script, t.ini, t.files, parent, err);
+}
+
+std::string install_skin_files(const std::string& name, const std::string& script, const std::string& ini,
+                               const std::vector<std::pair<std::string, std::string>>& files, const std::string& parent,
+                               std::string* err) {
     std::error_code ec;
     std::filesystem::create_directories(fs_path(parent), ec);
     for (int n = 1; n < 1000; ++n) {
-        const std::string dir = parent + kPathSep + tr(t.name) + (n > 1 ? " " + std::to_string(n) : std::string());
+        const std::string dir = parent + kPathSep + name + (n > 1 ? " " + std::to_string(n) : std::string());
         if (std::filesystem::exists(fs_path(dir), ec)) continue;
         if (!std::filesystem::create_directory(fs_path(dir), ec) ||
-            !write_file(dir + kPathSep + "main.txt", t.script) || !write_file(dir + kPathSep + SkinConfig::kFileName, t.ini)) {
+            !write_file(dir + kPathSep + "main.txt", script) || !write_file(dir + kPathSep + SkinConfig::kFileName, ini)) {
             if (err) *err = trf("Couldn't write the layout to {0}", { dir });
             return {};
         }
-        for (const auto& [rel, text] : t.files) {
+        for (const auto& [rel, text] : files) {
             const auto path = fs_path(dir) / fs_path(rel);
             std::filesystem::create_directories(path.parent_path(), ec);
             if (!write_file(fs_utf8(path), text)) {
