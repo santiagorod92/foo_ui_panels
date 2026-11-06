@@ -11,7 +11,8 @@ build/ui-test/.
 Platforms
   wine     the local Wine foobar2000 (~/.foobar2000); input posted with tools/wclick.c
   win11    the Windows 11 VM (../windows-devbox, wvm); real Windows, VNC input
-  mac      the macOS VM (../macos-devbox, mvm); VNC input
+  mac      the macOS VM: on a Mac terminal-mac (../foo_navidrome/scripts/terminal-mac.sh),
+           elsewhere ../macos-devbox's mvm; MVM= picks another
 
 Scenarios
   smoke [ARTIFACT]   turn verbose logging on, deploy, relaunch; assert the session banner, the
@@ -186,8 +187,10 @@ win11_sibling_enable() {
 win11_shot() { mkdir -p "$(dirname "$1")"; "$WVM" shot "$1" >/dev/null && echo "$1"; }
 
 mac_init() {
-  MVM="${MVM:-$(cd "$REPO/.." && pwd)/macos-devbox/mvm}"
-  [ -x "$MVM" ] || { echo "mvm not found at $MVM"; exit 1; }
+  local vm="$(cd "$REPO/.." && pwd)/macos-devbox/mvm"
+  [ "$(uname)" = Darwin ] && vm="$(cd "$REPO/.." && pwd)/foo_navidrome/scripts/terminal-mac.sh"
+  MVM="${MVM:-$vm}"
+  [ -x "$MVM" ] || { echo "no macOS VM driver at $MVM"; exit 1; }
   LOG='~/Library/foobar2000-v2/foo_ui_panels.log'
   GUEST_CFG='~/Library/foobar2000-v2/config.sqlite'
   PLAYBACK_MENU_X=314; PLAYBACK_MENU_Y=11
@@ -205,10 +208,32 @@ mac_deploy() {
   "$MVM" deploy "$comp" >/dev/null
   mac_stop
 }
+mac_front() {
+  g "osascript -e 'tell application \"foobar2000\" to activate'" >/dev/null 2>&1
+  for _ in $(seq 1 20); do
+    g 'lsappinfo info -only name "$(lsappinfo front)"' | grep -q foobar2000 && break
+    sleep 0.5
+  done
+  sleep 1
+}
+mac_local_tracks() {
+  g "test -f ~/Music/fb2k-test/silence-1.wav" || return 0
+  g "open -a foobar2000 ~/Music/fb2k-test/silence-1.wav ~/Music/fb2k-test/silence-2.wav" >/dev/null
+  sleep 4
+  mac_stop
+}
 mac_play() {
-  g "osascript -e 'tell application \"foobar2000\" to activate'" >/dev/null 2>&1; sleep 1
-  "$MVM" click "$PLAYBACK_MENU_X" "$PLAYBACK_MENU_Y" >/dev/null; sleep 1
-  "$MVM" type "Play" >/dev/null; "$MVM" key enter >/dev/null
+  local attempt
+  for attempt in 1 2 3; do
+    mac_front
+    "$MVM" click "$PLAYBACK_MENU_X" "$PLAYBACK_MENU_Y" >/dev/null; sleep 1
+    "$MVM" type "Play" >/dev/null; "$MVM" key enter >/dev/null
+    for _ in $(seq 1 6); do
+      since_mark | grep -Eq 'INFO +playback .*new track' && return 0
+      sleep 0.5
+    done
+    "$MVM" key esc >/dev/null
+  done
 }
 mac_log_size() { g "wc -c < $LOG 2>/dev/null || echo 0" | tr -d ' '; }
 mac_log_from() { g "tail -c +$1 $LOG 2>/dev/null" || true; }
@@ -260,6 +285,10 @@ scenario_solo() {
     ok "$SIBLING moved out"
   else
     warn "$SIBLING isn't installed on $PLATFORM; Panels UI already runs alone"
+  fi
+  if declare -F "${PLATFORM}_local_tracks" >/dev/null; then
+    say "local tracks in the active playlist (a $SIBLING track can't play without it)"
+    d local_tracks
   fi
   smoke_steps 'navidrome=no'
 }

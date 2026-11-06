@@ -116,7 +116,8 @@ docs: $(LINT_BIN)
 mac-build:
 	./scripts/mac-build.sh
 
-MVM ?= $(abspath ../macos-devbox/mvm)
+TERMINAL_MAC_SH = $(abspath ../foo_navidrome/scripts/terminal-mac.sh)
+MVM ?= $(if $(filter Darwin,$(shell uname)),$(TERMINAL_MAC_SH),$(abspath ../macos-devbox/mvm))
 SKIN ?= $(notdir $(firstword $(wildcard skins/*)))
 SKIN_DIR ?= skins/$(SKIN)
 MAC_SKIN_DIR = Library/foobar2000-v2/foo_ui_panels
@@ -131,7 +132,8 @@ mac-vm:
 	$(MAKE) mac-vm-test
 
 mac-vm-open:
-	@eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
+	@if [ "$(MVM)" = "$(TERMINAL_MAC_SH)" ]; then exec $(MVM) open; fi; \
+	  eval "$$( [ -f "$(MVM_ENV)" ] && grep -E '^MVM_(WEB|SSH)_PORT=' "$(MVM_ENV)" )"; \
 	  web=http://127.0.0.1:$${MVM_WEB_PORT:-8006}; ssh=$${MVM_SSH_PORT:-50922}; \
 	  echo "waiting for macOS to boot (sshd on :$$ssh) before opening $$web ..."; \
 	  for i in $$(seq 1 180); do \
@@ -248,4 +250,3 @@ win11-arm-%:
 
 win11-%:
 	$(WVM) $* $(ARGS)
-
