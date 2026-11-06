@@ -1,6 +1,8 @@
 #pragma once
 #include <map>
 #include <string>
+#include <utility>
+#include <vector>
 
 namespace pui {
 
@@ -20,5 +22,6 @@ using PvarMap = std::map<std::string, std::string, PvarNameLess>;
 
 PvarMap parse_pvars(const std::string& blob);
 std::string serialize_pvars(const PvarMap& pvars);
+std::vector<std::pair<std::string, std::string>> changed_pvars(const PvarMap& before, const PvarMap& after);
 
 }

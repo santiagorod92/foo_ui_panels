@@ -3,6 +3,15 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.21.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.20.0...v1.21.0) (2026-11-06)
+
+### Added
+- **Skins talk to JS Panel scripts**: a button with the action `JSPANEL:<name>[:<info>]` reaches
+  every [JS Panel](https://github.com/santiagorod92/foo_js_panel) script as
+  `on_notify_data(name, info)` (`info` parsed as JSON when it is), and every change of a skin
+  variable (a `PVAR:` button, a setting) reaches them as `on_panelsui_variable_changed`. Needs
+  JS Panel 1.4 or later; without it the action does nothing.
+
 ## [1.20.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.19.0...v1.20.0) (2026-11-05)
 
 ### Highlights

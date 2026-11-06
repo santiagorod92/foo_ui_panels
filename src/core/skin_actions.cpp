@@ -3,6 +3,7 @@
 #include "diagnostics.h"
 #include "script_util.h"
 #include "navidrome_rating_api.h"
+#include "js_panel_api.h"
 #include "ui_settings.h"
 #include "../panels/popup.h"
 #include "prefs_model.h"
@@ -137,6 +138,20 @@ bool SkinEngine::run_button_action(const std::string& action) {
             repaint_all();
         }
         return true;
+    }
+    if (a.compare(0, 8, "JSPANEL:") == 0) {
+        const std::string rest = a.substr(8);
+        const size_t c = rest.find(':');
+        const std::string name = unquote(rest.substr(0, c)), info = c == std::string::npos ? std::string() : unquote(rest.substr(c + 1));
+        if (name.empty()) return false;
+        service_enum_t<js_panel::js_panel_notify_api> e;
+        service_ptr_t<js_panel::js_panel_notify_api> api;
+        bool any = false;
+        while (e.next(api)) {
+            api->notify(name.c_str(), info.c_str());
+            any = true;
+        }
+        return any;
     }
     if (a.compare(0, 12, "PVAR:TOGGLE:") == 0) {
         const std::string key = unquote(a.substr(12));

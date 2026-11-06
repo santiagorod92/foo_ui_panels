@@ -1,6 +1,7 @@
 #include <algorithm>
 #include "skin_engine.h"
 #include "fs_util.h"
+#include "js_panel_api.h"
 #include "image_cache.h"
 #include "log.h"
 #include "diagnostics.h"
@@ -204,6 +205,7 @@ void save_all_pvars(const PvarMap& pvars) {
 
 void SkinEngine::load_pvars() {
     m_st.pvars = load_all_pvars();
+    m_pvarsNotified = m_st.pvars;
 }
 
 void SkinEngine::seed_pvars() {
@@ -229,6 +231,13 @@ void SkinEngine::apply_skin_size() {
 
 void SkinEngine::save_pvars() {
     save_all_pvars(m_st.pvars);
+    const auto changes = changed_pvars(m_pvarsNotified, m_st.pvars);
+    m_pvarsNotified = m_st.pvars;
+    if (changes.empty()) return;
+    service_enum_t<js_panel::js_panel_notify_api> e;
+    service_ptr_t<js_panel::js_panel_notify_api> api;
+    while (e.next(api))
+        for (const auto& [name, value] : changes) api->variable_changed(name.c_str(), value.c_str());
 }
 
 void SkinEngine::reload_skin() {

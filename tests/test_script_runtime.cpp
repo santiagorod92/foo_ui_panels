@@ -299,6 +299,23 @@ TEST("pvars: serialize / parse round trip, case-insensitive names") {
     CHECK_EQ(back["B"], std::string("x=y"));
 }
 
+TEST("pvars: changed_pvars lists new, changed and removed names, never the internal _ ones") {
+    PvarMap before, after;
+    before["keep"] = "1";
+    before["Mode"] = "a";
+    before["gone"] = "x";
+    before["_once.x"] = "1";
+    after["KEEP"] = "1";
+    after["mode"] = "b";
+    after["new"] = "n";
+    after["_window.sized"] = "7";
+    const auto c = changed_pvars(before, after);
+    CHECK_EQ(c.size(), (size_t)3);
+    CHECK(c[0].first == "mode" && c[0].second == "b");
+    CHECK(c[1].first == "new" && c[1].second == "n");
+    CHECK(c[2].first == "gone" && c[2].second.empty());
+}
+
 TEST("runtime: buttons without hover art of their own ask for hover feedback") {
     Rig r;
     r.st.base = "/s";

@@ -245,6 +245,9 @@ Consolas and Cascadia with the system's monospaced font.
   Preferences page.
 - Skins can use these from their own buttons too: `ONTOP:TOGGLE`, `ZOOM:IN`/`ZOOM:OUT`/
   `ZOOM:RESET`, `MINIMODE:TOGGLE`, `PVAR:TOGGLE:<variable>` (flips a 0/1 variable),
+  `JSPANEL:<name>[:<info>]` (every [JS Panel](https://github.com/santiagorod92/foo_js_panel) script
+  gets `on_notify_data(name, info)`, `info` parsed as JSON when it is; JS Panel scripts also hear
+  about every skin variable a button or setting changes),
   `WINDOWSIZE:<w>:<h>[:<LEFT|CENTER|RIGHT>:<TOP|CENTER|BOTTOM>]` (resizes the window's client area,
   keeping that corner in place; default top-left),
   `WINDOWSTYLE:hidetitlebar`/`WINDOWSTYLE:showtitlebar` (as `$windowstyle()`),
@@ -498,7 +501,10 @@ A bundle copied from another machine has to be re-signed ad hoc
 
 Most development happens on Linux, so both real platforms run as VMs in containers on the
 same box, driven by helper scripts from the maintainer's sibling repos (`../macos-devbox`
-→ `mvm`, `../windows-devbox` → `wvm`; point at other copies with `MVM=` / `WVM=`):
+→ `mvm`, `../windows-devbox` → `wvm`; point at other copies with `MVM=` / `WVM=`). On a Mac, the macOS VM is
+[terminal-mac](https://github.com/govijr/terminal-mac) instead, driven by foo_navidrome's
+`scripts/terminal-mac.sh` (the same commands as `mvm`; the `mac-vm-*` targets and `ui-test.sh mac`
+pick it there):
 
 | VM | Based on | Used for |
 |---|---|---|

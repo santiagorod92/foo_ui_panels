@@ -29,6 +29,18 @@ std::string serialize_pvars(const PvarMap& pvars) {
     return out;
 }
 
+std::vector<std::pair<std::string, std::string>> changed_pvars(const PvarMap& before, const PvarMap& after) {
+    std::vector<std::pair<std::string, std::string>> out;
+    for (auto& [k, v] : after) {
+        if (k.empty() || k[0] == '_') continue;
+        auto it = before.find(k);
+        if (it == before.end() || it->second != v) out.emplace_back(k, v);
+    }
+    for (auto& [k, v] : before)
+        if (!k.empty() && k[0] != '_' && !after.count(k)) out.emplace_back(k, "");
+    return out;
+}
+
 static bool iequal_ascii(const std::string& a, const std::string& b) {
     if (a.size() != b.size()) return false;
     for (size_t i = 0; i < a.size(); ++i) {

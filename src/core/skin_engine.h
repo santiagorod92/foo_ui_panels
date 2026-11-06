@@ -188,6 +188,7 @@ private:
     Slot* ensure_slot(const std::string& name, Kind kind, const Placement& p);
 
     bool m_pvars_loaded = false;
+    PvarMap m_pvarsNotified;
     bool m_wizard = false;
     bool m_sizeDue = false;
     std::string first_run_setup(const std::string& dir);
