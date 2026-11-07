@@ -59,7 +59,7 @@ TEST("templates: the JS Panel layout is only offered with JS Panel installed, an
     CHECK(js != nullptr);
     if (!js) return;
     CHECK(js->needs_js_panel);
-    CHECK_EQ(wizard_templates(false).size() + 3, wizard_templates(true).size());
+    CHECK_EQ(wizard_templates(false).size() + 4, wizard_templates(true).size());
     for (const SkinTemplate* t : wizard_templates(false)) CHECK(!t->needs_js_panel);
     CHECK(js->script.find("$panel(NowPlaying,JS Panel,") != std::string::npos);
     CHECK(js->ini.find("panel.NowPlaying.script = js/now_playing.js") != std::string::npos);
@@ -131,9 +131,30 @@ TEST("templates: the playlist and library JS layouts ship their scripts and poin
         CHECK(std::filesystem::is_regular_file(fs_path(dir + "/" + f)));
     const std::string wiz = layout_wizard_script(true);
     CHECK(wiz.find("$eval({%_width% - 104} / 4)") != std::string::npos);
-    CHECK(wiz.find("$eval(2 * {{%_height% - 182} / 2 - 88})") != std::string::npos);
-    CHECK(wiz.find("$eval(2 * {{%_height% - 182} / 2 - 40})") != std::string::npos);
+    CHECK(wiz.find("$eval(2 * {{%_height% - 198} / 3 - 88})") != std::string::npos);
+    CHECK(wiz.find("$eval(2 * {{%_height% - 198} / 3 - 40})") != std::string::npos);
     CHECK(layout_wizard_script(false).find("$eval({%_width% - 88} / 3)") != std::string::npos);
+}
+
+TEST("templates: the cover layout puts a see-through JS overlay on the cover and reads its value") {
+    const SkinTemplate* t = find_skin_template("cover-js");
+    CHECK(t != nullptr);
+    if (!t) return;
+    CHECK(t->needs_js_panel);
+    CHECK(t->script.find("$panel(Cover,Album Art,") != std::string::npos);
+    CHECK(t->script.find("$panel(Overlay,JS Panel,") != std::string::npos);
+    CHECK(t->script.find("$strcmp($getvalue(cover.full),1)") != std::string::npos);
+    TempDir tmp;
+    std::string err;
+    const std::string dir = install_skin_template(*t, tmp.dir, &err);
+    CHECK(err.empty());
+    CHECK(read_file(dir + "/js/cover_overlay.js").find("panelsui.SetValue('cover.full'") != std::string::npos);
+    CHECK(std::filesystem::is_regular_file(fs_path(dir + "/js/lib/palette.js")));
+    SkinConfig cfg;
+    cfg.load(dir);
+    CHECK_EQ(cfg.str("panel.Overlay.script"), std::string("js/cover_overlay.js"));
+    CHECK_EQ(cfg.num("panel.Overlay.transparent", 0), 1);
+    CHECK_EQ(cfg.str("font.Overlay.default"), std::string("Segoe UI, 17, bold"));
 }
 
 TEST("templates: installed as a skin folder, never over an existing one, and lint clean") {

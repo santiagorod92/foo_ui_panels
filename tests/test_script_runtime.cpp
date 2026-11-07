@@ -83,6 +83,16 @@ TEST("runtime: variables — $puts/$get, pvars, $eval with nested $get") {
     CHECK_EQ(r.call("greater", { "2", "2" }), std::string(""));
 }
 
+TEST("runtime: $getvalue reads published values, apart from pvars") {
+    Rig r;
+    r.call("setpvar", { "hover", "pvar" });
+    r.st.published["Hover"] = "js";
+    CHECK_EQ(r.call("getvalue", { "hover" }), std::string("js"));
+    CHECK_EQ(r.call("getpvar", { "hover" }), std::string("pvar"));
+    CHECK_EQ(r.call("get", { "hover" }), std::string("pvar"));
+    CHECK_EQ(r.call("getvalue", { "none" }), std::string(""));
+}
+
 TEST("runtime: colour helpers") {
     Rig r;
     CHECK_EQ(r.call("calculate_blend_target", { "ffffff" }), hex_colorref(0));

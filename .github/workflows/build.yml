@@ -17,6 +17,7 @@ on:
       - 'tools/*.py'
       - 'tools/wclick.c'
       - 'tools/macclick.m'
+      - 'tests/skins/bridge/**'
   pull_request:
     paths-ignore:
       - '**.md'
@@ -32,6 +33,7 @@ on:
       - 'tools/*.py'
       - 'tools/wclick.c'
       - 'tools/macclick.m'
+      - 'tests/skins/bridge/**'
   workflow_dispatch:
 
 permissions:

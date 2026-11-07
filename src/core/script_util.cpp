@@ -68,6 +68,48 @@ bool parse_config_color(const std::string& v, gfx::Color& out) {
     return true;
 }
 
+bool parse_config_font(const std::string& v, ConfigFont& out) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    for (size_t comma; (comma = v.find(',', start)) != std::string::npos; start = comma + 1) parts.push_back(v.substr(start, comma - start));
+    parts.push_back(v.substr(start));
+    for (auto& s : parts) {
+        const size_t a = s.find_first_not_of(" \t"), b = s.find_last_not_of(" \t");
+        s = a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
+    }
+    if (parts[0].empty()) return false;
+    ConfigFont f;
+    f.face = parts[0];
+    for (size_t i = 1; i < parts.size(); ++i) {
+        std::string w = parts[i];
+        for (auto& ch : w) ch = (char)tolower((unsigned char)ch);
+        if (!w.empty() && w.find_first_not_of("0123456789") == std::string::npos) f.px = atoi(w.c_str());
+        else if (w == "bold") f.style |= 1;
+        else if (w == "italic") f.style |= 2;
+        else if (w == "underline") f.style |= 4;
+        else if (!w.empty()) return false;
+    }
+    out = f;
+    return true;
+}
+
+const char* ui_font_kind(int kind) {
+    static const char* const kinds[] = { "default", "tabs", "lists", "playlists", "statusbar", "console" };
+    return kind >= 0 && kind < 6 ? kinds[kind] : nullptr;
+}
+
+std::vector<const char*> ui_colour_roles(int kind) {
+    switch (kind) {
+    case 0: return { "text" };
+    case 1: return { "background" };
+    case 2: return { "highlight" };
+    case 3: return { "selection", "highlight" };
+    case 4: return { "selection_text", "row_text_selected" };
+    case 5: return { "inactive_selection" };
+    default: return {};
+    }
+}
+
 bool find_color(const std::string& spec, const char* key, gfx::Color& out) {
     auto p = spec.find(key);
     if (p == std::string::npos) return false;

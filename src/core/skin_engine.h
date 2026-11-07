@@ -10,6 +10,7 @@
 #include "script_runtime.h"
 #include "script_util.h"
 #include "skin_config.h"
+#include "ui_logic.h"
 #include <vector>
 #include <filesystem>
 #include <map>
@@ -52,7 +53,16 @@ public:
 
     void hide_child_panel(const std::string& name);
 
+    bool panel_command(const std::string& args);
+    std::string panel_name(const void* native) const;
+    bool panel_rect(const std::string& name, gfx::Rect& out) const;
+    bool panel_transparent(const std::string& name) const;
+    bool panel_backdrop(const std::string& name, uint32_t* pargb, int w, int h) const;
+    bool panel_ui_colour(const std::string& name, int kind, gfx::Color& out) const;
+    bool panel_ui_font(const std::string& name, int kind, ConfigFont& out) const;
+
     void render(gfx::Canvas& cv, int width, int height);
+    std::string eval_text(const std::string& expr);
 
     void save_pvars();
 
@@ -111,7 +121,7 @@ public:
 
     void snapshot_canvas(gfx::Canvas& cv, int w, int h);
     bool draw_canvas_snapshot(gfx::Canvas& cv, const ui::ViewHost& host) const;
-    void refresh_bars();
+    void refresh_overlays();
 
     void store_panel_frame(const std::string& name, gfx::ImagePtr frame, const gfx::Rect& bounds);
     gfx::ImagePtr backdrop_for(const gfx::Rect& r, int& originX, int& originY) const;
@@ -125,6 +135,8 @@ public:
     int pvar_int(const std::string& key, int def);
     std::string pvar_str(const std::string& key);
     void set_pvar(const std::string& key, const std::string& value);
+    std::string published_value(const std::string& key) const;
+    void publish_value(const std::string& key, const std::string& value);
 
     std::string read_panel_script(const std::string& name);
     std::string read_panel_script_raw(const std::string& name);
@@ -174,6 +186,8 @@ private:
 
     void load_pvars();
     void hide_unrequested_panels();
+    void notify_state();
+    PvarMap m_stateNotified;
     void dispatch_placement(const Placement& p, int offsetX, int offsetY);
 
     using Kind = PanelKind;
@@ -182,8 +196,10 @@ private:
         std::unique_ptr<ui::View> view;
         std::unique_ptr<ui::ViewHost> host;
         std::unique_ptr<ui::EmbeddedPanel> embedded;
-        void show(bool v) { if (host) host->show(v); if (embedded) embedded->show(v); }
-        void place(const gfx::Rect& r, bool top) { if (host) host->set_bounds(r, top); if (embedded) embedded->set_bounds(r, top); }
+        gfx::Rect rect;
+        bool shown = false;
+        void show(bool v) { shown = v; if (host) host->show(v); if (embedded) embedded->show(v); }
+        void place(const gfx::Rect& r, bool top) { rect = r; if (host) host->set_bounds(r, top); if (embedded) embedded->set_bounds(r, top); }
     };
     Slot* ensure_slot(const std::string& name, Kind kind, const Placement& p);
 
@@ -206,6 +222,8 @@ private:
     std::map<std::string, service_ptr_t<titleformat_object>> m_subcache;
     std::map<std::string, Slot> m_panels;
     std::set<std::string> m_childShown;
+    PanelOverrides m_panelOverrides;
+    std::string m_creatingPanel;
     std::unique_ptr<PopupView> m_popup;
     std::unique_ptr<ui::ViewHost> m_popupHost;
 

@@ -197,3 +197,39 @@ TEST("thumb_size: fits the longer side, keeps the aspect, never upscales") {
     t = thumb_size(0, 300, 600);
     CHECK_EQ(t.w, 0); CHECK_EQ(t.h, 0);
 }
+
+TEST("panel_action: hide, show, toggle, reset") {
+    PanelOverrides o;
+    int x = 1, y = 2, w = 3, h = 4;
+    CHECK(panel_action(o, "HIDE:Cover"));
+    CHECK(!apply_panel_override(o, "Cover", x, y, w, h));
+    CHECK(apply_panel_override(o, "Other", x, y, w, h));
+    CHECK(panel_action(o, "show:'Cover'"));
+    CHECK(o.empty());
+    CHECK(panel_action(o, "TOGGLE:Cover"));
+    CHECK(o["Cover"].hidden);
+    CHECK(panel_action(o, "TOGGLE:Cover"));
+    CHECK(o.empty());
+    CHECK(panel_action(o, "HIDE:Cover"));
+    CHECK(panel_action(o, "RESET:Cover"));
+    CHECK(o.empty());
+    CHECK(!panel_action(o, "HIDE:"));
+    CHECK(!panel_action(o, "FLIP:Cover"));
+    CHECK(!panel_action(o, "Cover"));
+}
+
+TEST("panel_action: move keeps its rect through show and hide") {
+    PanelOverrides o;
+    CHECK(panel_action(o, "MOVE:Js:Panel:10, 20 ,300,40"));
+    int x = 0, y = 0, w = 0, h = 0;
+    CHECK(apply_panel_override(o, "Js:Panel", x, y, w, h));
+    CHECK_EQ(x, 10); CHECK_EQ(y, 20); CHECK_EQ(w, 300); CHECK_EQ(h, 40);
+    CHECK(panel_action(o, "HIDE:Js:Panel"));
+    CHECK(!apply_panel_override(o, "Js:Panel", x, y, w, h));
+    CHECK(panel_action(o, "SHOW:Js:Panel"));
+    CHECK(o.count("Js:Panel") == 1);
+    CHECK(!panel_action(o, "MOVE:Js:10,20,0,40"));
+    CHECK(!panel_action(o, "MOVE:Js:10,20,30"));
+    CHECK(!panel_action(o, "MOVE:Js:10,20,30,40x"));
+    CHECK(!panel_action(o, "MOVE::10,20,30,40"));
+}

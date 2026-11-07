@@ -152,7 +152,7 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     case Kind::Playlist:    s.view = std::make_unique<PlaylistView>(this); opts.double_clicks = true; opts.accept_files = true; break;
     case Kind::Spectrum:    s.view = std::make_unique<Spectrum>(this); opts.render_fps = 60; break;
     case Kind::PeakMeter:   s.view = std::make_unique<PeakMeter>(this); opts.render_fps = 60; break;
-    case Kind::AlbumArt:    s.view = std::make_unique<AlbumArt>(this); break;
+    case Kind::AlbumArt:    s.view = std::make_unique<AlbumArt>(this, name); break;
     case Kind::AlbumList:
         s.view = std::make_unique<AlbumList>(this, p.type.find("Chronflow") != std::string::npos);
         opts.double_clicks = true;
@@ -163,7 +163,9 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     case Kind::Embedded: {
         const char* dui = map_type(p.type);
         if (!dui) return nullptr;
+        m_creatingPanel = name;
         s.embedded = ui::create_embedded_ui_element(*m_main, dui, panel_script(name));
+        m_creatingPanel.clear();
         if (!s.embedded)
             report_once("panel '" + name + "' (" + p.type +
                         "): no installed UI element can host it, left empty");
@@ -183,17 +185,22 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
 }
 
 void SkinEngine::dispatch_placement(const Placement& p, int offsetX, int offsetY) {
-    int x = p.x + offsetX, y = p.y + offsetY;
+    int x = p.x + offsetX, y = p.y + offsetY, w = p.w, h = p.h;
+    if (!apply_panel_override(m_panelOverrides, p.name, x, y, w, h)) {
+        auto it = m_panels.find(p.name);
+        if (it != m_panels.end()) it->second.show(false);
+        return;
+    }
     const bool child = m_childShown.count(p.name) != 0;
     PanelZ z;
     const Kind kind = panel_kind(p.type, &z);
-    const bool top = z == PanelZ::Top || (z == PanelZ::Child && child);
+    const bool fresh = m_panels.find(p.name) == m_panels.end();
+    const bool top = z == PanelZ::Top || (z == PanelZ::Child && child) || (fresh && kind == Kind::Embedded && panel_transparent(p.name));
 
     Slot* s = ensure_slot(p.name, kind, p);
     if (!s) return;
-    int w = p.w, h = p.h;
     if (kind == Kind::Spectrum) {
-        const bool mirror = p.h < m_st.cfg.num("spectrum.mirror_below", 0);
+        const bool mirror = h < m_st.cfg.num("spectrum.mirror_below", 0);
         static_cast<Spectrum*>(s->view.get())->set_mirror(mirror);
         const int grow = m_st.cfg.num("spectrum.grow", 0);
         if (mirror) y += grow;
@@ -213,6 +220,48 @@ void SkinEngine::hide_child_panel(const std::string& name) {
     m_childShown.erase(name);
     auto it = m_panels.find(name);
     if (it != m_panels.end()) it->second.show(false);
+}
+
+bool SkinEngine::panel_command(const std::string& args) {
+    if (!panel_action(m_panelOverrides, args)) return false;
+    repaint_all();
+    return true;
+}
+
+std::string SkinEngine::panel_name(const void* native) const {
+    if (!native) return {};
+    for (auto& [name, s] : m_panels)
+        if (s.embedded && s.embedded->native() == native) return name;
+    return m_creatingPanel;
+}
+
+bool SkinEngine::panel_rect(const std::string& name, gfx::Rect& out) const {
+    auto it = m_panels.find(name);
+    if (it == m_panels.end() || !it->second.shown) return false;
+    out = it->second.rect;
+    return true;
+}
+
+bool SkinEngine::panel_transparent(const std::string& name) const {
+    return !name.empty() && m_st.cfg.num("panel." + name + ".transparent", 0) != 0;
+}
+
+bool SkinEngine::panel_backdrop(const std::string& name, uint32_t* pargb, int w, int h) const {
+    gfx::Rect r;
+    if (!pargb || w <= 0 || h <= 0 || !panel_transparent(name) || !panel_rect(name, r) || r.w <= 0 || r.h <= 0) return false;
+    int ox = 0, oy = 0;
+    gfx::ImagePtr img = backdrop_for(r, ox, oy);
+    if (!img) return false;
+    gfx::Pixels px;
+    px.w = w; px.h = h;
+    px.pargb.assign((size_t)w * h, 0xFF000000u);
+    {
+        auto cv = gfx::pixels_canvas(px, (double)w / r.w);
+        if (!cv) return false;
+        draw_image_region(*cv, *img, r.x - ox, r.y - oy, r.w, r.h);
+    }
+    std::copy(px.pargb.begin(), px.pargb.end(), pargb);
+    return true;
 }
 
 const std::vector<SkinEngine::ScriptProblem>& SkinEngine::script_problems(const std::string& label) const {
@@ -350,8 +399,14 @@ bool SkinEngine::draw_canvas_snapshot(gfx::Canvas& cv, const ui::ViewHost& host)
 }
 
 void SkinEngine::store_panel_frame(const std::string& name, gfx::ImagePtr frame, const gfx::Rect& bounds) {
-    std::lock_guard<std::mutex> lk(m_framesMx);
-    m_frames[name] = PanelFrame{ std::move(frame), bounds };
+    {
+        std::lock_guard<std::mutex> lk(m_framesMx);
+        m_frames[name] = PanelFrame{ std::move(frame), bounds };
+    }
+    for (auto& [other, s] : m_panels)
+        if (s.embedded && s.shown && s.rect.x < bounds.right() && bounds.x < s.rect.right() && s.rect.y < bounds.bottom() &&
+            bounds.y < s.rect.bottom() && panel_transparent(other))
+            s.embedded->invalidate();
 }
 
 gfx::ImagePtr SkinEngine::backdrop_for(const gfx::Rect& r, int& originX, int& originY) const {
@@ -368,9 +423,25 @@ gfx::ImagePtr SkinEngine::backdrop_for(const gfx::Rect& r, int& originX, int& or
     return m_snapshot;
 }
 
-void SkinEngine::refresh_bars() {
-    for (auto& [name, s] : m_panels)
+bool SkinEngine::panel_ui_colour(const std::string& name, int kind, gfx::Color& out) const {
+    for (const char* role : ui_colour_roles(kind))
+        if (configured_color(name.c_str(), role, out)) return true;
+    return (kind == 2 || kind == 3) && theme_color(out);
+}
+
+bool SkinEngine::panel_ui_font(const std::string& name, int kind, ConfigFont& out) const {
+    const char* k = ui_font_kind(kind);
+    if (!k) return false;
+    for (const std::string& key : { "font." + name + "." + k, std::string("font.") + k, std::string("font.default") })
+        if (parse_config_font(m_st.cfg.str(key), out)) return true;
+    return false;
+}
+
+void SkinEngine::refresh_overlays() {
+    for (auto& [name, s] : m_panels) {
         if (s.host && (s.kind == Kind::Seekbar || s.kind == Kind::Volume)) s.host->invalidate();
+        if (s.embedded && s.shown && panel_transparent(name)) s.embedded->invalidate();
+    }
 }
 
 bool SkinEngine::theme_color(gfx::Color& out) const {

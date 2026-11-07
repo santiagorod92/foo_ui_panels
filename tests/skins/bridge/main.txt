@@ -1,0 +1,5 @@
+$drawrect(0,0,%_width%,%_height%,brushcolor-30-60-120 pencolor-null)
+$panel(Probe,JS Panel,20,20,300,160)
+$panel(Other,JS Panel,340,20,200,100)
+$font(Arial,12,bold,255-255-255)
+$alignabs(20,200,520,20,left,top)value $getvalue(bridge.v)

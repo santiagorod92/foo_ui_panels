@@ -1,5 +1,6 @@
 #pragma once
 #include <cstdint>
+#include <map>
 #include <string>
 #include <vector>
 
@@ -58,5 +59,13 @@ std::vector<size_t> cache_victims(const std::vector<CacheItem>& items, size_t to
 
 struct Size2 { int w = 0, h = 0; };
 Size2 thumb_size(int w, int h, int side);
+
+struct PanelOverride {
+    bool hidden = false, moved = false;
+    int x = 0, y = 0, w = 0, h = 0;
+};
+using PanelOverrides = std::map<std::string, PanelOverride>;
+bool panel_action(PanelOverrides& o, const std::string& args);
+bool apply_panel_override(const PanelOverrides& o, const std::string& name, int& x, int& y, int& w, int& h);
 
 }

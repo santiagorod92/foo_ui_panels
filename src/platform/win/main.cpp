@@ -491,7 +491,7 @@ private:
                 self->m_skin.snapshot_canvas(cv, cv.width(), cv.height());
             }
             BitBlt(dc, 0, 0, rc.right, rc.bottom, mem, 0, 0, SRCCOPY);
-            if (self) self->m_skin.refresh_bars();
+            if (self) self->m_skin.refresh_overlays();
             SelectObject(mem, ob); DeleteObject(bmp); DeleteDC(mem);
             EndPaint(wnd, &ps);
             return 0;

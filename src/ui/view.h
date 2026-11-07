@@ -131,6 +131,8 @@ public:
     virtual ~EmbeddedPanel() = default;
     virtual void set_bounds(const gfx::Rect& r, bool to_top) = 0;
     virtual void show(bool visible) = 0;
+    virtual void* native() const = 0;
+    virtual void invalidate() = 0;
 };
 
 std::unique_ptr<ViewHost> create_child_view(MainWindow& root, View* view, const ViewOptions& opts);

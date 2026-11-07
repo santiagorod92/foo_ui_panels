@@ -3,6 +3,40 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.22.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.21.0...v1.22.0) (2026-11-07)
+
+### Highlights
+- **See-through JS Panels**: `panel.<name>.transparent = 1` in a skin's `foo_ui_panels.ini` draws
+  that [JS Panel](https://github.com/santiagorod92/foo_js_panel) over what is beneath it (the
+  skin's background, a Now playing panel, the album cover) instead of its own background, like a
+  pseudo-transparent panel in Columns UI. Its script sees `window.IsTransparent`.
+- **JS Panel scripts follow the skin**: inside Panels UI, `window.GetColourDUI`/`GetFontDUI` (and
+  the CUI ones) return the skin's colours and fonts: the `color.<panel>.<role>` keys the native
+  panels already use, and new `font.<panel>.<kind>` / `font.<kind>` keys (`Segoe UI, 13, bold`).
+- **New layout in the wizard: Cover + JS** (with JS Panel installed): a large album cover with a
+  see-through JS overlay (title, artist, progress); click it to hide the playlist and widen the
+  cover.
+
+### Added
+- **Hide, show and move panels**: button actions `PANEL:HIDE:<name>`, `PANEL:SHOW:<name>`,
+  `PANEL:TOGGLE:<name>`, `PANEL:MOVE:<name>:<x>,<y>,<w>,<h>` and `PANEL:RESET:<name>` (back to
+  where the skin's script puts it). Overrides last until the skin reloads. JS Panel scripts get
+  them as `panelsui.ShowPanel`, `TogglePanel`, `MovePanel`, `ResetPanel` and `GetPanelRect`.
+- **Values from scripts**: a JS Panel script publishes a value with `panelsui.SetValue(name,
+  value)` and the skin reads it with the new `$getvalue(name)`. Nothing is saved, and the skin
+  repaints only when the value changes.
+- **More skin state for scripts**: `panelsui.Eval(expr)` runs titleformat the way the skin does;
+  new fields `%pui_mini_mode%` and `%pui_zoom%` (for skins too); scripts hear
+  `on_panelsui_mini_mode(on)` and `on_panelsui_zoom(percent)`.
+- **Copy Diagnostics** lists each panel's script, which panels are transparent and any `PANEL:`
+  hide or move in effect.
+
+### Fixed
+- A JS Panel script's own top-level code now sees its panel name (`panelsui.PanelName`) right
+  away, so the panel's skin colours, fonts and transparency apply from the first paint.
+
+Needs JS Panel 1.5 or later for the JS side; without it skins work as before.
+
 ## [1.21.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.20.0...v1.21.0) (2026-11-06)
 
 ### Added

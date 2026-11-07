@@ -153,6 +153,7 @@ bool SkinEngine::run_button_action(const std::string& action) {
         }
         return any;
     }
+    if (a.compare(0, 6, "PANEL:") == 0) return panel_command(a.substr(6));
     if (a.compare(0, 12, "PVAR:TOGGLE:") == 0) {
         const std::string key = unquote(a.substr(12));
         if (!key.empty()) {

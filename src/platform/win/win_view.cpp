@@ -454,6 +454,8 @@ public:
                          SWP_NOACTIVATE | (to_top ? 0 : SWP_NOZORDER));
     }
     void show(bool v) override { if (HWND w = m_host.wnd()) ShowWindow(w, v ? SW_SHOW : SW_HIDE); }
+    void* native() const override { return m_host.wnd(); }
+    void invalidate() override { if (HWND w = m_host.wnd()) InvalidateRect(w, nullptr, FALSE); }
 private:
     PanelHost m_host;
 };

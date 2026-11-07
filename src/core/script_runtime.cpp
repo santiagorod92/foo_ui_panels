@@ -103,6 +103,8 @@ const std::vector<ScriptFunction>& script_functions() {
         { "puts", 2, S::Implemented, &R::f_puts, "$puts(name,value)", "Sets a per-paint scratch variable." },
         { "getpvar", 1, S::Implemented, &R::f_getpvar, "$getpvar(name)",
           "A persistent variable (names ignore case)." },
+        { "getvalue", 1, S::Implemented, &R::f_getvalue, "$getvalue(name)",
+          "A value a JS Panel script published with panelsui.SetValue (not saved; names ignore case)." },
         { "setpvar", 2, S::Implemented, &R::f_setpvar, "$setpvar(name,value)", "Sets a persistent variable." },
         { "greater", 2, S::Implemented, &R::f_greater, "$greater(a,b)", "1 if a > b (integers), else nothing." },
         { "fileexists", 1, S::Implemented, &R::f_fileexists, "$fileexists(path)",
@@ -289,6 +291,12 @@ bool ScriptRuntime::f_puts(const ScriptArgs& a, ScriptOut&) {
 bool ScriptRuntime::f_getpvar(const ScriptArgs& a, ScriptOut& out) {
     auto it = m_st.pvars.find(a.str(0));
     if (it != m_st.pvars.end()) out.write(it->second);
+    return true;
+}
+
+bool ScriptRuntime::f_getvalue(const ScriptArgs& a, ScriptOut& out) {
+    auto it = m_st.published.find(a.str(0));
+    if (it != m_st.published.end()) out.write(it->second);
     return true;
 }
 

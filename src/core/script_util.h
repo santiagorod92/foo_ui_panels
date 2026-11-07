@@ -9,6 +9,15 @@ long eval_expr(const std::string& in);
 
 gfx::Color parse_rgb(const char* s);
 bool parse_config_color(const std::string& v, gfx::Color& out);
+
+struct ConfigFont {
+    std::string face;
+    int px = 0;
+    int style = 0;
+};
+bool parse_config_font(const std::string& v, ConfigFont& out);
+const char* ui_font_kind(int kind);
+std::vector<const char*> ui_colour_roles(int kind);
 bool find_color(const std::string& spec, const char* key, gfx::Color& out);
 bool parse_argb(const std::string& s, gfx::Color& out, int& alpha);
 unsigned long parse_hex_colorref(const std::string& s);

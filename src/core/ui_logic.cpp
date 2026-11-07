@@ -1,4 +1,5 @@
 #include "ui_logic.h"
+#include "script_util.h"
 #include <algorithm>
 #include <cctype>
 #include <cmath>
@@ -243,6 +244,55 @@ Size2 thumb_size(int w, int h, int side) {
     if (side <= 0 || (w <= side && h <= side)) return { w, h };
     if (w >= h) return { side, std::max(1, (int)std::lround((double)h * side / w)) };
     return { std::max(1, (int)std::lround((double)w * side / h)), side };
+}
+
+bool panel_action(PanelOverrides& o, const std::string& args) {
+    const size_t c = args.find(':');
+    if (c == std::string::npos) return false;
+    std::string verb = trim(args.substr(0, c));
+    for (auto& ch : verb) ch = (char)toupper((unsigned char)ch);
+    const std::string rest = args.substr(c + 1);
+    if (verb == "MOVE") {
+        const size_t r = rest.rfind(':');
+        if (r == std::string::npos) return false;
+        int x = 0, y = 0, w = 0, h = 0;
+        char tail = 0;
+        if (sscanf(rest.c_str() + r + 1, "%d ,%d ,%d ,%d %c", &x, &y, &w, &h, &tail) != 4 || w <= 0 || h <= 0) return false;
+        const std::string name = unquote(trim(rest.substr(0, r)));
+        if (name.empty()) return false;
+        PanelOverride& p = o[name];
+        p.moved = true;
+        p.x = x; p.y = y; p.w = w; p.h = h;
+        return true;
+    }
+    const std::string name = unquote(trim(rest));
+    if (name.empty()) return false;
+    auto drop_if_plain = [&] {
+        auto it = o.find(name);
+        if (it != o.end() && !it->second.hidden && !it->second.moved) o.erase(it);
+    };
+    if (verb == "SHOW") {
+        auto it = o.find(name);
+        if (it != o.end()) it->second.hidden = false;
+        drop_if_plain();
+        return true;
+    }
+    if (verb == "HIDE") { o[name].hidden = true; return true; }
+    if (verb == "TOGGLE") {
+        PanelOverride& p = o[name];
+        p.hidden = !p.hidden;
+        drop_if_plain();
+        return true;
+    }
+    if (verb == "RESET") { o.erase(name); return true; }
+    return false;
+}
+
+bool apply_panel_override(const PanelOverrides& o, const std::string& name, int& x, int& y, int& w, int& h) {
+    auto it = o.find(name);
+    if (it == o.end()) return true;
+    if (it->second.moved) { x = it->second.x; y = it->second.y; w = it->second.w; h = it->second.h; }
+    return !it->second.hidden;
 }
 
 }

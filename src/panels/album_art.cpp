@@ -63,6 +63,7 @@ void AlbumArt::paint(gfx::Canvas& cv) {
     }
     if (m_prev && alpha < 255) draw_fitted(cv, *m_prev, W, H, 255 - alpha * (m_cur ? 0 : 1));
     if (m_cur) draw_fitted(cv, *m_cur, W, H, std::max(1, alpha));
+    if (m_engine) m_engine->store_panel_frame(m_name, cv.snapshot(gfx::Rect{ 0, 0, W, H }), host()->bounds());
 }
 
 void AlbumArt::on_mouse_up(const ui::MouseEvent& e) {

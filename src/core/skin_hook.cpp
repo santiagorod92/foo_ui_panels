@@ -3,6 +3,7 @@
 #include "image_cache.h"
 #include "diagnostics.h"
 #include "log.h"
+#include "js_panel_api.h"
 #include <cstring>
 
 namespace pui {
@@ -111,6 +112,15 @@ public:
             return true;
         }
         if (eq(name, len, "pui_skin_folder")) { o.write(m_e->m_st.base); return true; }
+        if (eq(name, len, "pui_mini_mode")) {
+            found = m_e->in_mini_mode();
+            if (found) o.write("1");
+            return true;
+        }
+        if (eq(name, len, "pui_zoom")) {
+            o.write(std::to_string(m_e->m_main ? (int)std::lround(m_e->m_main->zoom() * 100) : 100));
+            return true;
+        }
         if (eq(name, len, "pui_profile_folder")) {
             pfc::string8 native;
             try { filesystem::g_get_native_path(core_api::get_profile_path(), native); } catch (...) {}
@@ -225,7 +235,20 @@ void SkinEngine::describe(DiagnosticsInfo& d) const {
     d.skinConfig = !m_st.cfg.empty();
     d.wizard = m_wizard;
     d.miniMode = in_mini_mode();
-    for (const auto& [name, slot] : m_panels) d.panels.emplace_back(name, panel_kind_name(slot.kind));
+    for (const auto& [name, slot] : m_panels) {
+        std::string kind = panel_kind_name(slot.kind);
+        const std::string script = m_st.cfg.str("panel." + name + ".script");
+        if (!script.empty()) kind += ", script " + script;
+        if (panel_transparent(name)) kind += ", transparent";
+        if (auto o = m_panelOverrides.find(name); o != m_panelOverrides.end()) {
+            if (o->second.hidden) kind += ", hidden by PANEL:";
+            if (o->second.moved)
+                kind += ", moved to " + std::to_string(o->second.x) + "," + std::to_string(o->second.y) + "," +
+                        std::to_string(o->second.w) + "x" + std::to_string(o->second.h);
+        }
+        if (!slot.shown) kind += ", not shown";
+        d.panels.emplace_back(name, kind);
+    }
     for (const auto& [label, list] : m_problems) {
         std::vector<std::string> msgs;
         for (const auto& p : list) msgs.push_back(std::string(p.serious ? "" : "(minor) ") + p.text());
@@ -277,6 +300,57 @@ void SkinEngine::render(gfx::Canvas& cv, int width, int height) {
     for (auto& p : m_st.placements) p = remap_panel(p);
     hide_unrequested_panels();
     for (const auto& p : m_st.placements) dispatch_placement(p, 0, 0);
+    notify_state();
+}
+
+void SkinEngine::notify_state() {
+    if (!m_main) return;
+    PvarMap now;
+    now["mini_mode"] = in_mini_mode() ? "1" : "0";
+    now["zoom"] = std::to_string((int)std::lround(m_main->zoom() * 100));
+    const bool first = m_stateNotified.empty();
+    const auto changes = changed_pvars(m_stateNotified, now);
+    m_stateNotified = now;
+    if (first || changes.empty()) return;
+    service_enum_t<js_panel::js_panel_notify_api> e;
+    service_ptr_t<js_panel::js_panel_notify_api> api;
+    while (e.next(api)) {
+        service_ptr_t<js_panel::js_panel_notify_api_v2> v2;
+        if (!api->service_query_t(v2)) continue;
+        for (const auto& [name, value] : changes) v2->state_changed(name.c_str(), value.c_str());
+    }
+}
+
+std::string SkinEngine::eval_text(const std::string& expr) {
+    if (expr.empty() || !m_main) return {};
+    if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
+    titleformat_object::ptr obj;
+    if (!titleformat_compiler::get()->compile(obj, expr.c_str()) || obj.is_empty()) return {};
+    gfx::Pixels px;
+    px.w = px.h = 1;
+    px.pargb.assign(1, 0);
+    auto cv = gfx::pixels_canvas(px);
+    if (!cv) return {};
+    const gfx::Rect r = m_main->client_rect();
+    std::vector<Button> buttons;
+    std::vector<Placement> placements;
+    m_st.capture = &buttons;
+    m_st.capturePlacements = &placements;
+    std::string text;
+    {
+        SkinHook hook(this, *cv, r.w, r.h, metadb_handle_ptr(), -1, -1);
+        DrawString out;
+        hook.runtime().set_text_buffer(&out.buf());
+        bool ran = false;
+        if (playback_control::get()->is_playing())
+            ran = playback_control::get()->playback_format_title(&hook, out, obj, nullptr, playback_control::display_level_all);
+        if (!ran) obj->run(&hook, out, nullptr);
+        text = out.buf();
+        hook.runtime().finish();
+    }
+    m_st.capture = nullptr;
+    m_st.capturePlacements = nullptr;
+    return text;
 }
 
 void SkinEngine::draw_script(gfx::Canvas& cv, int w, int h,

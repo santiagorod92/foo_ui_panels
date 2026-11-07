@@ -81,7 +81,7 @@ Layout wizard…**, or the **Layout wizard…** button in Preferences › Displa
 like the Default UI's *Quick Setup*) offers ready-made layouts — *Playlist and cover*, *Library* (playlists, playlist,
 album art), *Album browser* (cover grid + playlist), *Playlist*, *Now playing* (large cover, synced
 lyrics, spectrum) — each with a screenshot of it. With [JS Panel](#works-with-js-panel) installed it
-also offers *Albums + JS*, *Playlist + JS* and *Library + Navidrome* (marked **JS**). The wizard
+also offers *Albums + JS*, *Playlist + JS*, *Cover + JS* and *Library + Navidrome* (marked **JS**). The wizard
 fits its cards to the window; in a short window they show just the preview and the name (the
 description is in the tooltip). Picking one writes it out as a skin folder of its own
 (`main.txt` + `foo_ui_panels.ini`, plus `js/` for the JS Panel layout, a new folder each time, so
@@ -144,6 +144,7 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 | `font.face_pvar` | Variable holding the face when a script's `$font` names it through a variable. |
 | `font.default` | Face used when none is named (`Tahoma`). |
 | `font.alias.<face>` | Installed face to use when `<face>` isn't installed. |
+| `font.<kind>`, `font.<panel>.<kind>` | Fonts a hosted [JS Panel](#works-with-js-panel) gets from `window.GetFontDUI`/`GetFontCUI`: `Face[, size in px][, bold][, italic][, underline]`, e.g. `Segoe UI, 13, bold`. Kinds: `default`, `tabs`, `lists`, `playlists`, `statusbar`, `console`; the panel-specific key wins, then `font.<kind>`, then `font.default`. No size: the system's. Unset: the system's fonts. |
 
 On macOS the Windows UI faces need no alias: Segoe UI (with its Light, Semilight, Semibold, Bold, Black
 and Italic variants), Tahoma, Verdana, Calibri and Bahnschrift draw with the system font at that weight,
@@ -163,10 +164,11 @@ Consolas and Cascadia with the system's monospaced font.
 | `cover.pvar`, `cover.pattern` | Set this variable to the track folder's cover (`*folder*.*`) before each panel script runs. |
 | `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
 | `panel.<name>.script` | Script for a hosted [JS Panel](#works-with-js-panel) `$panel(<name>,JS Panel,…)`, relative to the skin folder (e.g. `js/now_playing.js`). Unset: JS Panel's own script. |
+| `panel.<name>.transparent` | `1`: that hosted JS Panel is drawn over the skin beneath it instead of its own background (its script sees `window.IsTransparent`). |
 | `action.remap.<action>` | Run another button action instead. |
 | `onboarding.pvars` | First-run flags set to 1 when a popup opens: names, `prefix*`, `!exclusion`. |
 | `pvar.once.<name>` | Set this variable once, then leave it to the user. |
-| `color.<role>`, `color.<panel>.<role>` | Native panels' colours (`r g b`, `r-g-b` or `#rrggbb`); the panel-specific key wins. Panels: `playlist`, `album_list`, `quick_search`, `lyrics`, `seekbar`, `volume`. Roles: `background`, `overlay` (dimming over the wallpaper), `text`, `text_secondary`, `text_dim`, `highlight` (selection; default: the theme accent), `separator`, `row_text`, `row_text_selected` (playlist), `hover`, `placeholder` (album browser), `frame` (quick search). Unset: the built-in dark look. |
+| `color.<role>`, `color.<panel>.<role>` | Native panels' colours (`r g b`, `r-g-b` or `#rrggbb`); the panel-specific key wins. Panels: `playlist`, `album_list`, `quick_search`, `lyrics`, `seekbar`, `volume`. Roles: `background`, `overlay` (dimming over the wallpaper), `text`, `text_secondary`, `text_dim`, `highlight` (selection; default: the theme accent), `separator`, `row_text`, `row_text_selected` (playlist), `hover`, `placeholder` (album browser), `frame` (quick search). Unset: the built-in dark look. A hosted [JS Panel](#works-with-js-panel) gets them from `window.GetColourDUI`/`GetColourCUI` (panel = its `$panel` name): `text`, `background`, `highlight`, `selection` (else `highlight`), `selection_text` (else `row_text_selected`), `inactive_selection`; `highlight` and `selection` default to the theme accent, the rest to the system's colours. |
 
 ## What's implemented
 
@@ -183,7 +185,8 @@ Consolas and Cascadia with the system's monospaced font.
 - The Panels UI script engine: titleformat-driven canvas with `$panel`, `$button`/`$button2`,
   `$imageabs2`, `$drawrect`, `$font` (incl. glow), `$alignabs`, persistent `$setpvar`/`$getpvar`
   variables and the skin's button actions (transport, playback order, window size, popups…).
-  Skins can also read `%pui_skin_folder%` and `%pui_profile_folder%` (the foobar2000 profile folder)
+  Skins can also read `%pui_skin_folder%`, `%pui_profile_folder%` (the foobar2000 profile folder),
+  `%pui_mini_mode%` (`1` in mini mode, false for `$if` otherwise) and `%pui_zoom%` (percent)
   and look files up with `$findfile(pattern)` (Panel Stack Splitter's, `*`/`?` in the file name).
 - Native versions of the panels fooAvA uses: track display (CD case, rating stars), seek bar,
   volume, grouped playlist, spectrum analyser, peak meter, album art, album browser + cover
@@ -253,6 +256,9 @@ Consolas and Cascadia with the system's monospaced font.
   about every skin variable a button or setting changes),
   `WINDOWSIZE:<w>:<h>[:<LEFT|CENTER|RIGHT>:<TOP|CENTER|BOTTOM>]` (resizes the window's client area,
   keeping that corner in place; default top-left),
+  `PANEL:HIDE:<name>`/`PANEL:SHOW:<name>`/`PANEL:TOGGLE:<name>` (hides or shows a `$panel`),
+  `PANEL:MOVE:<name>:<x>,<y>,<w>,<h>` (places it there instead of where the script puts it) and
+  `PANEL:RESET:<name>` (back to the script's place; every override is dropped when the skin reloads),
   `WINDOWSTYLE:hidetitlebar`/`WINDOWSTYLE:showtitlebar` (as `$windowstyle()`),
   `PREFERENCES` (this component's Preferences page), `URL:<address>`, `SKIN:CHOOSE_FOLDER` and
   `SKIN:IMPORT_FCL[:<path>]` (see [Importing a Columns UI layout](#importing-a-columns-ui-layout)).
@@ -309,11 +315,15 @@ own):
 with JavaScript, on Windows and macOS. A skin places one like any other UI element,
 `$panel(<name>,JS Panel,x,y,w,h)`, and `panel.<name>.script` in `foo_ui_panels.ini` picks the
 script it runs, so each JS Panel in a skin runs its own file. With JS Panel installed the layout
-wizard offers three layouts that use it, scripts included in the skin's `js/` folder (right-click
+wizard offers four layouts that use it, scripts included in the skin's `js/` folder (right-click
 any of them › *Edit script…*):
 - *Albums + JS*: the Album browser with a now-playing bar (album cover, title, artist, progress)
   instead of the status bar.
 - *Playlist + JS*: the playlist with that bar.
+- *Cover + JS*: a large album cover with a see-through JS Panel over its bottom (title, artist,
+  progress, in the skin's `font.Overlay.*` / `color.Overlay.*`); clicking it publishes
+  `cover.full`, and the skin's script reads it with `$getvalue` to drop the playlist and widen
+  the cover.
 - *Library + Navidrome*: the Media Library as artists › albums and the Navidrome artists, in two
   JS Panels left of the playlist, plus the bar. Click one of them, then double-click or Enter plays
   and Ctrl+double-click / Ctrl+Enter adds; arrows, Page Up/Down and Home/End move, ←/→ fold and
@@ -322,7 +332,19 @@ empty and the skin's problem list says why.
 
 A JS Panel script can also drive the skin: JS Panel's `panelsui` object reads and writes the skin's
 persistent variables (`$getpvar`, `$setpvar`; the skin repaints) and runs button actions such as
-`MINIMODE:TOGGLE`. That's how an imported Eole switches its views. Actions that replace the skin
+`MINIMODE:TOGGLE`. That's how an imported Eole switches its views. It can also hide, show and move
+the skin's panels (`panelsui.ShowPanel`, `MovePanel`…, the `PANEL:` actions) and read where they are
+(`panelsui.GetPanelRect`). With `panel.<name>.transparent = 1` in `foo_ui_panels.ini` a JS Panel is
+drawn over the skin beneath it (background image, gradient, the cover of a Now playing panel),
+like a pseudo-transparent panel in Columns UI. A JS Panel's `window.GetColourDUI`/`GetFontDUI` (and
+the CUI ones) return the skin's colours and fonts (`color.*`, `font.*` in
+[Skin configuration](#skin-configuration)), so a script follows the skin it's in without editing.
+`panelsui.Eval(expr)` runs titleformat the way the skin does (`$getpvar`, `%_width%`,
+`%pui_mini_mode%`…), and scripts hear `on_panelsui_mini_mode(on)` and `on_panelsui_zoom(percent)`
+when the window enters or leaves mini mode or the zoom changes. For state the skin should show but
+not keep (a hovered item, a loading flag) a script calls `panelsui.SetValue(name, value)` and the
+skin reads it with `$getvalue(name)`: nothing is saved, the skin repaints only when the value
+changes, and every value is dropped when the skin reloads. Actions that replace the skin
 (`SKIN:…`, `WIZARD:…`, `MENU`) run right after the script's call returns, since they replace the
 panel that asked.
 
@@ -361,7 +383,8 @@ The component keeps a log and can put everything a report needs on the clipboard
 2. Make the problem happen again.
 3. Click **Copy Diagnostics** and paste it into the issue. It has the component, foobar2000 and
    OS versions (and the build: x64, ARM64EC, x86 or macOS), the skin folder and main script, its
-   panels, the script problems the engine found, the installed components and the recent log.
+   panels (with each hosted script, which ones are transparent and any `PANEL:` hide/move in
+   effect), the script problems the engine found, the installed components and the recent log.
    Your user name is replaced in paths and your persistent variables' values are left out; read
    it before posting anyway.
 
@@ -560,6 +583,8 @@ VNC input.
 ```sh
 make ui-smoke                              # Wine: deploy, relaunch, skin + window + playback, log checks
 make ui ARGS=solo                          # the same with foo_navidrome moved out of the profile (restored after)
+SIBLING=foo_js_panel make ui ARGS=solo     # ... or without JS Panel
+make ui-bridge / make mac-vm-bridge        # the Panels UI <-> JS Panel bridge, checked by tests/skins/bridge/js/probe.js
 make win11-smoke / make mac-vm-smoke       # the same scenario on real Windows 11 / the macOS VM
 make ui-compare ARGS='smoke'               # all three, step matrix marking where they differ (PARALLEL=1: at once)
 make ui ARGS='restart'                     # graceful close, install build/ DLL, relaunch + play

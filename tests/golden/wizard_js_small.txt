@@ -9,111 +9,127 @@ round_rect 250,100,110,32 6,6 #3a3e48
 font Segoe UI 10 bold
 text "Use my own skin folder..." 28,100,210,32 f29 #ffffff
 text "Close" 250,100,110,32 f29 #ffffff
-round_rect 28,150,174,127 8,8 #22252d
-fill_rect 40,162,150,79 #18191e
-frame_rect 40,162,150,79 #464a56
-fill_rect 40,162,150,7 #3a3e48
-fill_rect 43,171,39,26 #0078d7
-fill_rect 85,169,105,67 #262932
-fill_rect 40,237,150,3 #30333c
-img builtin:wizard/playlist-cover.png 40,162,150,79
-frame_rect 40,162,150,79 #464a56
+round_rect 124,150,126,103 8,8 #22252d
+fill_rect 136,162,102,55 #18191e
+frame_rect 136,162,102,55 #464a56
+fill_rect 136,162,102,4 #3a3e48
+fill_rect 138,168,26,18 #0078d7
+fill_rect 166,166,71,47 #262932
+fill_rect 136,214,102,2 #30333c
+img builtin:wizard/playlist-cover.png 136,162,102,55
+frame_rect 136,162,102,55 #464a56
 font Segoe UI 11 bold
-text "Playlist and cover" 40,249,150,20 f32 #ebeef5
-round_rect 218,150,174,127 8,8 #22252d
-fill_rect 230,162,150,79 #18191e
-frame_rect 230,162,150,79 #464a56
-fill_rect 230,162,150,7 #3a3e48
-fill_rect 230,169,33,67 #2e323e
-fill_rect 263,169,78,67 #262932
-fill_rect 344,171,33,23 #0078d7
-fill_rect 230,237,150,3 #30333c
-img builtin:wizard/library.png 230,162,150,79
-frame_rect 230,162,150,79 #464a56
+text "Playlist and cover" 136,225,102,20 f32 #ebeef5
+round_rect 266,150,126,103 8,8 #22252d
+fill_rect 278,162,102,55 #18191e
+frame_rect 278,162,102,55 #464a56
+fill_rect 278,162,102,4 #3a3e48
+fill_rect 278,166,22,47 #2e323e
+fill_rect 300,166,53,47 #262932
+fill_rect 355,168,22,16 #0078d7
+fill_rect 278,214,102,2 #30333c
+img builtin:wizard/library.png 278,162,102,55
+frame_rect 278,162,102,55 #464a56
 font Segoe UI 11 bold
-text "Library" 230,249,150,20 f32 #ebeef5
-round_rect 408,150,174,127 8,8 #22252d
-fill_rect 420,162,150,79 #18191e
-frame_rect 420,162,150,79 #464a56
-fill_rect 420,162,150,7 #3a3e48
-fill_rect 420,169,90,67 #005faa
-fill_rect 510,169,60,67 #262932
-fill_rect 420,237,150,3 #30333c
-img builtin:wizard/albums.png 420,162,150,79
-frame_rect 420,162,150,79 #464a56
+text "Library" 278,225,102,20 f32 #ebeef5
+round_rect 408,150,126,103 8,8 #22252d
+fill_rect 420,162,102,55 #18191e
+frame_rect 420,162,102,55 #464a56
+fill_rect 420,162,102,4 #3a3e48
+fill_rect 420,166,61,47 #005faa
+fill_rect 481,166,40,47 #262932
+fill_rect 420,214,102,2 #30333c
+img builtin:wizard/albums.png 420,162,102,55
+frame_rect 420,162,102,55 #464a56
 font Segoe UI 11 bold
-text "Album browser" 420,249,150,20 f32 #ebeef5
-round_rect 598,150,174,127 8,8 #22252d
-fill_rect 610,162,150,79 #18191e
-frame_rect 610,162,150,79 #464a56
-fill_rect 610,162,150,7 #3a3e48
-fill_rect 610,169,150,67 #262932
-fill_rect 610,237,150,3 #30333c
-img builtin:wizard/playlist.png 610,162,150,79
-frame_rect 610,162,150,79 #464a56
+text "Album browser" 420,225,102,20 f32 #ebeef5
+round_rect 550,150,126,103 8,8 #22252d
+fill_rect 562,162,102,55 #18191e
+frame_rect 562,162,102,55 #464a56
+fill_rect 562,162,102,4 #3a3e48
+fill_rect 562,166,102,47 #262932
+fill_rect 562,214,102,2 #30333c
+img builtin:wizard/playlist.png 562,162,102,55
+frame_rect 562,162,102,55 #464a56
 font Segoe UI 11 bold
-text "Playlist" 610,249,150,20 f32 #ebeef5
-round_rect 28,293,174,127 8,8 #22252d
-fill_rect 40,305,150,79 #18191e
-frame_rect 40,305,150,79 #464a56
-fill_rect 40,305,150,7 #3a3e48
-fill_rect 43,314,60,44 #0078d7
-fill_rect 107,312,79,50 #463e6e
-fill_rect 40,366,150,13 #009688
-fill_rect 40,380,150,3 #30333c
-img builtin:wizard/now-playing.png 40,305,150,79
-frame_rect 40,305,150,79 #464a56
+text "Playlist" 562,225,102,20 f32 #ebeef5
+round_rect 124,269,126,103 8,8 #22252d
+fill_rect 136,281,102,55 #18191e
+frame_rect 136,281,102,55 #464a56
+fill_rect 136,281,102,4 #3a3e48
+fill_rect 138,287,40,30 #0078d7
+fill_rect 181,286,54,35 #463e6e
+fill_rect 136,323,102,9 #009688
+fill_rect 136,333,102,2 #30333c
+img builtin:wizard/now-playing.png 136,281,102,55
+frame_rect 136,281,102,55 #464a56
 font Segoe UI 11 bold
-text "Now playing" 40,392,150,20 f32 #ebeef5
-round_rect 218,293,174,127 8,8 #22252d
-fill_rect 230,305,150,79 #18191e
-frame_rect 230,305,150,79 #464a56
-fill_rect 230,305,150,7 #3a3e48
-fill_rect 230,312,90,63 #005faa
-fill_rect 320,312,60,63 #262932
-fill_rect 230,375,150,8 #d6a000
-img builtin:wizard/albums-js.png 230,305,150,79
-frame_rect 230,305,150,79 #464a56
-round_rect 346,311,28,16 4,4 #d6a000
+text "Now playing" 136,344,102,20 f32 #ebeef5
+round_rect 266,269,126,103 8,8 #22252d
+fill_rect 278,281,102,55 #18191e
+frame_rect 278,281,102,55 #464a56
+fill_rect 278,281,102,4 #3a3e48
+fill_rect 278,285,61,44 #005faa
+fill_rect 339,285,40,44 #262932
+fill_rect 278,329,102,6 #d6a000
+img builtin:wizard/albums-js.png 278,281,102,55
+frame_rect 278,281,102,55 #464a56
+round_rect 346,287,28,16 4,4 #d6a000
 font Segoe UI 8 bold
-text "JS" 346,312,28,14 f33 #18191e
+text "JS" 346,288,28,14 f33 #18191e
 font Segoe UI 11 bold
-text "Albums + JS" 230,392,150,20 f32 #ebeef5
-round_rect 408,293,174,127 8,8 #22252d
-fill_rect 420,305,150,79 #18191e
-frame_rect 420,305,150,79 #464a56
-fill_rect 420,305,150,7 #3a3e48
-fill_rect 420,312,150,63 #262932
-fill_rect 420,375,150,8 #d6a000
-img builtin:wizard/playlist-js.png 420,305,150,79
-frame_rect 420,305,150,79 #464a56
-round_rect 536,311,28,16 4,4 #d6a000
+text "Albums + JS" 278,344,102,20 f32 #ebeef5
+round_rect 408,269,126,103 8,8 #22252d
+fill_rect 420,281,102,55 #18191e
+frame_rect 420,281,102,55 #464a56
+fill_rect 420,281,102,4 #3a3e48
+fill_rect 420,285,102,44 #262932
+fill_rect 420,329,102,6 #d6a000
+img builtin:wizard/playlist-js.png 420,281,102,55
+frame_rect 420,281,102,55 #464a56
+round_rect 488,287,28,16 4,4 #d6a000
 font Segoe UI 8 bold
-text "JS" 536,312,28,14 f33 #18191e
+text "JS" 488,288,28,14 f33 #18191e
 font Segoe UI 11 bold
-text "Playlist + JS" 420,392,150,20 f32 #ebeef5
-round_rect 598,293,174,127 8,8 #22252d
-fill_rect 610,305,150,79 #18191e
-frame_rect 610,305,150,79 #464a56
-fill_rect 610,305,150,7 #3a3e48
-fill_rect 610,312,36,34 #d6a000
-fill_rect 610,347,36,27 #d6a000
-fill_rect 646,312,114,63 #262932
-fill_rect 610,375,150,8 #d6a000
-img builtin:wizard/library-js.png 610,305,150,79
-frame_rect 610,305,150,79 #464a56
-round_rect 726,311,28,16 4,4 #d6a000
+text "Playlist + JS" 420,344,102,20 f32 #ebeef5
+round_rect 550,269,126,103 8,8 #22252d
+fill_rect 562,281,102,55 #18191e
+frame_rect 562,281,102,55 #464a56
+fill_rect 562,281,102,4 #3a3e48
+fill_rect 562,285,56,47 #0078d7
+fill_rect 562,321,56,11 #d6a000
+fill_rect 618,285,45,47 #262932
+fill_rect 562,333,102,2 #30333c
+img builtin:wizard/cover-js.png 562,281,102,55
+frame_rect 562,281,102,55 #464a56
+round_rect 630,287,28,16 4,4 #d6a000
 font Segoe UI 8 bold
-text "JS" 726,312,28,14 f33 #18191e
+text "JS" 630,288,28,14 f33 #18191e
 font Segoe UI 11 bold
-text "Library + Navidrome" 610,392,150,20 f32 #ebeef5
+text "Cover + JS" 562,344,102,20 f32 #ebeef5
+round_rect 124,388,126,103 8,8 #22252d
+fill_rect 136,400,102,55 #18191e
+frame_rect 136,400,102,55 #464a56
+fill_rect 136,400,102,4 #3a3e48
+fill_rect 136,404,24,24 #d6a000
+fill_rect 136,429,24,19 #d6a000
+fill_rect 160,404,77,44 #262932
+fill_rect 136,448,102,6 #d6a000
+img builtin:wizard/library-js.png 136,400,102,55
+frame_rect 136,400,102,55 #464a56
+round_rect 204,406,28,16 4,4 #d6a000
+font Segoe UI 8 bold
+text "JS" 204,407,28,14 f33 #18191e
+font Segoe UI 11 bold
+text "Library + Navidrome" 136,463,102,20 f32 #ebeef5
 button 28,100,210,32 SKIN:CHOOSE_FOLDER tooltip=Load a skin from a folder
 button 250,100,110,32 WIZARD:CLOSE
-button 28,150,174,127 SKIN:TEMPLATE:playlist-cover tooltip=Album art and track info beside the playlist.
-button 218,150,174,127 SKIN:TEMPLATE:library tooltip=Playlists on the left, the playlist, album art on the right.
-button 408,150,174,127 SKIN:TEMPLATE:albums tooltip=Your albums as a cover grid, the playlist beside it.
-button 598,150,174,127 SKIN:TEMPLATE:playlist tooltip=Just the playlist, with the controls on top.
-button 28,293,174,127 SKIN:TEMPLATE:now-playing tooltip=A large cover, synced lyrics and a spectrum.
-button 218,293,174,127 SKIN:TEMPLATE:albums-js tooltip=The album browser with an editable JS now-playing bar.
-button 408,293,174,127 SKIN:TEMPLATE:playlist-js tooltip=The playlist with a JS now-playing bar and the album cover.
-button 598,293,174,127 SKIN:TEMPLATE:library-js tooltip=Library and Navidrome artists in two JS Panels, beside the playlist.
+button 124,150,126,103 SKIN:TEMPLATE:playlist-cover tooltip=Album art and track info beside the playlist.
+button 266,150,126,103 SKIN:TEMPLATE:library tooltip=Playlists on the left, the playlist, album art on the right.
+button 408,150,126,103 SKIN:TEMPLATE:albums tooltip=Your albums as a cover grid, the playlist beside it.
+button 550,150,126,103 SKIN:TEMPLATE:playlist tooltip=Just the playlist, with the controls on top.
+button 124,269,126,103 SKIN:TEMPLATE:now-playing tooltip=A large cover, synced lyrics and a spectrum.
+button 266,269,126,103 SKIN:TEMPLATE:albums-js tooltip=The album browser with an editable JS now-playing bar.
+button 408,269,126,103 SKIN:TEMPLATE:playlist-js tooltip=The playlist with a JS now-playing bar and the album cover.
+button 550,269,126,103 SKIN:TEMPLATE:cover-js tooltip=A large cover with a see-through JS overlay; click it to hide the playlist.
+button 124,388,126,103 SKIN:TEMPLATE:library-js tooltip=Library and Navidrome artists in two JS Panels, beside the playlist.

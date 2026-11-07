@@ -43,6 +43,29 @@ TEST("parse_config_color: the ini formats") {
     CHECK(!parse_config_color("   ", c));
 }
 
+TEST("parse_config_font: face, size and styles") {
+    ConfigFont f;
+    CHECK(parse_config_font(" Segoe UI , 13, Bold italic", f) == false);
+    CHECK(parse_config_font(" Segoe UI , 13, Bold, italic", f));
+    CHECK_EQ(f.face, std::string("Segoe UI")); CHECK_EQ(f.px, 13); CHECK_EQ(f.style, 3);
+    CHECK(parse_config_font("Tahoma", f));
+    CHECK_EQ(f.face, std::string("Tahoma")); CHECK_EQ(f.px, 0); CHECK_EQ(f.style, 0);
+    CHECK(parse_config_font("Menlo,underline", f) && f.style == 4 && f.px == 0);
+    CHECK(!parse_config_font("", f));
+    CHECK(!parse_config_font(" , 12", f));
+    CHECK(!parse_config_font("Arial, huge", f));
+    CHECK_EQ(f.face, std::string("Menlo"));
+}
+
+TEST("ui_font_kind and ui_colour_roles: Default UI kinds") {
+    CHECK_EQ(std::string(ui_font_kind(0)), std::string("default"));
+    CHECK_EQ(std::string(ui_font_kind(5)), std::string("console"));
+    CHECK(ui_font_kind(6) == nullptr && ui_font_kind(-1) == nullptr);
+    CHECK_EQ(ui_colour_roles(3).size(), (size_t)2);
+    CHECK_EQ(std::string(ui_colour_roles(3)[1]), std::string("highlight"));
+    CHECK(ui_colour_roles(6).empty());
+}
+
 TEST("find_color: present, null (transparent), absent") {
     gfx::Color c;
     CHECK(find_color("brushcolor-10-20-30 pencolor-null", "brushcolor", c) && same(c, 10, 20, 30));

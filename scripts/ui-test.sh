@@ -18,9 +18,16 @@ Scenarios
   smoke [ARTIFACT]   turn verbose logging on, deploy, relaunch; assert the session banner, the
                      skin load, the main window, start playback, then no crash report, no ERROR
                      line, screenshot; the skin's own warnings are recorded as notes
-  solo [ARTIFACT]    the sister component (SIBLING, default foo_navidrome) moved out of
-                     user-components for the run (restored after): the smoke steps, plus the
-                     session banner must report navidrome=no; Panels UI must work without it
+  solo [ARTIFACT]    the sister component (SIBLING, default foo_navidrome; or foo_js_panel) moved
+                     out of user-components for the run (restored after): the smoke steps, plus
+                     the session banner must report navidrome=no (js_panel=no); Panels UI must
+                     work without it
+  bridge [ARTIFACT]  the Panels UI <-> JS Panel bridge (JS Panel must be installed): the skin
+                     tests/skins/bridge copied into the profile's foo_ui_panels-skins and made the
+                     active skin, both components' verbose logging on (all restored after); its
+                     js/probe.js checks panel name, transparency, skin colours and fonts, rects,
+                     Eval, published values, JSPANEL: messages, PANEL: hide/move/reset and the
+                     mini mode events, and must log "bridge: result ok" to foo_js_panel.log
 
 ARTIFACT: what gets deployed first. wine, win11: a DLL (default build/foo_ui_panels.dll; win11
 also re-copies skins/$SKIN like make win11-skin); mac: a .component (default
@@ -46,6 +53,9 @@ set -uo pipefail
 REPO="$(cd "$(dirname "$0")/.." && pwd)"
 SHOTS="$REPO/build/ui-test"
 VERBOSE_KEY='cfg_var.2F6C9A41-7D3E-4B58-91A7-0C5E3B82D416'
+JS_VERBOSE_KEY='cfg_var.BBE2ECF8-9204-42D9-A7F1-0D5293B95080'
+SKINS_ROOT_KEY='cfg_var.1F8A6C2E-4D9B-4E71-8C3A-5B2D9E0F6A17'
+ACTIVE_SKIN_KEY='cfg_var.2A7E4C11-8B3F-4D6A-9E52-1C8F3A6B0D24'
 SIBLING="${SIBLING:-foo_navidrome}"
 
 CLEANUPS=()
@@ -122,6 +132,13 @@ wine_log_size() { wc -c < "$LOG" 2>/dev/null || echo 0; }
 wine_log_from() { tail -c +"$1" "$LOG" 2>/dev/null || true; }
 wine_crash_count() { ls "$PROFILE/crash reports"/*.txt 2>/dev/null | wc -l; }
 wine_cfg_sql() { wine_stop; sqlite3 "$PROFILE/config.sqlite" "$1"; }
+wine_skin_put() {
+  local root="$PROFILE/foo_ui_panels-skins"
+  mkdir -p "$root"; rm -rf "${root:?}/$2"; cp -R "$1" "$root/$2"
+  WINEPREFIX="$PREFIX" WINEDEBUG=-all winepath -w "$root" 2>/dev/null | tr -d '\r'
+}
+wine_skin_drop() { rm -rf "$PROFILE/foo_ui_panels-skins/${1:?}"; }
+wine_cat() { cat "$PROFILE/$1" 2>/dev/null || true; }
 wine_shot() { local g; mkdir -p "$(dirname "$1")"; g="$(geom)" || { echo "no foobar2000 window"; return 1; }; grim -g "$g" "$1" && echo "$1"; }
 wine_pvars() {
   python3 - "$@" <<'PY'
@@ -185,6 +202,22 @@ win11_sibling_enable() {
     if ((Test-Path \$off) -and -not (Test-Path \$on)) { Move-Item \$off \$on }" >/dev/null 2>&1 || true
 }
 win11_shot() { mkdir -p "$(dirname "$1")"; "$WVM" shot "$1" >/dev/null && echo "$1"; }
+win11_skin_put() {
+  local stage; stage="$(mktemp -d)"
+  cp -R "$1" "$stage/$2"
+  "$WVM" ps "New-Item -ItemType Directory -Force \"\$env:APPDATA\\foobar2000-v2\\foo_ui_panels-skins\" | Out-Null" >/dev/null 2>&1
+  "$WVM" push "$stage/$2" "$GUEST_PROFILE/foo_ui_panels-skins" >/dev/null
+  rm -rf "$stage"
+  "$WVM" ps "\"\$env:APPDATA\\foobar2000-v2\\foo_ui_panels-skins\"" | tr -d '\r'
+}
+win11_skin_drop() {
+  "$WVM" ps "Remove-Item -Recurse -Force \"\$env:APPDATA\\foobar2000-v2\\foo_ui_panels-skins\\${1:?}\" -ErrorAction SilentlyContinue" >/dev/null 2>&1 || true
+}
+win11_cat() {
+  local f; f="$(basename "$1")"
+  rm -f "$LOG_CACHE/$f"; "$WVM" pull "$GUEST_PROFILE/$1" "$LOG_CACHE" >/dev/null 2>&1 || true
+  cat "$LOG_CACHE/$f" 2>/dev/null || true
+}
 
 mac_init() {
   local vm="$(cd "$REPO/.." && pwd)/macos-devbox/mvm"
@@ -238,6 +271,12 @@ mac_play() {
 mac_log_size() { g "wc -c < $LOG 2>/dev/null || echo 0" | tr -d ' '; }
 mac_log_from() { g "tail -c +$1 $LOG 2>/dev/null" || true; }
 mac_crash_count() { g 'ls ~/Library/Logs/DiagnosticReports 2>/dev/null | grep -c "^foobar2000" || true'; }
+mac_skin_put() {
+  tar -C "$1" -cf - . | g "d=~/Library/foobar2000-v2/foo_ui_panels-skins/$2; rm -rf \"\$d\" && mkdir -p \"\$d\" && tar xf - -C \"\$d\""
+  g 'echo "$HOME/Library/foobar2000-v2/foo_ui_panels-skins"'
+}
+mac_skin_drop() { g "rm -rf ~/Library/foobar2000-v2/foo_ui_panels-skins/${1:?}"; }
+mac_cat() { g "cat ~/Library/foobar2000-v2/$1 2>/dev/null" || true; }
 mac_cfg_sql() { mac_stop; g "sqlite3 $GUEST_CFG \"$1\""; }
 mac_sibling_disable() {
   mac_stop
@@ -290,7 +329,59 @@ scenario_solo() {
     say "local tracks in the active playlist (a $SIBLING track can't play without it)"
     d local_tracks
   fi
-  smoke_steps 'navidrome=no'
+  smoke_steps "${SIBLING#foo_}=no"
+}
+
+sqlq() { printf '%s' "$1" | sed "s/'/''/g"; }
+keep_cfg() {
+  local table="$1" key="$2" n v
+  n="$(d cfg_sql "SELECT count(*) FROM $table WHERE name='$key';" | tr -d '\r ')"
+  if [ "$n" = 1 ]; then
+    v="$(d cfg_sql "SELECT value FROM $table WHERE name='$key';" | tr -d '\r')"
+    on_exit "$(printf 'd cfg_sql %q' "INSERT OR REPLACE INTO $table VALUES ('$key', '$(sqlq "$v")');")"
+  else
+    on_exit "$(printf 'd cfg_sql %q' "DELETE FROM $table WHERE name='$key';")"
+  fi
+}
+
+scenario_bridge() {
+  local name=pui-bridge-test root js0 js
+  d deploy "${1:-}"
+  say "bridge skin $name, verbose logging on (restored on exit)"
+  root="$(d skin_put "$REPO/tests/skins/bridge" "$name" | tail -1)"
+  [ -n "$root" ] || fail "copied the bridge skin — no skins folder came back"
+  on_exit "d skin_drop '$name'"
+  keep_cfg configStrings "$SKINS_ROOT_KEY"
+  keep_cfg configStrings "$ACTIVE_SKIN_KEY"
+  keep_cfg configInts "$JS_VERBOSE_KEY"
+  d cfg_sql "INSERT OR REPLACE INTO configStrings VALUES ('$SKINS_ROOT_KEY', '$(sqlq "$root")');
+             INSERT OR REPLACE INTO configStrings VALUES ('$ACTIVE_SKIN_KEY', '$name');
+             INSERT OR REPLACE INTO configInts VALUES ('$JS_VERBOSE_KEY', 1);
+             INSERT OR REPLACE INTO configInts VALUES ('$VERBOSE_KEY', 1);"
+  js0="$(d cat foo_js_panel.log | wc -c | tr -d ' ')"
+  say "relaunch foobar2000"
+  d stop
+  mark; SESSION_MARK="$MARK"
+  CRASHES0="$(d crash_count)"
+  d start
+  running || fail "foobar2000 started — it didn't"
+  expect 'NOTE +env .*foo_ui_panels .*js_panel=yes' 30 "session banner, JS Panel installed"
+  expect "NOTE +skin .*loading skin .*$name" 20 "bridge skin loading"
+  local deadline=$(( SECONDS + 40 ))
+  until js="$(d cat foo_js_panel.log | tail -c +"$(( js0 + 1 ))" | grep -E 'bridge: result' | tail -1)"; [ -n "$js" ]; do
+    [ "$SECONDS" -lt "$deadline" ] || fail "probe.js result — no 'bridge: result' in foo_js_panel.log within 40s"
+    running || fail "foobar2000 exited while the probe ran — crashed?"
+    sleep 2
+  done
+  case "$js" in *'bridge: result ok'*) ok "probe.js: every bridge check passed" ;; *) fail "probe.js: ${js#*bridge: result }" ;; esac
+  running || fail "foobar2000 still running"
+  ok "foobar2000 still running"
+  [ "$(d crash_count)" = "$CRASHES0" ] && ok "no new crash report" || fail "no new crash report — foobar2000 wrote one"
+  MARK="$SESSION_MARK"
+  local errs; errs="$(since_mark | grep -cE '^[0-9:.]+ +ERROR ' || true)"
+  [ "${errs:-0}" = 0 ] && ok "no ERROR lines in the log" \
+    || { since_mark | grep -E '^[0-9:.]+ +ERROR ' | tail -5; fail "no ERROR lines in the log — found $errs"; }
+  d shot "$SHOTS/$PLATFORM-bridge-$(date +%Y%m%d-%H%M%S).png" >/dev/null && ok "screenshot"
 }
 
 smoke_steps() {
@@ -387,7 +478,7 @@ case "$PLATFORM" in
 esac
 CMD="${1:-}"; shift || true
 case "$CMD" in
-  smoke|solo) "scenario_$CMD" "$@"; say "$PLATFORM $CMD passed" ;;
+  smoke|solo|bridge) "scenario_$CMD" "$@"; say "$PLATFORM $CMD passed" ;;
   log)     d log_from 1 | tail -n "${1:-50}" ;;
   shot)    d shot "${1:-$SHOTS/$PLATFORM-$(date +%H%M%S).png}" ;;
   click)   [ "$PLATFORM" = wine ] || fail "click is wine only (use wvm/mvm click)"; wclick "$@" ;;

@@ -247,7 +247,7 @@ void SkinEngine::reload_skin() {
     set_main_window(w);
     m_reported.clear(); m_st.imagesChecked.clear(); m_problems.clear();
     m_evalcache.clear(); m_subcache.clear(); m_st.tfvars.clear();
-    m_st.buttons.clear(); m_st.placements.clear(); m_childShown.clear();
+    m_st.buttons.clear(); m_st.placements.clear(); m_childShown.clear(); m_panelOverrides.clear(); m_stateNotified.clear(); m_st.published.clear();
     load_skin(resolve_skin_dir());
     repaint_all();
 }
@@ -337,6 +337,24 @@ void SkinEngine::set_pvar(const std::string& key, const std::string& value) {
     if (!m_pvars_loaded) { load_pvars(); m_pvars_loaded = true; }
     m_st.pvars[key] = value;
     save_pvars();
+}
+
+std::string SkinEngine::published_value(const std::string& key) const {
+    auto it = m_st.published.find(key);
+    return it != m_st.published.end() ? it->second : std::string();
+}
+
+void SkinEngine::publish_value(const std::string& key, const std::string& value) {
+    if (key.empty()) return;
+    auto it = m_st.published.find(key);
+    if (value.empty()) {
+        if (it == m_st.published.end()) return;
+        m_st.published.erase(it);
+    } else {
+        if (it != m_st.published.end() && it->second == value) return;
+        m_st.published[key] = value;
+    }
+    repaint_all();
 }
 
 void SkinEngine::complete_onboarding() {

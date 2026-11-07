@@ -16,8 +16,17 @@ public:
     virtual void variable_changed(const char* name, const char* value) = 0;
 };
 
+class NOVTABLE js_panel_notify_api_v2 : public js_panel_notify_api {
+    FB2K_MAKE_SERVICE_INTERFACE(js_panel_notify_api_v2, js_panel_notify_api);
+public:
+    virtual void state_changed(const char* name, const char* value) = 0;
+};
+
 inline const GUID js_panel_notify_api::class_guid =
     { 0x91029014, 0x7430, 0x4bc7, { 0xb0, 0x6e, 0xc4, 0xdb, 0x71, 0x53, 0xb0, 0x8c } };
+
+inline const GUID js_panel_notify_api_v2::class_guid =
+    { 0x70b866f9, 0x1fe6, 0x4ff4, { 0xbe, 0xf5, 0xa7, 0x45, 0xf2, 0x07, 0x2b, 0x55 } };
 
 #ifdef _WIN32
 inline ui_element_config::ptr make_config(const char* scriptPath) {

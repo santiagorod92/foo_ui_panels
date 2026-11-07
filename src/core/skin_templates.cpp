@@ -566,6 +566,59 @@ load();
 )JSNDA";
 }
 
+const char* cover_overlay_js() {
+    return R"JSCOV(include('lib/palette.js');
+
+const tf = {
+    title: fb.TitleFormat('%title%'),
+    info: fb.TitleFormat('[%artist%][  ·  %album%]'),
+};
+let hover = false;
+
+function format_time(s) {
+    s = Math.max(0, Math.floor(s));
+    return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+}
+
+function full() { return panelsui.GetValue('cover.full') === '1'; }
+
+function on_paint(gr) {
+    const w = window.Width, h = window.Height;
+    if (!window.IsTransparent) gr.FillSolidRect(0, 0, w, h, palette.panel);
+    for (let y = 0; y < h; y++) {
+        const alpha = Math.round(210 * (y + 1) / h);
+        gr.FillSolidRect(0, y, w, 1, ((alpha << 24) | 0x0c0d10) >>> 0);
+    }
+    const text = window.GetColourDUI(0), accent = window.GetColourDUI(2);
+    const big = window.GetFontDUI(0), small = window.GetFontDUI(2);
+    const hint = hover ? (full() ? 'Click: show the playlist' : 'Click: cover only') : '';
+    if (hint) gr.GdiDrawText(hint, small, palette.secondary, 14, 8, w - 28, 18, DT_RIGHT | LINE);
+    if (!fb.IsPlaying) {
+        gr.GdiDrawText('Nothing playing', big, text, 14, h - 50, w - 28, 24, LINE);
+        return;
+    }
+    gr.GdiDrawText(tf.title.Eval(), big, text, 14, h - 62, w - 28, 24, LINE);
+    gr.GdiDrawText(tf.info.Eval(), small, palette.secondary, 14, h - 38, w - 120, 18, LINE);
+    const pos = fb.PlaybackTime, len = fb.PlaybackLength;
+    gr.GdiDrawText(format_time(pos) + (len > 0 ? ' / ' + format_time(len) : ''), small, palette.secondary, w - 120, h - 38, 106, 18, DT_RIGHT | LINE);
+    gr.FillSolidRect(14, h - 14, w - 28, 3, 0x40ffffff);
+    if (len > 0) gr.FillSolidRect(14, h - 14, Math.max(3, Math.round((w - 28) * pos / len)), 3, accent);
+}
+
+function on_mouse_move() { if (!hover) { hover = true; window.Repaint(); } }
+function on_mouse_leave() { hover = false; window.Repaint(); }
+function on_mouse_lbtn_up() {
+    panelsui.SetValue('cover.full', full() ? '' : '1');
+    window.Repaint();
+}
+
+function on_playback_new_track() { window.Repaint(); }
+function on_playback_stop() { window.Repaint(); }
+function on_playback_pause() { window.Repaint(); }
+function on_playback_time() { window.Repaint(); }
+)JSCOV";
+}
+
 std::string js_now_playing_bar() {
     return "\n// ---- Now playing: a JS Panel running js/now_playing.js (foo_ui_panels.ini: panel.NowPlaying.script).\n"
            "// Right-click it › Edit script… to change it.\n"
@@ -657,6 +710,23 @@ std::vector<SkinTemplate> build() {
             "\n// ---- The playlist: double-click or Enter plays, Delete removes, drop files to add -------------\n"
             "$panel(Playlist,Single Column Playlist,0,40,%_width%,$eval(%_height% - 97))\n" + js_now_playing_bar(),
         ini("Playlist + JS Panel") + barIni, true, jsFiles({}) });
+
+    const std::string CW = "$if($strcmp($getvalue(cover.full),1),%_width%,$eval(%_width% * 11 / 20))";
+    t.push_back({ "cover-js", N_("Cover + JS"),
+        N_("A large cover with a see-through JS overlay; click it to hide the playlist."),
+        { { 0, 0, 100, 9, Part::Toolbar }, { 0, 9, 55, 86, Part::Cover }, { 0, 74, 55, 21, Part::Script },
+          { 55, 9, 45, 86, Part::Playlist }, { 0, 95, 100, 5, Part::Status } },
+        std::string(header("Cover + JS Panel")) + toolbar() +
+            "\n// ---- Left: the album cover with a see-through JS Panel over it (js/cover_overlay.js). Clicking\n"
+            "// it sets the value cover.full, which this script reads with getvalue() to drop the playlist. ----\n"
+            "$panel(Cover,Album Art,0,40," + CW + ",$eval(%_height% - 62))\n"
+            "$panel(Overlay,JS Panel,0,$eval(%_height% - 106)," + CW + ",84)\n"
+            "$if($strcmp($getvalue(cover.full),1),,$drawrect($eval(%_width% * 11 / 20),40,1,$eval(%_height% - 62),brushcolor-45-48-56 pencolor-null)"
+            "$panel(Playlist,Single Column Playlist,$eval(%_width% * 11 / 20 + 1),40,$eval(%_width% - %_width% * 11 / 20 - 1),$eval(%_height% - 62)))\n" +
+            status(),
+        ini("Cover + JS Panel") + "panel.Overlay.script = js/cover_overlay.js\npanel.Overlay.transparent = 1\n"
+            "color.Overlay.text = 245 247 250\nfont.Overlay.default = Segoe UI, 17, bold\nfont.Overlay.lists = Segoe UI, 12\n",
+        true, { { "js/cover_overlay.js", cover_overlay_js() }, { "js/lib/palette.js", palette_js() } } });
 
     t.push_back({ "library-js", N_("Library + Navidrome"),
         N_("Library and Navidrome artists in two JS Panels, beside the playlist."),

@@ -407,6 +407,8 @@ public:
         if (to_top && v.superview) { NSView* sv = v.superview; [sv addSubview:v positioned:NSWindowAbove relativeTo:nil]; }
     }
     void show(bool v) override { m_vc.view.hidden = !v; }
+    void* native() const override { return (__bridge void*)m_vc.view; }
+    void invalidate() override { m_vc.view.needsDisplay = YES; }
 private:
     NSViewController* m_vc;
 };

@@ -65,7 +65,7 @@ public:
         cv.fill_rect(pui::gfx::Rect{ 0, 0, w, h }, pui::gfx::Color());
         m_skin.render(cv, w, h);
         m_skin.snapshot_canvas(cv, w, h);
-        m_skin.refresh_bars();
+        m_skin.refresh_overlays();
     }
     void on_mouse_down(const pui::ui::MouseEvent& e) override {
         if (e.button != pui::ui::MouseButton::Left) return;

@@ -16,6 +16,7 @@ pixels; colours are `r-g-b` unless noted.
 | `$get(name)` | yes | A $puts value (replayed, so a stored draw command runs), else the pvar of that name. |
 | `$puts(name,value)` | yes | Sets a per-paint scratch variable. |
 | `$getpvar(name)` | yes | A persistent variable (names ignore case). |
+| `$getvalue(name)` | yes | A value a JS Panel script published with panelsui.SetValue (not saved; names ignore case). |
 | `$setpvar(name,value)` | yes | Sets a persistent variable. |
 | `$greater(a,b)` | yes | 1 if a > b (integers), else nothing. |
 | `$fileexists(path)` | yes | 1 if the file exists (relative to the skin folder). |

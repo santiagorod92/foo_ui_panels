@@ -75,6 +75,18 @@ anything repo-specific stays in the repo's own sections.
   UI calls `notify(name, info)` for a `JSPANEL:<name>[:<info>]` action and
   `variable_changed(name, value)` from `save_pvars` for each changed skin variable (not the `_`
   ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
+  `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`; sent after a render
+  that changed them) becomes `on_panelsui_mini_mode` / `on_panelsui_zoom`.
+- **Script → skin panels:** `panels_ui_api_v2` (queried from the v1 service) names a hosted JS
+  Panel's slot from its native view (HWND / NSView), gives panel rects and, for a
+  `panel.<name>.transparent = 1` panel, the skin pixels beneath it (`get_backdrop`, PARGB into the
+  caller's buffer, so no allocation crosses the DLLs), the skin's colours and fonts for
+  `window.GetColour*`/`GetFont*` (`get_colour`/`get_font`, Default UI kind numbers) and
+  `eval` (titleformat through the skin's hook, drawing into a throwaway canvas), and
+  `get_value`/`set_value` (unsaved values the skin reads with `$getvalue`; fb2k's own `$get` never
+  reaches the hook). While Panels UI creates an embedded panel, `panel_name` answers with that
+  panel's name, so a script's top-level code already sees `panelsui.PanelName`.
+  `panelsui.ShowPanel`/`MovePanel`/… are `PANEL:` actions sent through `run_action`.
 - **Changing a contract:** a change to a contract header (GUID, vtable order, sink signatures)
   lands in both repos in the same round, and the vendored copy stays byte-identical to the
   original. A new interface also gets a bullet in foo_navidrome's cross-compatibility list.
@@ -234,7 +246,14 @@ anything repo-specific stays in the repo's own sections.
   splitter tree. Hosted panels live in one name-keyed registry (`SkinEngine::Slot`).
 - Transparent panels show what's beneath them from engine-kept frames, never by reading
   screen/sibling pixels: `snapshot_canvas`/`draw_canvas_snapshot` (master canvas) and
-  `store_panel_frame`/`backdrop_for` (a panel's last frame, e.g. spectrum over the cover).
+  `store_panel_frame`/`backdrop_for` (a panel's last frame, e.g. spectrum over the cover; Track
+  Display and Album Art store theirs, and storing one repaints the transparent JS Panels over it).
+- Hosted JS Panels see the skin through `panels_ui_api_v2` (Shared conventions › Script → skin
+  panels). Gotchas: fb2k's own `$get`/`$puts` never reach our hook, so values a script publishes
+  are read with `$getvalue`; every hook function counts as true in `$if` (the hook sets `found`
+  whenever it knows the function), so templates compare with `$strcmp`; Win32 keeps the
+  first-created sibling on top (macOS the last added), so a transparent embedded panel is raised on
+  its first placement; `PANEL:` overrides and published values are dropped on skin reload.
 - **Columns UI import:** `fcl_import.cpp` (SDK-free; `SKIN:IMPORT_FCL[:path]`, *View › Panels UI ›
   Import Columns UI layout…*, `skin_lint --import-fcl`, `make fcl-skin`). `.fcl` format from Columns
   UI's `fcl.cpp`/`splitter_*.cpp`: header GUID, panel list, datasets; the layout dataset's presets;
@@ -376,15 +395,16 @@ anything repo-specific stays in the repo's own sections.
   `builtin_test_skin()` + actions `SKIN:CHOOSE_FOLDER`/`PREFERENCES`/`WIZARD:OPEN`; layout wizard =
   `layout_wizard_script(js_panel_installed())` (engine `m_wizard` mode, `SKIN:TEMPLATE:<id>` writes the layout to
   `layout_skins_dir()`), shown once on first run (`first_run_setup`). A template with
-  `needs_js_panel` (`albums-js`, `playlist-js`, `library-js`) is only listed when foo_js_panel is
-  installed; its `files` (the JS, raw strings `R"JSNOW(`/`JSPAL`/`JSLIB`/`JSNDA` that foo_js_panel's
+  `needs_js_panel` (`albums-js`, `playlist-js`, `cover-js`, `library-js`) is only listed when foo_js_panel is
+  installed; its `files` (the JS, raw strings `R"JSNOW(`/`JSPAL`/`JSLIB`/`JSNDA`/`JSCOV` that foo_js_panel's
   tests extract and run) are written next to `main.txt`. Past 6 layouts the wizard uses 4 columns;
   cards fit both the width and the height, and below 180 px they drop the summary (still the
   tooltip). Names/summaries must fit the narrowest card (a test models their width per language).
   Don't use `$puts`/`$get` for that geometry: `$button2` state images are evaluated later, without
   the script's variables, so the card backgrounds vanished.
   Their previews are composites (see foo_js_panel's `tools/render_script.mm`), not
-  `wizard-previews.sh` captures.
+  `wizard-previews.sh` captures; `cover-js.png` is a macOS VM capture of the layout playing a
+  generated demo album (WAVs with RIFF INFO tags and a drawn `cover.png`, no real music or art).
 - `src/platform/win/` — `main.cpp` (`user_interface`, main window = `ui::MainWindow`, menus,
   keyboard, `$settray` icon via `tray.h`), `win_view.cpp` (`WinViewHost` child HWNDs + every `ui::` service),
   `gdi_canvas.{h,cpp}` (GDI + GDI+), `panel_host` (hosts a DUI `ui_element` by name),
@@ -421,10 +441,13 @@ anything repo-specific stays in the repo's own sections.
   `loading skin`, `main window created` (logged on both platforms), playback (`playback  new track`, INFO from the skin engine's play callback), no crash/ERROR,
   screenshot; `solo` moves foo_navidrome out of the profile (`<profile>/.solo-off-foo_navidrome`,
   restored on exit through the `on_exit` stack) and runs the smoke steps plus `navidrome=no` in
-  the session banner (`session_summary()` reports whether foo_navidrome is installed);
-  `compare` prints a step matrix across platforms. Wine helpers kept: `click`
-  (`tools/wclick.c`), `shot`, `pvars`, `restart`. Make: `ui`, `ui-smoke`, `ui-compare`,
-  `win11-smoke`, `mac-vm-smoke`. Win11 reads the guest log by pulling it over scp.
+  the session banner (`session_summary()` reports whether foo_navidrome is installed;
+  `SIBLING=foo_js_panel` expects `js_panel=no`); `bridge` copies `tests/skins/bridge` into the
+  profile's `foo_ui_panels-skins`, makes it the active skin with both verbose settings on (each
+  config row put back by `keep_cfg`) and waits for its `js/probe.js` to log `bridge: result ok`
+  in `foo_js_panel.log`; `compare` prints a step matrix across platforms. Wine helpers kept: `click`
+  (`tools/wclick.c`), `shot`, `pvars`, `restart`. Make: `ui`, `ui-smoke`, `ui-bridge`, `ui-compare`,
+  `win11-smoke`, `mac-vm-smoke`, `mac-vm-bridge`. Win11 reads the guest log by pulling it over scp.
 
 ## Build (Arch Linux cross-compile)
 - Prereqs: `clang-cl`, `lld-link`, `cmake`, `ninja`; `cargo install xwin && xwin --accept-license --arch x86,x86_64,aarch64 splat --output ~/.xwin`.

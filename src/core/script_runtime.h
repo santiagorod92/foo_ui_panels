@@ -47,6 +47,7 @@ struct ScriptEnv {
 struct ScriptState {
     PvarMap pvars;
     std::map<std::string, std::string> tfvars;
+    PvarMap published;
     std::vector<Placement> placements;
     std::vector<Button> buttons;
     std::vector<Button>* capture = nullptr;
@@ -86,6 +87,7 @@ private:
     bool f_get(const ScriptArgs&, ScriptOut&);
     bool f_puts(const ScriptArgs&, ScriptOut&);
     bool f_getpvar(const ScriptArgs&, ScriptOut&);
+    bool f_getvalue(const ScriptArgs&, ScriptOut&);
     bool f_setpvar(const ScriptArgs&, ScriptOut&);
     bool f_blend_target(const ScriptArgs&, ScriptOut&);
     bool f_offset_colour(const ScriptArgs&, ScriptOut&);

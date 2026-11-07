@@ -1,5 +1,5 @@
 .PHONY: help build build-arm64ec build-x86 deploy launch run kill clean check-portable test i18n-check i18n-missing skin-lint fcl-skin docs mac-build mac-vm mac-vm-open mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config \
-	ui ui-smoke ui-compare mac-vm-smoke win11-smoke win11 win11-open win11-test win11-release win11-skin \
+	ui ui-smoke ui-bridge ui-compare mac-vm-smoke mac-vm-bridge win11-smoke win11 win11-open win11-test win11-release win11-skin \
 	win-test win11-arm win11-arm-deploy win11-arm-skin win11-arm-test
 
 help:
@@ -32,6 +32,8 @@ help:
 	@echo "  mac-vm-test     mac-build, deploy the bundle into the VM, relaunch foobar2000, screenshot"
 	@echo "  mac-vm-skin     copy skins/\$$SKIN (default: the only/first one), or SKIN_DIR=<folder>, into the guest's skin folder"
 	@echo "  mac-vm-smoke    mac-build, then the UI smoke test in the VM (scripts/ui-test.sh mac smoke)"
+	@echo "  ui-bridge       the Panels UI <-> JS Panel bridge test in the local Wine foobar2000 (scripts/ui-test.sh wine bridge)"
+	@echo "  mac-vm-bridge   mac-build, then the bridge test in the VM (scripts/ui-test.sh mac bridge)"
 	@echo "  mac-vm-navidrome         install foo_navidrome in the VM: latest release, NAVIDROME=v1.18.0 (tag)"
 	@echo "                           or NAVIDROME=path/to.fb2k-component"
 	@echo "  mac-vm-navidrome-config  copy foo_navidrome's settings (server, login, custom headers) from the"
@@ -173,6 +175,12 @@ ui-compare:
 
 mac-vm-smoke: mac-build
 	./scripts/ui-test.sh mac smoke
+
+ui-bridge: build
+	./scripts/ui-test.sh wine bridge
+
+mac-vm-bridge: mac-build
+	./scripts/ui-test.sh mac bridge
 
 win11-smoke: build
 	./scripts/ui-test.sh win11 smoke
