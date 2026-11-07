@@ -62,9 +62,12 @@ the 64-bit foobar2000 when you can.
 4. Point the component at a skin: **Preferences › Display › Panels UI (reborn)** → skin folder
    (and, if the folder has more than one `.txt` at its top level, which one is the main script).
 
-**macOS** — Panels UI is a layout element there, not a separate UI module:
+**macOS**
 
-3. **View › Layout › Edit Layout**, add **Panels UI** and let it fill the window.
+3. Pick **Panels UI (reborn)** as the *User interface module* in **Preferences › Display** and
+   restart foobar2000: it opens its own player window, where the layout wizard runs. To keep the
+   Default UI instead, Panels UI is also a layout element: **View › Layout › Edit Layout** and
+   add `foo_ui_panels` (or `Panels UI`) so it fills the window.
 4. Put the skin (its main script, `panels/`, images and `foo_ui_panels.ini` if it has one) in
    `~/Library/foobar2000-v2/foo_ui_panels/` — or keep several skins in one folder (one subfolder
    each) and pick it, the active skin and its main script in **Preferences › Display › Panels UI
