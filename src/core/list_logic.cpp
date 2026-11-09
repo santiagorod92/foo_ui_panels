@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <cctype>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 
 namespace pui {
@@ -171,22 +172,59 @@ int star_at(const StarStrip& s, int x) {
     return std::clamp((x - s.x) * 5 / s.w + 1, 1, 5);
 }
 
-std::vector<HeaderColumn> playlist_header_columns(int view_w, bool stars) {
+bool parse_custom_column(const std::string& spec, CustomColumn& out) {
+    std::vector<std::string> parts;
+    size_t start = 0;
+    for (size_t bar; (bar = spec.find('|', start)) != std::string::npos; start = bar + 1)
+        parts.push_back(spec.substr(start, bar - start));
+    parts.push_back(spec.substr(start));
+    auto trim = [](std::string s) {
+        const size_t a = s.find_first_not_of(" \t"), b = s.find_last_not_of(" \t");
+        return a == std::string::npos ? std::string() : s.substr(a, b - a + 1);
+    };
+    for (auto& p : parts) p = trim(p);
+    if (parts.size() < 2) return false;
+    CustomColumn c;
+    c.label = parts.front();
+    parts.erase(parts.begin());
+    if (parts.size() > 1 && (parts.back() == "right" || parts.back() == "left")) {
+        c.right = parts.back() == "right";
+        parts.pop_back();
+    }
+    if (parts.size() > 1 && !parts.back().empty() &&
+        parts.back().find_first_not_of("0123456789") == std::string::npos) {
+        c.width = std::clamp(std::atoi(parts.back().c_str()), 16, 400);
+        parts.pop_back();
+    }
+    for (size_t i = 0; i < parts.size(); ++i) c.format += (i ? "|" : "") + parts[i];
+    if (c.format.empty()) return false;
+    out = std::move(c);
+    return true;
+}
+
+std::vector<HeaderColumn> playlist_header_columns(int view_w, bool stars, const std::vector<CustomColumn>& custom) {
     const int albumW = std::min(64, std::max(0, view_w / 4));
     const int lengthX = std::max(albumW, view_w - 50);
     const int ratingX = stars ? std::max(albumW, star_strip(view_w).x - 4) : lengthX;
+    const int titleMin = 60;
+    size_t fit = 0;
+    int customW = 0;
+    while (fit < custom.size() && albumW + titleMin + customW + custom[fit].width <= ratingX)
+        customW += custom[fit++].width;
     std::vector<HeaderColumn> v;
     v.push_back({ PlaylistColumn::Album, 0, albumW, tr("Album") });
-    v.push_back({ PlaylistColumn::Title, albumW, ratingX - albumW, tr("Title") });
+    v.push_back({ PlaylistColumn::Title, albumW, ratingX - customW - albumW, tr("Title") });
+    for (size_t i = 0, x = ratingX - customW; i < fit; x += custom[i++].width)
+        v.push_back({ { PlaylistColumn::Custom, (int)i }, (int)x, custom[i].width, custom[i].label });
     if (stars) v.push_back({ PlaylistColumn::Rating, ratingX, lengthX - ratingX, tr("Rating") });
     v.push_back({ PlaylistColumn::Length, lengthX, std::max(0, view_w - lengthX), tr("Length") });
     return v;
 }
 
-PlaylistColumn header_column_at(const std::vector<HeaderColumn>& cols, int x) {
+ColumnRef header_column_at(const std::vector<HeaderColumn>& cols, int x) {
     for (const auto& c : cols)
         if (c.w > 0 && x >= c.x && x < c.x + c.w) return c.col;
-    return PlaylistColumn::None;
+    return {};
 }
 
 const char* playlist_sort_format(PlaylistColumn c) {
@@ -200,22 +238,52 @@ const char* playlist_sort_format(PlaylistColumn c) {
     }
 }
 
-SortState next_sort(SortState cur, PlaylistColumn clicked) {
-    if (clicked == PlaylistColumn::None) return cur;
+SortState next_sort(SortState cur, ColumnRef clicked) {
+    if (clicked.kind == PlaylistColumn::None) return cur;
     if (cur.col == clicked) return { clicked, !cur.desc };
-    return { clicked, clicked == PlaylistColumn::Rating };
+    return { clicked, clicked.kind == PlaylistColumn::Rating };
 }
 
-std::vector<size_t> sort_order(const std::vector<std::string>& keys, bool desc) {
-    std::vector<std::string> folded(keys.size());
-    for (size_t i = 0; i < keys.size(); ++i) {
-        folded[i] = keys[i];
-        for (char& ch : folded[i]) ch = (char)std::tolower((unsigned char)ch);
+std::vector<std::string> unique_keys(const std::vector<std::string>& keys) {
+    std::vector<std::string> u(keys);
+    std::sort(u.begin(), u.end());
+    u.erase(std::unique(u.begin(), u.end()), u.end());
+    return u;
+}
+
+std::vector<int> collation_ranks_by(const std::vector<std::string>& keys, const std::vector<std::string>& unique,
+                                    const std::function<int(size_t, size_t)>& cmp) {
+    std::vector<size_t> order(unique.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        const int c = cmp(a, b);
+        return c != 0 ? c < 0 : a < b;
+    });
+    std::vector<int> rank_of(unique.size());
+    int rank = 0;
+    for (size_t i = 0; i < order.size(); ++i) {
+        if (i && cmp(order[i - 1], order[i]) != 0) ++rank;
+        rank_of[order[i]] = rank;
     }
-    std::vector<size_t> order(keys.size());
+    std::vector<int> ranks(keys.size());
+    for (size_t i = 0; i < keys.size(); ++i)
+        ranks[i] = rank_of[std::lower_bound(unique.begin(), unique.end(), keys[i]) - unique.begin()];
+    return ranks;
+}
+
+std::vector<int> folded_ranks(const std::vector<std::string>& keys) {
+    const std::vector<std::string> u = unique_keys(keys);
+    std::vector<std::string> folded(u);
+    for (auto& k : folded)
+        for (char& ch : k) ch = (char)std::tolower((unsigned char)ch);
+    return collation_ranks_by(keys, u, [&](size_t a, size_t b) { return folded[a].compare(folded[b]); });
+}
+
+std::vector<size_t> sort_order(const std::vector<int>& ranks, bool desc) {
+    std::vector<size_t> order(ranks.size());
     for (size_t i = 0; i < order.size(); ++i) order[i] = i;
     std::stable_sort(order.begin(), order.end(), [&](size_t a, size_t b) {
-        return desc ? folded[b] < folded[a] : folded[a] < folded[b];
+        return desc ? ranks[b] < ranks[a] : ranks[a] < ranks[b];
     });
     return order;
 }

@@ -52,14 +52,34 @@ struct StarStrip { int x = 0, w = 55; };
 StarStrip star_strip(int view_w);
 int star_at(const StarStrip& s, int x);
 
-enum class PlaylistColumn { None = -1, Album, Title, Rating, Length };
-struct HeaderColumn { PlaylistColumn col = PlaylistColumn::None; int x = 0, w = 0; const char* label = ""; };
-std::vector<HeaderColumn> playlist_header_columns(int view_w, bool stars);
-PlaylistColumn header_column_at(const std::vector<HeaderColumn>& cols, int x);
+enum class PlaylistColumn { None = -1, Album, Title, Rating, Length, Custom };
+struct ColumnRef {
+    PlaylistColumn kind = PlaylistColumn::None;
+    int custom = -1;
+    ColumnRef(PlaylistColumn k = PlaylistColumn::None, int i = -1) : kind(k), custom(i) {}
+    bool operator==(const ColumnRef&) const = default;
+};
+struct CustomColumn { std::string label, format; int width = 60; bool right = false; };
+bool parse_custom_column(const std::string& spec, CustomColumn& out);
+struct HeaderColumn { ColumnRef col; int x = 0, w = 0; std::string label; };
+std::vector<HeaderColumn> playlist_header_columns(int view_w, bool stars, const std::vector<CustomColumn>& custom = {});
+ColumnRef header_column_at(const std::vector<HeaderColumn>& cols, int x);
 const char* playlist_sort_format(PlaylistColumn c);
-struct SortState { PlaylistColumn col = PlaylistColumn::None; bool desc = false; };
-SortState next_sort(SortState cur, PlaylistColumn clicked);
-std::vector<size_t> sort_order(const std::vector<std::string>& keys, bool desc);
+struct SortState { ColumnRef col; bool desc = false; };
+SortState next_sort(SortState cur, ColumnRef clicked);
+
+std::vector<std::string> unique_keys(const std::vector<std::string>& keys);
+std::vector<int> collation_ranks_by(const std::vector<std::string>& keys, const std::vector<std::string>& unique,
+                                    const std::function<int(size_t, size_t)>& cmp);
+std::vector<int> folded_ranks(const std::vector<std::string>& keys);
+std::vector<size_t> sort_order(const std::vector<int>& ranks, bool desc);
+template <class T>
+void apply_order(std::vector<T>& v, const std::vector<size_t>& order) {
+    std::vector<T> out;
+    out.reserve(order.size());
+    for (size_t i : order) out.push_back(std::move(v[i]));
+    v = std::move(out);
+}
 
 struct TreeItem {
     std::string label;

@@ -11,7 +11,7 @@
 namespace pui {
 
 struct PLScripts {
-    service_ptr_t<titleformat_object> key, artist, album, year, genre, row, len, rating, cover, title;
+    service_ptr_t<titleformat_object> key, artist, album, year, genre, len, rating, cover, title;
     bool ok = false;
     void ensure() {
         if (ok) return;
@@ -21,7 +21,6 @@ struct PLScripts {
         c->compile_safe(album,  "[%album%]");
         c->compile_safe(year,   "[%date%]");
         c->compile_safe(genre,  "[%genre%]");
-        c->compile_safe(row,    "$num(%tracknumber%,2). [%title%]");
         c->compile_safe(len,    "[%length%]");
         c->compile_safe(title,  "[%title%]");
         c->compile_safe(rating, "$if2(%navidrome_rating%,[%rating%])");
@@ -33,6 +32,29 @@ static PLScripts g_pl;
 
 static pfc::string8 fmt(const metadb_handle_ptr& h, const service_ptr_t<titleformat_object>& s) {
     pfc::string8 o; if (h.is_valid()) h->format_title(nullptr, o, s, nullptr); return o;
+}
+
+static const char* const kDefaultRowFormat = "[$num(%tracknumber%,2). ][%title%]";
+
+const service_ptr_t<titleformat_object>& PlaylistView::script(const std::string& spec) {
+    auto it = m_scripts.find(spec);
+    if (it == m_scripts.end()) {
+        it = m_scripts.emplace(spec, service_ptr_t<titleformat_object>()).first;
+        titleformat_compiler::get()->compile_safe(it->second, spec.c_str());
+    }
+    return it->second;
+}
+
+std::vector<CustomColumn> PlaylistView::custom_columns() const {
+    std::vector<CustomColumn> v;
+    if (!m_engine) return v;
+    for (int i = 1;; ++i) {
+        const std::string spec = m_engine->config().str("playlist.column." + std::to_string(i));
+        if (spec.empty()) break;
+        CustomColumn c;
+        if (parse_custom_column(spec, c)) v.push_back(std::move(c));
+    }
+    return v;
 }
 
 PlaylistView::Events::Events(PlaylistView* v)
@@ -117,6 +139,17 @@ void PlaylistView::paint(gfx::Canvas& cv) {
         m_engine->set_view_state(scroll_state_key(), std::to_string(m_scroll));
     }
     const int top = header_h();
+    const std::vector<CustomColumn> custom = custom_columns();
+    std::vector<HeaderColumn> cells;
+    int titleR = W - 150;
+    if (!custom.empty())
+        for (auto& c : playlist_header_columns(W, has_stars(), custom))
+            if (c.col.kind == PlaylistColumn::Custom) {
+                if (cells.empty()) titleR = std::min(titleR, c.x - 4);
+                cells.push_back(std::move(c));
+            }
+    const std::string rowFormat = m_engine ? m_engine->config().str("playlist.row_format", kDefaultRowFormat) : kDefaultRowFormat;
+    const auto& rowScript = script(rowFormat);
     for (size_t g = L.group_count() ? L.group_at(m_scroll) : 0; g < L.group_count(); ++g) {
         int y = L.group_top(g) - m_scroll + top;
         if (y >= H) break;
@@ -161,8 +194,14 @@ void PlaylistView::paint(gfx::Canvas& cv) {
                 cv.set_font(kRowFont);
                 gfx::Color tc = (playing || selected) ? col("row_text_selected", gfx::Color(255, 255, 255))
                                                        : col("row_text", gfx::Color(205, 215, 235));
-                pfc::string8 line = fmt(h, g_pl.row);
-                cv.draw_text(line.get_ptr(), gfx::Rect::ltrb(10, y + 1, W - 150, y + ROW_H), kLine | gfx::kEndEllipsis, tc);
+                pfc::string8 line = fmt(h, rowScript);
+                cv.draw_text(line.get_ptr(), gfx::Rect::ltrb(10, y + 1, titleR, y + ROW_H), kLine | gfx::kEndEllipsis, tc);
+                for (const auto& c : cells) {
+                    const CustomColumn& cc = custom[c.col.custom];
+                    pfc::string8 cell = fmt(h, script(cc.format));
+                    cv.draw_text(cell.get_ptr(), gfx::Rect::ltrb(c.x + 4, y + 1, c.x + c.w - 4, y + ROW_H),
+                                 kLine | gfx::kEndEllipsis | (cc.right ? gfx::kAlignRight : 0u), tc);
+                }
                 pfc::string8 ln = fmt(h, g_pl.len);
                 cv.draw_text(ln.get_ptr(), gfx::Rect::ltrb(W - 46, y + 1, W - 8, y + ROW_H), gfx::kAlignRight | kLine, tc);
                 int r = ((int)idx == m_hover_row)
@@ -202,12 +241,14 @@ void PlaylistView::paint_header(gfx::Canvas& cv, gfx::Color hl) {
     fill_alpha(cv, 0, 0, W, HH, gfx::Color(0, 0, 0), 90);
     cv.set_font(kSubFont);
     const gfx::Color sep = col("separator", gfx::Color(40, 55, 90));
-    for (const auto& c : playlist_header_columns(W, has_stars())) {
+    const std::vector<CustomColumn> custom = custom_columns();
+    for (const auto& c : playlist_header_columns(W, has_stars(), custom)) {
         if (c.w <= 0) continue;
         const bool sorted = c.col == m_sort.col, hover = c.col == m_hover_col;
         if (hover) fill_alpha(cv, c.x, 0, c.w, HH, gfx::Color(255, 255, 255), 24);
         const gfx::Color tc = sorted || hover ? col("text", gfx::Color(235, 240, 255)) : col("text_dim", gfx::Color(150, 170, 210));
-        const bool right = c.col == PlaylistColumn::Length;
+        const bool right = c.col == PlaylistColumn::Length ||
+                           (c.col.kind == PlaylistColumn::Custom && custom[c.col.custom].right);
         const int arrowW = sorted ? 12 : 0;
         gfx::Rect r = gfx::Rect::ltrb(c.x + 6, 0, c.x + c.w - 4 - (right ? arrowW : 0), HH);
         cv.draw_text(c.label, r, gfx::kSingleLine | gfx::kVCenter | gfx::kEndEllipsis | (right ? gfx::kAlignRight : 0u), tc);
@@ -224,20 +265,23 @@ void PlaylistView::paint_header(gfx::Canvas& cv, gfx::Color hl) {
     cv.line(0, HH - 1, W, HH - 1, sep);
 }
 
-void PlaylistView::sort_by(PlaylistColumn c) {
+void PlaylistView::sort_by(ColumnRef c) {
     const SortState s = next_sort(m_sort, c);
-    const char* spec = playlist_sort_format(s.col);
-    if (!*spec) return;
+    std::string spec = playlist_sort_format(s.col.kind);
+    if (s.col.kind == PlaylistColumn::Custom) {
+        const std::vector<CustomColumn> custom = custom_columns();
+        if (s.col.custom >= 0 && s.col.custom < (int)custom.size()) spec = custom[s.col.custom].format;
+    }
+    if (spec.empty()) return;
     auto pm = playlist_manager::get();
     const t_size n = pm->activeplaylist_get_item_count();
-    service_ptr_t<titleformat_object> tf;
-    titleformat_compiler::get()->compile_safe(tf, spec);
+    const auto& tf = script(spec);
     std::vector<std::string> keys(n);
     for (t_size i = 0; i < n; ++i) {
         metadb_handle_ptr h; pm->activeplaylist_get_item_handle(h, i);
         keys[i] = fmt(h, tf).c_str();
     }
-    const std::vector<size_t> order = sort_order(keys, s.desc);
+    const std::vector<size_t> order = sort_order(ui::collation_ranks(keys), s.desc);
     if (n > 1) {
         pm->activeplaylist_undo_backup();
         m_sorting = true;
@@ -252,18 +296,19 @@ void PlaylistView::sort_by(PlaylistColumn c) {
 }
 
 void PlaylistView::header_menu(int x, int y) {
-    const bool stars = has_stars();
+    const std::vector<HeaderColumn> cols = columns(host()->bounds().w);
     ui::Menu m;
-    for (const auto& c : playlist_header_columns(host()->bounds().w, stars)) {
+    for (size_t i = 0; i < cols.size(); ++i) {
+        const HeaderColumn& c = cols[i];
         ui::MenuItem it;
         static const char* const kSortBy[] = { N_("Sort by album"), N_("Sort by title"), N_("Sort by rating"), N_("Sort by length") };
-        it.label = tr(kSortBy[(int)c.col]);
-        it.id = 1 + (int)c.col;
+        it.label = c.col.kind == PlaylistColumn::Custom ? trf("Sort by {0}", { c.label }) : tr(kSortBy[(int)c.col.kind]);
+        it.id = 1 + (int)i;
         it.checked = c.col == m_sort.col;
         m.push_back(it);
     }
     const int id = ui::popup_menu(host(), x, y, m);
-    if (id > 0) sort_by((PlaylistColumn)(id - 1));
+    if (id > 0 && id <= (int)cols.size()) sort_by(cols[id - 1].col);
 }
 
 enum { kTimerFind = 2, kTimerAutoScroll = 3, kFindResetMs = 1000, kDragThreshold = 4 };
@@ -357,8 +402,7 @@ void PlaylistView::on_mouse_move(int x, int y, unsigned, bool left_down) {
             return;
         }
     }
-    const PlaylistColumn hc = y >= 0 && y < header_h()
-        ? header_column_at(playlist_header_columns(host()->bounds().w, has_stars()), x) : PlaylistColumn::None;
+    const ColumnRef hc = y >= 0 && y < header_h() ? header_column_at(columns(host()->bounds().w), x) : ColumnRef();
     if (hc != m_hover_col) { m_hover_col = hc; invalidate(); }
     int hr = -1, hs = 0;
     const int idx = item_at(y), star = star_under(x);
@@ -378,7 +422,7 @@ void PlaylistView::on_mouse_leave() {
 void PlaylistView::on_mouse_down(const ui::MouseEvent& e) {
     if (e.y < header_h()) {
         if (e.button == ui::MouseButton::Left)
-            sort_by(header_column_at(playlist_header_columns(host()->bounds().w, has_stars()), e.x));
+            sort_by(header_column_at(columns(host()->bounds().w), e.x));
         else if (e.button == ui::MouseButton::Right)
             header_menu(e.x, e.y);
         return;

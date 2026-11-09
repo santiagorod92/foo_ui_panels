@@ -16,6 +16,7 @@
 #include "../../ui/host_input.h"
 #include "../../core/skin_paths.h"
 #include "../../core/ui_logic.h"
+#include "../../core/list_logic.h"
 #include "../../core/ui_settings.h"
 #include <atomic>
 #include <chrono>
@@ -770,6 +771,20 @@ std::string home_dir() {
     wchar_t buf[MAX_PATH] = {};
     const DWORD n = GetEnvironmentVariableW(L"USERPROFILE", buf, MAX_PATH);
     return n > 0 && n < MAX_PATH ? narrow(buf) : std::string();
+}
+
+std::vector<int> collation_ranks(const std::vector<std::string>& keys) {
+    const std::vector<std::string> unique = unique_keys(keys);
+    std::vector<std::wstring> wide;
+    wide.reserve(unique.size());
+    for (const auto& k : unique) wide.push_back(widen(k));
+    return collation_ranks_by(keys, unique, [&](size_t a, size_t b) {
+        const int r = CompareStringEx(LOCALE_NAME_USER_DEFAULT, LINGUISTIC_IGNORECASE | SORT_DIGITSASNUMBERS,
+                                      wide[a].c_str(), (int)wide[a].size(), wide[b].c_str(), (int)wide[b].size(),
+                                      nullptr, nullptr, 0);
+        if (r == 0) return _wcsicmp(wide[a].c_str(), wide[b].c_str());
+        return r - CSTR_EQUAL;
+    });
 }
 
 void open_text_editor(MainWindow& root, const std::string& key, const std::string& title,

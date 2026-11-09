@@ -2,6 +2,7 @@
 #include "../ui/view.h"
 #include "../fb2k.h"
 #include "../core/list_logic.h"
+#include <map>
 #include <memory>
 #include <string>
 #include <vector>
@@ -41,8 +42,12 @@ private:
     int  header_h() const;
     int  view_h() const;
     void paint_header(gfx::Canvas& cv, gfx::Color hl);
-    void sort_by(PlaylistColumn c);
+    void sort_by(ColumnRef c);
     void header_menu(int x, int y);
+    std::vector<CustomColumn> custom_columns() const;
+    std::vector<HeaderColumn> columns(int w) const { return playlist_header_columns(w, has_stars(), custom_columns()); }
+    const service_ptr_t<titleformat_object>& script(const std::string& spec);
+    std::map<std::string, service_ptr_t<titleformat_object>> m_scripts;
 
     const GroupedRows& layout();
     struct Events : playlist_callback_single_impl_base {
@@ -81,7 +86,7 @@ private:
 
     SortState m_sort;
     bool m_sorting = false;
-    PlaylistColumn m_hover_col = PlaylistColumn::None;
+    ColumnRef m_hover_col;
 };
 
 }

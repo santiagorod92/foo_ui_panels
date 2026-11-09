@@ -422,6 +422,14 @@ anything repo-specific stays in the repo's own sections.
 - `GdipImage` never deletes its `Gdiplus::Bitmap` after `platform_images_shutdown()` (it leaks it at
   exit instead): a cover still held by a worker (an aborted Navidrome album load) used to be freed
   after `GdiplusShutdown` and crash foobar2000 on close (found 2026-10-27, ARM64EC).
+- Sorting names (playlist header, album browser, library tree) goes through `ui::collation_ranks`
+  (Win `CompareStringEx` with the user locale, linguistic ignore-case + digits as numbers; Mac
+  `localizedStandardCompare:`): one native compare pass over the unique keys, then SDK-free code
+  sorts by rank (`sort_order`). Keys the platform calls equal share a rank (`AC/DC` = `ac/dc`), so
+  the album browser's grouping breaks rank ties by bytes. macOS orders by the list sort order,
+  which follows the primary language (`AppleLanguages`), not the region: a zh_CN region with an
+  English UI still sorts Han by code point. foo_navidrome's browser does the same
+  (`systemCollationRanks`).
 - Text drawing on Windows: **always wide APIs** (GdiCanvas converts UTF-8). `DrawTextA`
   mojibakes non-ASCII foobar strings (titleformat output, tags).
 - fooAvA config decode tooling: `tools/extract_fooava.py` (s8.bin → `fooava.txt` + `panels/*.txt`,

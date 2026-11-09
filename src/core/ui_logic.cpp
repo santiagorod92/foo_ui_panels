@@ -129,7 +129,8 @@ const char* album_sort_name(AlbumSort s) {
     }
 }
 
-std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort, const std::string& filter) {
+std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort, const std::string& filter,
+                               const std::vector<int>& album_ranks) {
     std::vector<size_t> v;
     for (size_t i = 0; i < all.size(); ++i)
         if (filter.empty() || filter_matches(filter, all[i].artist + " " + all[i].album)) v.push_back(i);
@@ -139,7 +140,7 @@ std::vector<size_t> album_view(const std::vector<AlbumKeys>& all, AlbumSort sort
     };
     switch (sort) {
     case AlbumSort::Album:
-        std::stable_sort(v.begin(), v.end(), [&](size_t a, size_t b) { return lower(all[a].album) < lower(all[b].album); });
+        std::stable_sort(v.begin(), v.end(), [&](size_t a, size_t b) { return album_ranks[a] < album_ranks[b]; });
         break;
     case AlbumSort::Year:
         std::stable_sort(v.begin(), v.end(), [&](size_t a, size_t b) { return newest(all[a].year, all[b].year); });

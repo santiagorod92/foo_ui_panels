@@ -153,6 +153,8 @@ Consolas and Cascadia with the system's monospaced font.
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
 | `asset.nocover`, `asset.cd_case`, `asset.cd_case_window` | Album browser: missing-cover art, case art and the cover's window inside it (`x y w h`, case pixels). |
 | `playlist.header` | Show the playlist's sortable column header (`1`; default `0`, so classic skins keep their look — the layout wizard's layouts turn it on). |
+| `playlist.row_format` | Titleformat for each playlist row's text (`[$num(%tracknumber%,2). ][%title%]`, so tracks without a track number show just the title). |
+| `playlist.column.<n>` | Extra playlist columns, `1`, `2`, … in order: `Label\|titleformat\|width\|align`, e.g. `Bitrate\|%bitrate% kbps\|70\|right` (width in px, default `60`; align `left` or `right`, default `left`). They sit between the title and the rating, and the column header sorts by them. Columns that don't fit the panel's width are left out. |
 | `button.feedback` | Light up buttons with no hover art under the pointer and darken them while pressed (`1`; `0` turns it off). |
 | `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
 | `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
@@ -196,10 +198,17 @@ Consolas and Cascadia with the system's monospaced font.
   the selection, Enter to play, type a few letters to jump to a title or album artist), drag
   selected tracks to reorder them, and drop files or folders from Explorer / Finder onto it
   (dropped anywhere else in the window, they're added to the end of the active playlist).
-- Playlist **column header**: click **Album**, **Title**, **Rating** or **Length** to sort the
-  playlist by it, click again to reverse (an arrow shows which way); right-click it for the same
-  choices. Sorting by anything but the album splits the
+- Playlist **column header**: click **Album**, **Title**, **Rating**, **Length** or one of the
+  skin's own columns (`playlist.column.<n>`, e.g. codec, bitrate, sample rate, bit depth) to sort
+  the playlist by it, click again to reverse (an arrow shows which way); right-click it for the
+  same choices. Sorting by anything but the album splits the
   album groups, as in any grouped view. Off unless the skin turns it on (`playlist.header = 1`; the layout wizard's layouts do).
+- Sorting follows your system's language order (Windows: the regional format; macOS: the list
+  sort order, which follows the primary language), in the playlist, the playlist switcher's tree
+  and the album browser: Chinese titles sort by Pinyin on a Chinese system, case doesn't matter,
+  and numbers sort by value (*Track 9* before *Track 10*).
+- Playlist rows show the track number only when the track has one; skins change the row text
+  with `playlist.row_format`.
 - Seek bar: hover to see the time under the pointer (and a marker), drag to scrub and release to
   seek, the mouse wheel jumps 5 seconds, and with the bar focused (Tab) ←/→ seek 5 seconds
   (Shift: 30), Home restarts the track.

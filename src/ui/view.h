@@ -157,6 +157,7 @@ std::string os_version();
 std::string wine_version();
 std::string system_language();
 std::string home_dir();
+std::vector<int> collation_ranks(const std::vector<std::string>& keys);
 void open_text_editor(MainWindow& root, const std::string& key, const std::string& title,
                       const std::string& text, std::function<bool(const std::string&)> apply);
 void close_text_editor(const std::string& key);

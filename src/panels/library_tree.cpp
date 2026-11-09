@@ -110,10 +110,14 @@ void LibraryTree::merge_remote(std::vector<RemoteAlbum>&& add) {
 }
 
 void LibraryTree::finish_data() {
-    auto byName = [](const std::string& a, const std::string& b) { return lower_str(a) < lower_str(b); };
-    for (auto& ar : m_artists)
-        std::stable_sort(ar.albums.begin(), ar.albums.end(), [&](const Album& a, const Album& b) { return byName(a.name, b.name); });
-    std::stable_sort(m_artists.begin(), m_artists.end(), [&](const Artist& a, const Artist& b) { return byName(a.name, b.name); });
+    auto byName = [](auto& items) {
+        std::vector<std::string> names;
+        names.reserve(items.size());
+        for (const auto& it : items) names.push_back(it.name);
+        apply_order(items, sort_order(ui::collation_ranks(names), false));
+    };
+    for (auto& ar : m_artists) byName(ar.albums);
+    byName(m_artists);
     refresh_tree();
 }
 

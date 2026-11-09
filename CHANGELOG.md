@@ -3,6 +3,23 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.23.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.22.0...v1.23.0) (2026-11-09)
+
+### Highlights
+- **Your own playlist columns**: `playlist.column.<n> = Label|titleformat|width|align` in a skin's
+  `foo_ui_panels.ini` adds columns to the playlist, for example codec, bitrate, sample rate and bit
+  depth (`Rate|%samplerate%|56|right`). The column header sorts by them too
+  ([#31](https://github.com/santiagorod92/foo_ui_panels/issues/31)).
+- **Sorting in your language's order**: the playlist, the playlist switcher and the album browser
+  sort the way your system does: Chinese titles by Pinyin on a Chinese system, Japanese in
+  Japanese order, numbers by value (*Track 9* before *Track 10*).
+
+### Added
+- `playlist.row_format`: the titleformat for the playlist row's text.
+
+### Fixed
+- Tracks without a track number no longer show `00.` before the title in the playlist.
+
 ## [1.22.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.21.0...v1.22.0) (2026-11-07)
 
 ### Highlights

@@ -6,6 +6,7 @@
 #include "../../ui/host_input.h"
 #include "../../core/skin_paths.h"
 #include "../../core/ui_logic.h"
+#include "../../core/list_logic.h"
 #include "../../core/ui_settings.h"
 #include "../../core/skin_lint.h"
 #include "../../core/i18n.h"
@@ -731,6 +732,17 @@ std::string system_language() {
 std::string home_dir() {
     NSString* h = NSHomeDirectory();
     return h.fileSystemRepresentation ? h.fileSystemRepresentation : "";
+}
+
+std::vector<int> collation_ranks(const std::vector<std::string>& keys) {
+    @autoreleasepool {
+        const std::vector<std::string> unique = unique_keys(keys);
+        NSMutableArray<NSString*>* strings = [NSMutableArray arrayWithCapacity:unique.size()];
+        for (const auto& k : unique) [strings addObject:ns(k)];
+        return collation_ranks_by(keys, unique, [&](size_t a, size_t b) {
+            return (int)[strings[a] localizedStandardCompare:strings[b]];
+        });
+    }
 }
 
 void open_text_editor(MainWindow&, const std::string& key, const std::string& title,

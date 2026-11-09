@@ -55,12 +55,18 @@ void AlbumList::rebuild() {
     metadb_handle_list all;
     library_manager::get()->get_all_items(all);
 
+    std::vector<std::string> itemKeys;
+    itemKeys.reserve(all.get_count());
+    for (t_size i = 0; i < all.get_count(); ++i) itemKeys.push_back(fmt(all[i], g_al.key).c_str());
     std::vector<std::pair<pfc::string8, t_size>> keyed;
-    keyed.reserve(all.get_count());
-    for (t_size i = 0; i < all.get_count(); ++i)
-        keyed.push_back({ fmt(all[i], g_al.key), i });
-    std::sort(keyed.begin(), keyed.end(),
-              [](auto& a, auto& b) { return strcmp(a.first, b.first) < 0; });
+    keyed.reserve(itemKeys.size());
+    const std::vector<int> ranks = ui::collation_ranks(itemKeys);
+    std::vector<size_t> order(itemKeys.size());
+    for (size_t i = 0; i < order.size(); ++i) order[i] = i;
+    std::sort(order.begin(), order.end(), [&](size_t a, size_t b) {
+        return ranks[a] != ranks[b] ? ranks[a] < ranks[b] : itemKeys[a] < itemKeys[b];
+    });
+    for (size_t i : order) keyed.push_back({ itemKeys[i].c_str(), i });
 
     m_all.clear();
     for (auto& kv : keyed) {
@@ -94,9 +100,14 @@ void AlbumList::apply_view() {
 
     std::vector<AlbumKeys> keys;
     keys.reserve(m_all.size());
-    for (const Group& g : m_all) keys.push_back({ g.artist.c_str(), g.album.c_str(), g.year, g.added });
+    std::vector<std::string> albums;
+    for (const Group& g : m_all) {
+        keys.push_back({ g.artist.c_str(), g.album.c_str(), g.year, g.added });
+        albums.push_back(g.album.c_str());
+    }
+    const std::vector<int> ranks = m_sort == AlbumSort::Album ? ui::collation_ranks(albums) : std::vector<int>(albums.size());
     m_groups.clear();
-    for (size_t i : album_view(keys, m_sort, m_filter)) m_groups.push_back(m_all[i]);
+    for (size_t i : album_view(keys, m_sort, m_filter, ranks)) m_groups.push_back(m_all[i]);
 
     m_hover = -1; m_selected = -1;
     int cf = -1;
@@ -205,9 +216,10 @@ void AlbumList::merge_remote(std::vector<Group>&& add) {
         have.insert(lower_str(g.key.c_str()));
         m_all.push_back(std::move(g));
     }
-    std::stable_sort(m_all.begin(), m_all.end(), [](const Group& a, const Group& b) {
-        return lower_str(a.key.c_str()) < lower_str(b.key.c_str());
-    });
+    std::vector<std::string> groupKeys;
+    groupKeys.reserve(m_all.size());
+    for (const Group& g : m_all) groupKeys.push_back(g.key.c_str());
+    apply_order(m_all, sort_order(ui::collation_ranks(groupKeys), false));
     if (m_coverflow && !m_cf_user && m_filter.empty()) m_cf_target = -1;
     apply_view();
 }

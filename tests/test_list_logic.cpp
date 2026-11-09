@@ -2,6 +2,7 @@
 #include "core/list_logic.h"
 #include "core/ui_logic.h"
 #include "ui/keys.h"
+#include <cstdlib>
 
 using namespace pui;
 
@@ -243,17 +244,20 @@ TEST("album_view: filter and sort orders") {
         { "Blur", "Blur", "", "2025-03-01" },
         { "Cake", "Prolonging the Magic", "1998", "2023-05-05" },
     };
-    auto v = album_view(all, AlbumSort::Artist, "");
+    std::vector<std::string> names;
+    for (const auto& a : all) names.push_back(a.album);
+    const std::vector<int> ranks = folded_ranks(names);
+    auto v = album_view(all, AlbumSort::Artist, "", {});
     CHECK(v == std::vector<size_t>({ 0, 1, 2, 3 }));
-    v = album_view(all, AlbumSort::Artist, "blur");
+    v = album_view(all, AlbumSort::Artist, "blur", {});
     CHECK(v == std::vector<size_t>({ 1, 2 }));
-    v = album_view(all, AlbumSort::Album, "");
+    v = album_view(all, AlbumSort::Album, "", ranks);
     CHECK(v == std::vector<size_t>({ 2, 1, 3, 0 }));
-    v = album_view(all, AlbumSort::Year, "");
+    v = album_view(all, AlbumSort::Year, "", {});
     CHECK(v == std::vector<size_t>({ 3, 1, 0, 2 }));
-    v = album_view(all, AlbumSort::Added, "");
+    v = album_view(all, AlbumSort::Added, "", {});
     CHECK(v == std::vector<size_t>({ 2, 0, 3, 1 }));
-    CHECK(album_view(all, AlbumSort::Year, "zeppelin").empty());
+    CHECK(album_view(all, AlbumSort::Year, "zeppelin", {}).empty());
 }
 
 TEST("album_view: recently added mixes server and local dates") {
@@ -267,7 +271,7 @@ TEST("album_view: recently added mixes server and local dates") {
         { "Dido", "No Angel", "1999", "" },
         { "Eels", "Beautiful Freak", "1996", added_from_iso("2024-06-01T09:00:00.57Z") },
     };
-    CHECK(album_view(all, AlbumSort::Added, "") == std::vector<size_t>({ 1, 4, 2, 0, 3 }));
+    CHECK(album_view(all, AlbumSort::Added, "", {}) == std::vector<size_t>({ 1, 4, 2, 0, 3 }));
 }
 
 TEST("album_view: decade sort keeps artist order inside a decade") {
@@ -279,9 +283,9 @@ TEST("album_view: decade sort keeps artist order inside a decade") {
         { "Cake", "Motorcade of Generosity", "1994", "" },
         { "Kraftwerk", "Autobahn", "1974", "" },
     };
-    auto v = album_view(all, AlbumSort::Decade, "");
+    auto v = album_view(all, AlbumSort::Decade, "", {});
     CHECK(v == std::vector<size_t>({ 1, 3, 4, 0, 5, 2 }));
-    v = album_view(all, AlbumSort::Decade, "cake");
+    v = album_view(all, AlbumSort::Decade, "cake", {});
     CHECK(v == std::vector<size_t>({ 3, 4 }));
 }
 
@@ -314,9 +318,61 @@ TEST("playlist sort: click toggles, rating starts descending") {
     CHECK_EQ(std::string(playlist_sort_format(PlaylistColumn::None)), std::string());
 }
 
-TEST("sort_order: stable, case-insensitive, both directions") {
-    std::vector<std::string> k = { "b", "A", "a", "C" };
-    CHECK(sort_order(k, false) == (std::vector<size_t>{ 1, 2, 0, 3 }));
-    CHECK(sort_order(k, true) == (std::vector<size_t>{ 3, 0, 1, 2 }));
+TEST("sort_order: stable by rank, both directions") {
+    std::vector<std::string> k = { "b", "A", "a", "C", "b" };
+    const std::vector<int> r = folded_ranks(k);
+    CHECK(r[0] == r[4]);
+    CHECK(r[1] == r[2]);
+    CHECK(sort_order(r, false) == (std::vector<size_t>{ 1, 2, 0, 4, 3 }));
+    CHECK(sort_order(r, true) == (std::vector<size_t>{ 3, 0, 4, 1, 2 }));
     CHECK(sort_order({}, false).empty());
+}
+
+TEST("collation ranks: the platform compare decides, equal compares share a rank") {
+    const std::vector<std::string> k = { "item10", "item9", "Item9", "item10" };
+    const std::vector<std::string> u = unique_keys(k);
+    CHECK(u == (std::vector<std::string>{ "Item9", "item10", "item9" }));
+    auto num = [&](size_t i) { return std::atoi(u[i].c_str() + 4); };
+    const std::vector<int> r = collation_ranks_by(k, u, [&](size_t a, size_t b) { return num(a) - num(b); });
+    CHECK(r == (std::vector<int>{ 1, 0, 0, 1 }));
+    CHECK(sort_order(r, false) == (std::vector<size_t>{ 1, 2, 0, 3 }));
+}
+
+TEST("custom playlist columns: label|format|width|align") {
+    CustomColumn c;
+    CHECK(parse_custom_column("Bitrate | %bitrate% kbps | 70 | right", c));
+    CHECK_EQ(c.label, std::string("Bitrate"));
+    CHECK_EQ(c.format, std::string("%bitrate% kbps"));
+    CHECK_EQ(c.width, 70);
+    CHECK(c.right);
+    CHECK(parse_custom_column("Codec|%codec%", c));
+    CHECK_EQ(c.width, 60);
+    CHECK(!c.right);
+    CHECK(parse_custom_column("Mix|$if(%a%,x|y)|left", c));
+    CHECK_EQ(c.format, std::string("$if(%a%,x|y)"));
+    CHECK(parse_custom_column("Rate|%samplerate%|5", c));
+    CHECK_EQ(c.width, 16);
+    CHECK(parse_custom_column("Tiny|80", c));
+    CHECK_EQ(c.format, std::string("80"));
+    CHECK(!parse_custom_column("Nothing", c));
+    CHECK(!parse_custom_column("Empty|", c));
+}
+
+TEST("playlist header: custom columns sit between the title and the rating") {
+    std::vector<CustomColumn> custom = { { "Codec", "%codec%", 50, false }, { "Bitrate", "%bitrate%", 60, true } };
+    auto cols = playlist_header_columns(400, true, custom);
+    CHECK_EQ(cols.size(), (size_t)6);
+    const int ratingX = star_strip(400).x - 4;
+    CHECK(cols[2].col == ColumnRef(PlaylistColumn::Custom, 0)); CHECK_EQ(cols[2].x, ratingX - 110); CHECK_EQ(cols[2].w, 50);
+    CHECK(cols[3].col == ColumnRef(PlaylistColumn::Custom, 1)); CHECK_EQ(cols[3].x, ratingX - 60);
+    CHECK_EQ(cols[3].label, std::string("Bitrate"));
+    CHECK_EQ(cols[1].x + cols[1].w, cols[2].x);
+    CHECK(header_column_at(cols, ratingX - 30) == ColumnRef(PlaylistColumn::Custom, 1));
+    cols = playlist_header_columns(260, true, custom);
+    CHECK_EQ(cols.size(), (size_t)4);
+    CHECK(cols[1].w >= 60);
+    SortState s = next_sort({}, ColumnRef(PlaylistColumn::Custom, 1));
+    CHECK(s.col == ColumnRef(PlaylistColumn::Custom, 1)); CHECK(!s.desc);
+    s = next_sort(s, ColumnRef(PlaylistColumn::Custom, 0));
+    CHECK(s.col.custom == 0); CHECK(!s.desc);
 }
