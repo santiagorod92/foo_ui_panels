@@ -67,7 +67,30 @@ public:
         m_skin.snapshot_canvas(cv, w, h);
         m_skin.refresh_overlays();
     }
+    static unsigned mouse_mask(unsigned mods, unsigned buttons) {
+        return buttons | ((mods & pui::ui::kShift) ? 0x4u : 0u) | ((mods & pui::ui::kCtrl) ? 0x8u : 0u);
+    }
+    static unsigned button_bit(pui::ui::MouseButton b) {
+        return b == pui::ui::MouseButton::Left ? 0x1u : b == pui::ui::MouseButton::Right ? 0x2u : 0x10u;
+    }
+    static int mouse_kind(pui::ui::MouseButton b, bool down, bool dbl) {
+        using W = js_panel::js_panel_windowless;
+        if (b == pui::ui::MouseButton::Left) return !down ? W::mouse_left_up : dbl ? W::mouse_left_double : W::mouse_left_down;
+        if (b == pui::ui::MouseButton::Right) return !down ? W::mouse_right_up : dbl ? W::mouse_right_double : W::mouse_right_down;
+        return !down ? W::mouse_middle_up : dbl ? W::mouse_middle_double : W::mouse_middle_down;
+    }
+    void windowless_cursor() {
+        const int idc = m_skin.windowless_cursor();
+        host()->set_cursor(idc == 32649 ? pui::ui::Cursor::Hand : idc == 32513 ? pui::ui::Cursor::IBeam : pui::ui::Cursor::Arrow);
+        m_windowlessCursor = true;
+    }
+    bool on_native_key(const void* event) override { return m_skin.windowless_key(event); }
+    void on_wheel(int x, int y, float d) override {
+        const int step = d > 0 ? (int)std::ceil(d) : (int)std::floor(d);
+        m_skin.windowless_wheel(x, y, step);
+    }
     void on_mouse_down(const pui::ui::MouseEvent& e) override {
+        if (m_skin.windowless_mouse(mouse_kind(e.button, true, e.double_click), e.x, e.y, mouse_mask(e.mods, button_bit(e.button)))) return;
         if (e.button != pui::ui::MouseButton::Left) return;
         if (m_skin.press(e.x, e.y)) invalidate();
         if (m_skin.handle_click(e.x, e.y)) return;
@@ -75,12 +98,21 @@ public:
         begin_window_drag();
     }
     void on_mouse_up(const pui::ui::MouseEvent& e) override {
+        if (m_skin.windowless_mouse(mouse_kind(e.button, false, false), e.x, e.y, mouse_mask(e.mods, 0))) return;
         if (e.button == pui::ui::MouseButton::Left && m_skin.release_press()) invalidate();
     }
-    void on_mouse_move(int x, int y, unsigned, bool left_down) override {
+    void on_mouse_move(int x, int y, unsigned mods, bool left_down) override {
+        if (m_skin.windowless_mouse(js_panel::js_panel_windowless::mouse_move, x, y, mouse_mask(mods, left_down ? 0x1u : 0u))) {
+            windowless_cursor();
+            return;
+        }
         bool dirty = !left_down && m_skin.release_press();
         if (m_skin.update_hover(x, y)) dirty = true;
         const bool hand = m_skin.over_button(x, y);
+        if (m_windowlessCursor) {
+            m_windowlessCursor = false;
+            m_hand = !hand;
+        }
         if (hand != m_hand) {
             m_hand = hand;
             host()->set_cursor(hand ? pui::ui::Cursor::Hand : pui::ui::Cursor::Arrow);
@@ -88,6 +120,7 @@ public:
         if (dirty) invalidate();
     }
     void on_mouse_leave() override {
+        m_skin.windowless_mouse(js_panel::js_panel_windowless::mouse_leave, -1, -1, 0);
         bool dirty = m_skin.release_press();
         if (m_skin.update_hover(-1, -1)) dirty = true;
         if (dirty) invalidate();
@@ -222,6 +255,7 @@ private:
     bool m_owns_window = false;
     bool m_titlebar_visible = true;
     bool m_hand = false;
+    bool m_windowlessCursor = false;
     NSStatusItem* m_status = nil;
     FooUIPanelsTrayTarget* m_trayTarget = nil;
     std::string m_trayTip;

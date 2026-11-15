@@ -7,7 +7,7 @@ namespace pui {
 
 struct FclNode {
     enum class Kind { Horizontal, Vertical, Tabs, Stack, Smp, Panel } kind = Kind::Panel;
-    std::string type, name, title, script;
+    std::string type, name, title, script, panel_id;
     std::vector<std::string> rect;
     std::vector<std::pair<std::string, std::string>> properties;
     std::vector<FclNode> children;

@@ -4,6 +4,7 @@
 #include "../ui/view.h"
 #include "builtin_skin.h"
 #include "i18n.h"
+#include "js_panel_api.h"
 #include "log.h"
 #include "button.h"
 #include "pvars.h"
@@ -84,6 +85,11 @@ public:
     void focus_next_panel(const std::string& from, bool back);
 
     bool handle_click(int x, int y);
+
+    bool windowless_mouse(int kind, int x, int y, unsigned mask);
+    bool windowless_wheel(int x, int y, int step);
+    bool windowless_key(const void* native_event);
+    int windowless_cursor() const;
 
     bool update_hover(int x, int y);
     bool over_button(int x, int y) const;
@@ -191,17 +197,49 @@ private:
     void dispatch_placement(const Placement& p, int offsetX, int offsetY);
 
     using Kind = PanelKind;
+    class WindowlessHost : public js_panel::js_panel_windowless_host {
+    public:
+        WindowlessHost(SkinEngine* e, std::string name) : m_e(e), m_name(std::move(name)) {}
+        void* native_window() override;
+        void to_native(int& x, int& y) override;
+        bool visible() override;
+        void invalidate(int x, int y, int w, int h) override;
+        void set_cursor(int idc) override;
+        void set_tooltip(const char* text) override;
+        void capture_mouse(bool) override {}
+        void take_focus() override;
+
+    private:
+        SkinEngine* m_e;
+        std::string m_name;
+    };
+    struct Windowless {
+        std::unique_ptr<WindowlessHost> host;
+        service_ptr_t<js_panel::js_panel_windowless> panel;
+        ~Windowless() { if (panel.is_valid()) panel->detach(); }
+    };
     struct Slot {
         Kind kind = Kind::Embedded;
         std::unique_ptr<ui::View> view;
         std::unique_ptr<ui::ViewHost> host;
         std::unique_ptr<ui::EmbeddedPanel> embedded;
+        std::unique_ptr<Windowless> windowless;
         gfx::Rect rect;
         bool shown = false;
         void show(bool v) { shown = v; if (host) host->show(v); if (embedded) embedded->show(v); }
         void place(const gfx::Rect& r, bool top) { rect = r; if (host) host->set_bounds(r, top); if (embedded) embedded->set_bounds(r, top); }
     };
     Slot* ensure_slot(const std::string& name, Kind kind, const Placement& p);
+    bool panel_windowless(const std::string& name, const std::string& type) const;
+    std::unique_ptr<Windowless> create_windowless(const std::string& name);
+    void paint_windowless(gfx::Canvas& cv, const Placement& p);
+    Slot* windowless_slot(const std::string& name);
+    std::string windowless_at(int x, int y) const;
+    void focus_windowless(const std::string& name);
+    std::vector<std::string> m_wlOrder;
+    std::string m_wlHover, m_wlCapture, m_wlFocus;
+    int m_wlCursor = 0;
+    bool m_rendering = false;
 
     bool m_pvars_loaded = false;
     PvarMap m_pvarsNotified;

@@ -77,6 +77,13 @@ anything repo-specific stays in the repo's own sections.
   ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
   `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`; sent after a render
   that changed them) becomes `on_panelsui_mini_mode` / `on_panelsui_zoom`.
+- **Windowless panels:** `js_panel_windowless_api` (same header, published by JS Panel) creates a
+  JS Panel with no window of its own for a `panel.<name>.windowless = 1` skin panel. Panels UI
+  calls `paint(pargb, w, h, scale)` at the `$panel` call's place in the frame, with the skin drawn
+  so far in the caller's buffer, and puts the result back, so later skin drawing lands on top. It
+  forwards mouse, wheel, focus and the native key event (`MSG*` / `NSEvent*`, so the VK mapping
+  stays JS Panel's) and answers the panel through `js_panel_windowless_host` (invalidate, cursor,
+  tooltip, `to_native` for menus). No drag and drop yet.
 - **Script → skin panels:** `panels_ui_api_v2` (queried from the v1 service) names a hosted JS
   Panel's slot from its native view (HWND / NSView), gives panel rects and, for a
   `panel.<name>.transparent = 1` panel, the skin pixels beneath it (`get_backdrop`, PARGB into the
@@ -265,9 +272,19 @@ anything repo-specific stays in the repo's own sections.
   children are placed (names compared lowercased: Eole writes `shpeck` for `Shpeck`),
   `%ps_user_profile_path%` → `%pui_profile_folder%` (`%foobar_path%` is a `~` display path on
   macOS), a `pss.refresh` pvar toggle re-runs the layout for `RefreshPSS()`. SMP panels become JS
-  Panels with their properties seeded into the script. An `.fcl` under an unzipped theme
+  Panels with their properties seeded into the script. SMP 1.6 panels are version 2 + a
+  length-prefixed JSON (`scriptType` 1 script, 3 file by `locationType`, 4/5 package id →
+  `include(utils.GetPackagePath(id) + 'main.js')`); its `panelId` is seeded as `window.Name` (the box
+  keeps the PSS name, which the stack's script refers to), and a theme root's
+  `packages/**/package.json` folders go to `<profile>/foo_spider_monkey_panel/packages/<id>`. An `.fcl` under an unzipped theme
   (`fcl_theme_root`: an ancestor with `themes/`) gets `themes/` copied over the profile's and
   `wsh-data/` without overwriting.
+- **Windowless JS Panels:** `ScriptRuntime::f_panel` calls `ScriptEnv::panel_placed` after
+  flushing text, so `SkinEngine::paint_windowless` draws the panel at its place in the frame
+  (snapshot under its rect → `paint` → `draw_image`). Every invalidate re-renders the whole skin.
+  Input reaches it before the skin's own handling, except over a skin button; the Windows main
+  window has `CS_DBLCLKS`, and `WM_LBUTTONDBLCLK` takes the skin's press path, as a second
+  `WM_LBUTTONDOWN` did before. An old JS Panel without the service gets a window instead.
 - **Actions from scripts:** `panels_ui_api::run_action` defers `SKIN:`/`WIZARD:`/`MENU` actions with
   `fb2k::inMainThread`: they rebuild the skin, which would destroy the JS Panel still running the
   call (QuickJS use-after-free, seen as a crash on Windows).

@@ -28,6 +28,7 @@ public:
     virtual void on_mouse_leave() {}
     virtual void on_wheel(int , int , float ) {}
     virtual bool on_key_down(int , unsigned ) { return false; }
+    virtual bool on_native_key(const void*) { return false; }
     virtual void on_timer(int ) {}
     virtual void on_resize(int , int ) {}
     virtual void on_visibility(bool ) {}
@@ -124,6 +125,7 @@ public:
     virtual void apply_zoom() = 0;
     virtual double zoom() const = 0;
     virtual gfx::ImagePtr capture() { return nullptr; }
+    virtual void logical_to_native(int&, int&) const {}
 };
 
 class EmbeddedPanel {

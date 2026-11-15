@@ -49,7 +49,7 @@ std::string stack(const std::string& script, const std::vector<std::tuple<std::s
 }
 
 std::string sample() {
-    const std::string inner = stack("$set_ps_global(SIDE,40)$showpanel_c(art,$ifequal(%SIDE%,40,0,1))$movepanel_c(LIST,%SIDE%,0,$sub(%ps_width%,%SIDE%),%ps_height%)"
+    const std::string inner = stack("$init_ps_global(TINT,1-2-3)$set_ps_global(SIDE,40)$showpanel_c(art,$ifequal(%SIDE%,40,0,1))$movepanel_c(LIST,%SIDE%,0,$sub(%ps_width%,%SIDE%),%ps_height%)"
                                     "$findfile(%ps_user_profile_path%/x_*)",
                                     { { kSmp, "Art", { "0", "0", "%SIDE%", "%ps_height%" }, smp("// art") },
                                       { kSmp, "List", { "", "", "", "" }, smp("// list", 3) },
@@ -94,6 +94,7 @@ TEST("fcl import: the skin places every panel and translates the stack's script"
     CHECK_EQ(skin.js_panels, 4);
     CHECK(has(skin.main, "$puts(mv.Spider_Monkey_Panel.w,150)"));
     CHECK(has(skin.main, "$puts(ps.SIDE,40)"));
+    CHECK(has(skin.main, "$puts(ps.TINT,$if2($get(ps.TINT),1-2-3))"));
     CHECK(has(skin.main, "$puts(vis.Art,$ifequal($ifequal($get(ps.SIDE),40,0,1),0,0,1))"));
     CHECK(has(skin.main, "$puts(mv.List.x,$get(ps.SIDE))"));
     CHECK(has(skin.main, "$findfile(%pui_profile_folder%/x_*)"));
@@ -128,6 +129,55 @@ TEST("fcl import: the skin is named after the theme folder, and an unzipped them
     CHECK(std::filesystem::exists(profile + "/wsh-data/eole-settings/LAYOUT_0"));
     CHECK_EQ(read_file(profile + "/wsh-data/eole-settings/MAINPANEL_0"), std::string("mine"));
     CHECK_EQ(fcl_theme_root(profile + "/themes/eole/columnsUI_eole.fcl", profile), std::string());
+    std::error_code ec;
+    std::filesystem::remove_all(base, ec);
+}
+
+TEST("fcl import: Spider Monkey Panel 1.6 settings become scripts, file includes and packages") {
+    auto settings = [](const std::string& json) { return u32(2) + str(json); };
+    const std::string memory = settings(R"J({"id": "settings", "panelId": "Now \u00e9", "scriptType": 1, "payload": {"script": "// in \"memory\"\n"},
+        "properties": {"id": "properties", "values": {"a.b": true, "n": 3, "s": "x\\y", "o": {"k": [1, "]"]}}}})J");
+    const std::string file = settings(R"J({"id": "settings", "panelId": "Disk", "scriptType": 3, "payload": {"locationType": 2, "path": "themes\\t\\p.js"}})J");
+    const std::string package = settings(R"J({"id": "settings", "panelId": "Seekbar (mini)", "scriptType": 4,
+        "payload": {"id": "{858943EC-DEAC-4C52-BD3E-07EAF372BBF7}", "name": "Seekbar"}, "properties": {"values": {}}})J");
+    const std::string bad = settings(R"J({"id": "settings", "panelId": "Bad", "scriptType": 4, "payload": {"id": "../x"}})J");
+    const std::string root = u32(0) + u32(4) + item(kSmp, memory, 100) + item(kSmp, file, 100) + item(kSmp, package, 100) + item(kSmp, bad, 100);
+    const std::string head = kHeader + u32(2) + u32(0) + u32(2) + kHorizontal + str("Horizontal splitter") + kSmp + str("Spider Monkey Panel");
+    const std::string layout = u32(0) + u32(0) + u32(1) + kHorizontal + str("Main") + str(root);
+    std::string err;
+    const ImportedSkin skin = convert_fcl(parse_fcl(head + u32(1) + kLayout + str("Layout") + u32(0) + str(layout), &err), "", false, &err);
+    CHECK_EQ(err, std::string());
+    auto script = [&](const std::string& box) {
+        const auto it = std::find_if(skin.files.begin(), skin.files.end(), [&](const auto& f) { return f.first == "js/" + box + ".js"; });
+        return it == skin.files.end() ? std::string() : it->second;
+    };
+    const std::string now = script("Now___");
+    CHECK(has(now, "// in \"memory\"\n"));
+    CHECK(has(now, "\"a.b\": true") && has(now, "\"n\": 3") && has(now, "\"s\": \"x\\\\y\"") && has(now, "\"o\": {\"k\": [1, \"]\"]}"));
+    CHECK(has(script("Disk"), "include(fb.ProfilePath + \"themes\\\\t\\\\p.js\");"));
+    CHECK(has(script("Seekbar__mini_"), "Object.defineProperty(window, 'Name', { get: () => \"Seekbar (mini)\" });"));
+    CHECK(has(script("Seekbar__mini_"), "include(utils.GetPackagePath(\"{858943EC-DEAC-4C52-BD3E-07EAF372BBF7}\") + 'main.js');"));
+    CHECK(!has(script("Bad"), "include("));
+}
+
+TEST("fcl import: a theme's Spider Monkey Panel packages are installed by their id") {
+    const std::string base = (std::filesystem::temp_directory_path() / ("pui_pkg_" + std::to_string(tick_ms()))).string();
+    const std::string theme = base + "/CaTRoX", profile = base + "/profile";
+    std::filesystem::create_directories(theme + "/layout");
+    std::filesystem::create_directories(theme + "/packages/Menu/{AAA}/scripts");
+    std::filesystem::create_directories(theme + "/packages/Evil/x");
+    std::filesystem::create_directories(profile);
+    write_file(theme + "/layout/theme.fcl", "x");
+    write_file(theme + "/packages/Menu/{AAA}/package.json", "\xEF\xBB\xBF{\n  \"author\": \"a\",\n  \"id\": \"{AAA}\"\n}");
+    write_file(theme + "/packages/Menu/{AAA}/scripts/m.js", "menu");
+    write_file(theme + "/packages/Evil/x/package.json", "{\"id\": \"../../escape\"}");
+    const std::string root = fcl_theme_root(theme + "/layout/theme.fcl", profile);
+    CHECK(has(root, "CaTRoX"));
+    std::string err;
+    CHECK(copy_theme_folders(root, profile, &err));
+    CHECK_EQ(read_file(profile + "/foo_spider_monkey_panel/packages/{AAA}/scripts/m.js"), std::string("menu"));
+    CHECK(!std::filesystem::exists(base + "/escape"));
+    CHECK(!std::filesystem::exists(profile + "/themes"));
     std::error_code ec;
     std::filesystem::remove_all(base, ec);
 }

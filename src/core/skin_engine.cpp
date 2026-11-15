@@ -163,6 +163,7 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     case Kind::Embedded: {
         const char* dui = map_type(p.type);
         if (!dui) return nullptr;
+        if (panel_windowless(name, p.type) && (s.windowless = create_windowless(name))) break;
         m_creatingPanel = name;
         s.embedded = ui::create_embedded_ui_element(*m_main, dui, panel_script(name));
         m_creatingPanel.clear();
@@ -183,6 +184,158 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     }
     return &m_panels.emplace(name, std::move(s)).first->second;
 }
+
+bool SkinEngine::panel_windowless(const std::string& name, const std::string& type) const {
+    if (name.empty() || m_st.cfg.num("panel." + name + ".windowless", 0) == 0) return false;
+    std::string t = type;
+    std::transform(t.begin(), t.end(), t.begin(), [](unsigned char c) { return (char)std::tolower(c); });
+    return t == "js panel" || t == "foo_js_panel";
+}
+
+std::unique_ptr<SkinEngine::Windowless> SkinEngine::create_windowless(const std::string& name) {
+    service_enum_t<js_panel::js_panel_windowless_api> e;
+    service_ptr_t<js_panel::js_panel_windowless_api> api;
+    if (!e.next(api)) {
+        report_once("panel '" + name + "': this JS Panel can't draw without a window, so it gets one");
+        return nullptr;
+    }
+    auto w = std::make_unique<Windowless>();
+    w->host = std::make_unique<WindowlessHost>(this, name);
+    m_creatingPanel = name;
+    w->panel = api->create(name.c_str(), panel_script(name).c_str(), w->host.get());
+    m_creatingPanel.clear();
+    if (w->panel.is_empty()) return nullptr;
+    log::info("panel", "'" + name + "' is a windowless JS Panel");
+    return w;
+}
+
+void SkinEngine::paint_windowless(gfx::Canvas& cv, const Placement& placed) {
+    if (!m_rendering || !panel_windowless(placed.name, placed.type)) return;
+    const Placement p = remap_panel(placed);
+    int x = p.x, y = p.y, w = p.w, h = p.h;
+    if (!apply_panel_override(m_panelOverrides, p.name, x, y, w, h) || w <= 0 || h <= 0) return;
+    Slot* s = ensure_slot(p.name, Kind::Embedded, p);
+    if (!s || !s->windowless) return;
+    const gfx::Rect r{ x, y, w, h };
+    s->rect = r;
+    m_wlOrder.push_back(p.name);
+    gfx::ImagePtr below = cv.snapshot(r);
+    gfx::Pixels px;
+    if (!below || !gfx::image_pixels(*below, px) || px.w <= 0 || px.h <= 0) return;
+    auto panel = s->windowless->panel;
+    panel->resize(w, h);
+    panel->paint(px.pargb.data(), px.w, px.h, (double)px.w / w);
+    if (gfx::ImagePtr img = gfx::image_from_pixels(px))
+        cv.draw_image(*img, gfx::RectF{ (float)x, (float)y, (float)w, (float)h },
+                      gfx::RectF{ 0, 0, (float)img->width(), (float)img->height() }, 255, false, gfx::Interp::Bilinear);
+}
+
+SkinEngine::Slot* SkinEngine::windowless_slot(const std::string& name) {
+    if (name.empty()) return nullptr;
+    auto it = m_panels.find(name);
+    return it != m_panels.end() && it->second.windowless && it->second.shown ? &it->second : nullptr;
+}
+
+std::string SkinEngine::windowless_at(int x, int y) const {
+    for (auto it = m_wlOrder.rbegin(); it != m_wlOrder.rend(); ++it) {
+        auto s = m_panels.find(*it);
+        if (s == m_panels.end() || !s->second.windowless || !s->second.shown) continue;
+        const gfx::Rect& r = s->second.rect;
+        if (x >= r.x && x < r.right() && y >= r.y && y < r.bottom()) return *it;
+    }
+    return {};
+}
+
+void SkinEngine::focus_windowless(const std::string& name) {
+    if (name == m_wlFocus) return;
+    const std::string old = m_wlFocus;
+    m_wlFocus = name;
+    if (Slot* s = windowless_slot(old)) {
+        auto panel = s->windowless->panel;
+        panel->focus(false);
+    }
+    if (Slot* s = windowless_slot(name)) {
+        auto panel = s->windowless->panel;
+        panel->focus(true);
+    }
+}
+
+bool SkinEngine::windowless_mouse(int kind, int x, int y, unsigned mask) {
+    using W = js_panel::js_panel_windowless;
+    const bool down = kind == W::mouse_left_down || kind == W::mouse_left_double || kind == W::mouse_right_down ||
+                      kind == W::mouse_right_double || kind == W::mouse_middle_down || kind == W::mouse_middle_double;
+    const bool up = kind == W::mouse_left_up || kind == W::mouse_right_up || kind == W::mouse_middle_up;
+    if (kind == W::mouse_move && !(mask & 0x13)) m_wlCapture.clear();
+    std::string target = m_wlCapture;
+    if (target.empty() && kind != W::mouse_leave && !over_button(x, y)) target = windowless_at(x, y);
+    if (target != m_wlHover) {
+        const std::string old = m_wlHover;
+        m_wlHover = target;
+        m_wlCursor = 0;
+        if (Slot* s = windowless_slot(old)) {
+            auto panel = s->windowless->panel;
+            panel->mouse(W::mouse_leave, 0, 0, 0);
+        }
+    }
+    if (down) focus_windowless(target);
+    Slot* s = windowless_slot(target);
+    if (!s) return false;
+    if (down) m_wlCapture = target;
+    if (up) m_wlCapture.clear();
+    if (kind == W::mouse_move && update_hover(-1, -1) && m_main) m_main->invalidate();
+    const gfx::Rect r = s->rect;
+    auto panel = s->windowless->panel;
+    panel->mouse(kind, x - r.x, y - r.y, mask);
+    return true;
+}
+
+bool SkinEngine::windowless_wheel(int x, int y, int step) {
+    if (step == 0 || over_button(x, y)) return false;
+    Slot* s = windowless_slot(windowless_at(x, y));
+    if (!s) return false;
+    auto panel = s->windowless->panel;
+    panel->wheel(step, false);
+    return true;
+}
+
+bool SkinEngine::windowless_key(const void* native_event) {
+    Slot* s = windowless_slot(m_wlFocus);
+    if (!s) return false;
+    auto panel = s->windowless->panel;
+    return panel->key(native_event);
+}
+
+int SkinEngine::windowless_cursor() const { return m_wlHover.empty() ? 0 : m_wlCursor; }
+
+void* SkinEngine::WindowlessHost::native_window() { return m_e->m_main ? m_e->m_main->native() : nullptr; }
+
+void SkinEngine::WindowlessHost::to_native(int& x, int& y) {
+    auto it = m_e->m_panels.find(m_name);
+    if (it != m_e->m_panels.end()) {
+        x += it->second.rect.x;
+        y += it->second.rect.y;
+    }
+    if (m_e->m_main) m_e->m_main->logical_to_native(x, y);
+}
+
+bool SkinEngine::WindowlessHost::visible() {
+    auto it = m_e->m_panels.find(m_name);
+    return it != m_e->m_panels.end() && it->second.shown;
+}
+
+void SkinEngine::WindowlessHost::invalidate(int, int, int, int) {
+    if (m_e->m_main) m_e->m_main->invalidate();
+}
+
+void SkinEngine::WindowlessHost::set_cursor(int idc) {
+    if (m_e->m_wlHover == m_name) m_e->m_wlCursor = idc;
+}
+
+void SkinEngine::WindowlessHost::set_tooltip(const char* text) {
+    if (m_e->m_main) m_e->m_main->set_tooltip(text ? text : "");
+}
+
+void SkinEngine::WindowlessHost::take_focus() { m_e->focus_windowless(m_name); }
 
 void SkinEngine::dispatch_placement(const Placement& p, int offsetX, int offsetY) {
     int x = p.x + offsetX, y = p.y + offsetY, w = p.w, h = p.h;

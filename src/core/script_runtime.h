@@ -38,6 +38,7 @@ struct ScriptEnv {
     virtual bool image_size(const std::string& path, int& w, int& h) = 0;
     virtual bool file_exists(const std::string& path) = 0;
     virtual std::string find_file(const std::string& pattern) { return file_exists(pattern) ? pattern : std::string(); }
+    virtual void panel_placed(gfx::Canvas&, const Placement&) {}
     virtual void report(const std::string& msg) = 0;
     virtual void set_titlebar_visible(bool) {}
     virtual void set_tray(const std::string&) {}

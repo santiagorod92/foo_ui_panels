@@ -70,6 +70,7 @@ public:
         m_ole_ok = SUCCEEDED(OleInitialize(nullptr));
 
         WNDCLASSEXW wc = { sizeof(wc) };
+        wc.style         = CS_DBLCLKS;
         wc.lpfnWndProc   = WndProc;
         wc.hInstance     = inst;
         wc.lpszClassName = WNDCLASS_NAME;
@@ -212,6 +213,10 @@ public:
                                 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE);
     }
     double zoom() const override { return pui::win::zoom(); }
+    void logical_to_native(int& x, int& y) const override {
+        x = (int)std::lround(x * pui::win::zoom());
+        y = (int)std::lround(y * pui::win::zoom());
+    }
     pui::gfx::ImagePtr capture() override {
         if (!m_wnd || IsIconic(m_wnd)) return nullptr;
         RECT rc = {}; GetClientRect(m_wnd, &rc);
@@ -374,6 +379,58 @@ private:
 
     static int logical(int device) { return pui::to_logical(device, pui::win::zoom()); }
 
+    bool windowless_message(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
+        using W = js_panel::js_panel_windowless;
+        int kind = -1;
+        switch (msg) {
+        case WM_MOUSEMOVE: kind = W::mouse_move; break;
+        case WM_LBUTTONDOWN: kind = W::mouse_left_down; break;
+        case WM_LBUTTONUP: kind = W::mouse_left_up; break;
+        case WM_LBUTTONDBLCLK: kind = W::mouse_left_double; break;
+        case WM_RBUTTONDOWN: kind = W::mouse_right_down; break;
+        case WM_RBUTTONUP: kind = W::mouse_right_up; break;
+        case WM_RBUTTONDBLCLK: kind = W::mouse_right_double; break;
+        case WM_MBUTTONDOWN: kind = W::mouse_middle_down; break;
+        case WM_MBUTTONUP: kind = W::mouse_middle_up; break;
+        case WM_MBUTTONDBLCLK: kind = W::mouse_middle_double; break;
+        case WM_MOUSELEAVE:
+            m_skin.windowless_mouse(W::mouse_leave, -1, -1, 0);
+            return false;
+        case WM_MOUSEWHEEL: {
+            POINT p{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
+            ScreenToClient(wnd, &p);
+            return m_skin.windowless_wheel(logical(p.x), logical(p.y), GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
+        }
+        case WM_KEYDOWN:
+        case WM_SYSKEYDOWN:
+        case WM_KEYUP:
+        case WM_SYSKEYUP:
+        case WM_CHAR: {
+            MSG m{ wnd, msg, wp, lp };
+            return m_skin.windowless_key(&m);
+        }
+        case WM_SETCURSOR:
+            if (LOWORD(lp) != HTCLIENT) return false;
+            if (const int idc = m_skin.windowless_cursor()) {
+                SetCursor(LoadCursorW(nullptr, MAKEINTRESOURCEW(idc)));
+                return true;
+            }
+            return false;
+        default:
+            return false;
+        }
+        if (kind == W::mouse_move) {
+            TRACKMOUSEEVENT tme = { sizeof(tme), TME_LEAVE, wnd, 0 };
+            TrackMouseEvent(&tme);
+        }
+        if (!m_skin.windowless_mouse(kind, logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp)), (unsigned)(wp & 0xffff))) return false;
+        if (kind == W::mouse_left_down || kind == W::mouse_right_down || kind == W::mouse_middle_down) SetCapture(wnd);
+        if ((kind == W::mouse_left_up || kind == W::mouse_right_up || kind == W::mouse_middle_up) && !(wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)) &&
+            GetCapture() == wnd)
+            ReleaseCapture();
+        return true;
+    }
+
     static LRESULT CALLBACK WndProc(HWND wnd, UINT msg, WPARAM wp, LPARAM lp) {
         panels_ui* self = reinterpret_cast<panels_ui*>(GetWindowLongPtrW(wnd, GWLP_USERDATA));
         if (msg == WM_NCCREATE) {
@@ -386,6 +443,7 @@ private:
             if (self->m_hook(wnd, msg, wp, lp, &ret)) return ret;
         }
         if (self && msg == pui::win::TrayIcon::taskbar_created_message()) { self->m_tray.readd(); return 0; }
+        if (self && !self->m_sizeEdges && self->windowless_message(wnd, msg, wp, lp)) return msg == WM_SETCURSOR ? TRUE : 0;
         switch (msg) {
         case WM_SIZE:
             if (self && wp == SIZE_MINIMIZED && self->m_tray.active()) { ShowWindow(wnd, SW_HIDE); return 0; }
@@ -402,6 +460,7 @@ private:
             }
             return 0;
         case WM_LBUTTONDOWN:
+        case WM_LBUTTONDBLCLK:
             if (self) {
                 const int x = logical(GET_X_LPARAM(lp)), y = logical(GET_Y_LPARAM(lp));
                 if (self->m_skin.press(x, y)) {

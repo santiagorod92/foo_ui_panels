@@ -328,8 +328,14 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
 }
 - (void)keyDown:(NSEvent*)e {
     auto* h = host_of(self);
+    if (h && h->live() && h->view()->on_native_key((__bridge const void*)e)) return;
     if (h && dispatch_key(*h->view(), h->live(), h->options(), map_key(e), mods_of(e))) return;
     [super keyDown:e];
+}
+- (void)keyUp:(NSEvent*)e {
+    auto* h = host_of(self);
+    if (h && h->live() && h->view()->on_native_key((__bridge const void*)e)) return;
+    [super keyUp:e];
 }
 - (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)s {
     auto* h = host_of(self);

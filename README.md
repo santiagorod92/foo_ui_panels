@@ -167,6 +167,7 @@ Consolas and Cascadia with the system's monospaced font.
 | `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
 | `panel.<name>.script` | Script for a hosted [JS Panel](#works-with-js-panel) `$panel(<name>,JS Panel,…)`, relative to the skin folder (e.g. `js/now_playing.js`). Unset: JS Panel's own script. |
 | `panel.<name>.transparent` | `1`: that hosted JS Panel is drawn over the skin beneath it instead of its own background (its script sees `window.IsTransparent`). |
+| `panel.<name>.windowless` | `1`: that JS Panel has no window of its own: Panels UI draws it into the skin at its `$panel` call, so whatever the script draws later lands on top of it and, with `transparent = 1`, it sees the skin beneath it as it is right now. Mouse, wheel and keys reach it from the skin's window (a skin button over it still wins). Needs a JS Panel that supports it (otherwise it gets a window as before); no drag and drop. |
 | `action.remap.<action>` | Run another button action instead. |
 | `onboarding.pvars` | First-run flags set to 1 when a popup opens: names, `prefix*`, `!exclusion`. |
 | `pvar.once.<name>` | Set this variable once, then leave it to the user. |
@@ -345,7 +346,8 @@ persistent variables (`$getpvar`, `$setpvar`; the skin repaints) and runs button
 the skin's panels (`panelsui.ShowPanel`, `MovePanel`…, the `PANEL:` actions) and read where they are
 (`panelsui.GetPanelRect`). With `panel.<name>.transparent = 1` in `foo_ui_panels.ini` a JS Panel is
 drawn over the skin beneath it (background image, gradient, the cover of a Now playing panel),
-like a pseudo-transparent panel in Columns UI. A JS Panel's `window.GetColourDUI`/`GetFontDUI` (and
+like a pseudo-transparent panel in Columns UI; `panel.<name>.windowless = 1` goes further and draws
+it into the skin itself, so the skin can draw over it too. A JS Panel's `window.GetColourDUI`/`GetFontDUI` (and
 the CUI ones) return the skin's colours and fonts (`color.*`, `font.*` in
 [Skin configuration](#skin-configuration)), so a script follows the skin it's in without editing.
 `panelsui.Eval(expr)` runs titleformat the way the skin does (`$getpvar`, `%_width%`,
@@ -364,17 +366,20 @@ Themes made for Columns UI + Spider Monkey Panel (Eole and the like) ship a layo
 switches to it, no tools needed:
 
 1. Download the theme and unzip it anywhere (for Eole, the folder that has `themes` and
-   `wsh-data` in it).
+   `wsh-data` in it; for a Spider Monkey Panel 1.6 theme like CaTRoX, the one with `packages`).
 2. Install JS Panel if you don't have it (the theme's panels are JavaScript).
 3. **View › Panels UI › Import Columns UI layout…** and pick the theme's `.fcl` (Eole:
    `themes/eole/columnsUI_eole.fcl`).
 
 The theme's `themes` folder is copied into the foobar2000 profile folder (replacing an older copy)
-and its `wsh-data` too, without overwriting settings you already have. The skin is written to
+and its `wsh-data` too, without overwriting settings you already have. Spider Monkey Panel 1.6
+packages in its `packages` folder (each folder with a `package.json`) are installed into
+`foo_spider_monkey_panel/packages/<id>` in the profile, where JS Panel finds them. The skin is written to
 `foo_ui_panels-skins/<theme name>` and stays there: pick it again in Preferences like any other.
 Splitters, tab stacks and Panel Stack Splitter containers (with their layout scripts) become the
 skin's `main.txt`; each Spider Monkey Panel becomes a JS Panel running its script, with its
-properties; ESLyric/OpenLyrics and Shpeck/spectrum panels become Panels UI's own *Lyric Show* and
+properties (both the 1.x settings and 1.6's: an in-memory script, a script file or a package, and
+the panel name, which the script sees as `window.Name`); ESLyric/OpenLyrics and Shpeck/spectrum panels become Panels UI's own *Lyric Show* and
 *Spectrum*, playlist/library/album art panels their Panels UI equivalents. A panel with no known
 equivalent is placed by its name, and the import tells you which ones those are. A script that sets
 `UIHacks.FrameStyle` (Eole does) hides the window's title bar, as on Columns UI.

@@ -263,8 +263,14 @@ std::string ScriptRuntime::image_path(const std::string& raw) {
 }
 
 bool ScriptRuntime::f_panel(const ScriptArgs& a, ScriptOut&) {
-    (m_st.capturePlacements ? *m_st.capturePlacements : m_st.placements).push_back(
-        { a.str(0), a.str(1), a.num(2), a.num(3), a.num(4), a.num(5) });
+    const Placement p{ a.str(0), a.str(1), a.num(2), a.num(3), a.num(4), a.num(5) };
+    if (m_st.capturePlacements) {
+        m_st.capturePlacements->push_back(p);
+        return true;
+    }
+    m_st.placements.push_back(p);
+    flush_text();
+    m_env.panel_placed(m_cv, p);
     return true;
 }
 

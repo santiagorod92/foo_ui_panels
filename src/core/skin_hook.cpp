@@ -69,6 +69,8 @@ public:
 
     ScriptRuntime& runtime() { return m_rt; }
 
+    void panel_placed(gfx::Canvas& cv, const Placement& p) override { m_e->paint_windowless(cv, p); }
+
     bool process_field(titleformat_text_out* out, const char* name, t_size len, bool& found) override {
         found = true;
         TfOut o(out);
@@ -283,6 +285,8 @@ void SkinEngine::render(gfx::Canvas& cv, int width, int height) {
 
     m_st.placements.clear();
     m_st.buttons.clear();
+    m_wlOrder.clear();
+    m_rendering = true;
     { SkinHook hook(this, cv, width, height, metadb_handle_ptr(), m_hoverX, m_hoverY);
       DrawString out; hook.runtime().set_text_buffer(&out.buf());
       bool ran = false;
@@ -293,6 +297,7 @@ void SkinEngine::render(gfx::Canvas& cv, int width, int height) {
       gfx::Color accent;
       const bool haveAccent = theme_color(accent);
       hook.runtime().apply_selected_buttons(m_st.buttons, haveAccent, accent); }
+    m_rendering = false;
     draw_button_feedback(cv);
 
     m_problemMarker = draw_problem_marker(cv, width, height, main_script_label(), true);

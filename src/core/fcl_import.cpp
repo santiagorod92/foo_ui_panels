@@ -71,10 +71,131 @@ std::string json_string(const std::string& s) {
     return out + "\"";
 }
 
+size_t json_space(const std::string& s, size_t i) {
+    while (i < s.size() && std::isspace((unsigned char)s[i])) ++i;
+    return i;
+}
+
+size_t json_skip(const std::string& s, size_t i) {
+    i = json_space(s, i);
+    if (i >= s.size()) return std::string::npos;
+    if (s[i] == '"') {
+        for (++i; i < s.size(); ++i) {
+            if (s[i] == '\\') ++i;
+            else if (s[i] == '"') return i + 1;
+        }
+        return std::string::npos;
+    }
+    if (s[i] == '{' || s[i] == '[') {
+        int depth = 0;
+        for (; i < s.size(); ++i) {
+            if (s[i] == '"') {
+                i = json_skip(s, i);
+                if (i == std::string::npos) return i;
+                --i;
+            } else if (s[i] == '{' || s[i] == '[') ++depth;
+            else if ((s[i] == '}' || s[i] == ']') && --depth == 0) return i + 1;
+        }
+        return std::string::npos;
+    }
+    while (i < s.size() && s[i] != ',' && s[i] != '}' && s[i] != ']' && !std::isspace((unsigned char)s[i])) ++i;
+    return i;
+}
+
+void utf8_append(std::string& out, uint32_t c) {
+    if (c < 0x80) out += (char)c;
+    else if (c < 0x800) { out += (char)(0xc0 | c >> 6); out += (char)(0x80 | (c & 0x3f)); }
+    else if (c < 0x10000) { out += (char)(0xe0 | c >> 12); out += (char)(0x80 | (c >> 6 & 0x3f)); out += (char)(0x80 | (c & 0x3f)); }
+    else {
+        out += (char)(0xf0 | c >> 18);
+        out += (char)(0x80 | (c >> 12 & 0x3f));
+        out += (char)(0x80 | (c >> 6 & 0x3f));
+        out += (char)(0x80 | (c & 0x3f));
+    }
+}
+
+std::string json_text(const std::string& raw) {
+    std::string out;
+    if (raw.size() < 2 || raw.front() != '"') return raw;
+    for (size_t i = 1; i + 1 < raw.size(); ++i) {
+        if (raw[i] != '\\') { out += raw[i]; continue; }
+        const char e = raw[++i];
+        if (e == 'n') out += '\n';
+        else if (e == 'r') out += '\r';
+        else if (e == 't') out += '\t';
+        else if (e == 'b') out += '\b';
+        else if (e == 'f') out += '\f';
+        else if (e == 'u' && i + 4 < raw.size()) {
+            uint32_t c = (uint32_t)std::strtoul(raw.substr(i + 1, 4).c_str(), nullptr, 16);
+            i += 4;
+            if (c >= 0xd800 && c < 0xdc00 && i + 6 < raw.size() && raw[i + 1] == '\\' && raw[i + 2] == 'u') {
+                const uint32_t lo = (uint32_t)std::strtoul(raw.substr(i + 3, 4).c_str(), nullptr, 16);
+                if (lo >= 0xdc00 && lo < 0xe000) { c = 0x10000 + ((c - 0xd800) << 10) + (lo - 0xdc00); i += 6; }
+            }
+            utf8_append(out, c);
+        } else out += e;
+    }
+    return out;
+}
+
+std::vector<std::pair<std::string, std::string>> json_members(const std::string& obj) {
+    std::vector<std::pair<std::string, std::string>> out;
+    size_t i = json_space(obj, 0);
+    if (i >= obj.size() || obj[i] != '{') return out;
+    i = json_space(obj, i + 1);
+    while (i < obj.size() && obj[i] == '"') {
+        const size_t k = json_skip(obj, i);
+        if (k == std::string::npos) return out;
+        const std::string key = json_text(obj.substr(i, k - i));
+        i = json_space(obj, k);
+        if (i >= obj.size() || obj[i] != ':') return out;
+        const size_t v = json_space(obj, i + 1), end = json_skip(obj, v);
+        if (end == std::string::npos) return out;
+        out.emplace_back(key, obj.substr(v, end - v));
+        i = json_space(obj, end);
+        if (i < obj.size() && obj[i] == ',') i = json_space(obj, i + 1);
+    }
+    return out;
+}
+
+std::string json_get(const std::string& obj, const std::string& key) {
+    for (auto& [k, v] : json_members(obj))
+        if (k == key) return v;
+    return {};
+}
+
+bool safe_package_id(const std::string& id) {
+    return !id.empty() && id.find_first_of("/\\:") == std::string::npos && id.find("..") == std::string::npos;
+}
+
+void parse_smp_settings(const std::string& json, FclNode& node) {
+    if (json_text(json_get(json, "id")) != "settings") return;
+    const std::string payload = json_get(json, "payload");
+    const int type = std::atoi(json_get(json, "scriptType").c_str());
+    if (type == 1) node.script = json_text(json_get(payload, "script"));
+    else if (type == 3) {
+        const int location = std::atoi(json_get(payload, "locationType").c_str());
+        const char* base = location == 1 ? "fb.ComponentPath + " : location == 2 ? "fb.ProfilePath + " : location == 3 ? "fb.FoobarPath + " : "";
+        node.script = std::string("include(") + base + json_string(json_text(json_get(payload, "path"))) + ");";
+    } else if (type == 4 || type == 5) {
+        const std::string id = json_text(json_get(payload, "id"));
+        if (!safe_package_id(id)) return;
+        node.script = "include(utils.GetPackagePath(" + json_string(id) + ") + 'main.js');";
+    } else return;
+    for (auto& [k, v] : json_members(json_get(json_get(json, "properties"), "values"))) node.properties.emplace_back(k, v);
+    node.panel_id = json_text(json_get(json, "panelId"));
+    if (node.name.empty()) node.name = node.panel_id;
+}
+
 void parse_smp(const std::string& data, FclNode& node) {
     try {
         Reader r(data);
-        if (r.u32() != 1) return;
+        const uint32_t version = r.u32();
+        if (version == 2) {
+            parse_smp_settings(r.string(), node);
+            return;
+        }
+        if (version != 1) return;
         r.take(1 + 16 + 1);
         const uint32_t count = r.u32();
         if (count > 100000) return;
@@ -307,7 +428,7 @@ public:
         auto scan = [&](const std::string& text) {
             rewrite(text,
                     [&](const std::string& name, const std::vector<std::string>& args, std::string&) {
-                        if (lower(name) == "set_ps_global" && !args.empty()) m_globals.insert(trim(args[0]));
+                        if ((lower(name) == "set_ps_global" || lower(name) == "init_ps_global") && !args.empty()) m_globals.insert(trim(args[0]));
                         return false;
                     },
                     [](const std::string&, std::string&) { return false; });
@@ -334,7 +455,7 @@ public:
 
     std::vector<std::string> lines;
     struct Script {
-        std::string box, script;
+        std::string box, script, panel_id;
         std::vector<std::pair<std::string, std::string>> properties;
     };
     std::vector<Script> scripts;
@@ -361,6 +482,10 @@ private:
             [&](const std::string& name, const std::vector<std::string>& a, std::string& out) {
                 const std::string low = lower(name);
                 if (low == "set_ps_global" && a.size() >= 2) { out = "$puts(ps." + trim(a[0]) + "," + a[1] + ")"; return true; }
+                if (low == "init_ps_global" && a.size() >= 2) {
+                    out = "$puts(ps." + trim(a[0]) + ",$if2($get(ps." + trim(a[0]) + ")," + a[1] + "))";
+                    return true;
+                }
                 if (low == "get_ps_global" && !a.empty()) { out = "$get(ps." + trim(a[0]) + ")"; return true; }
                 if (low == "showpanel_c" && a.size() >= 2) {
                     const std::string k = kid(a[0]);
@@ -480,7 +605,7 @@ private:
                 if (c.active) active = &c;
             if (!active && !node.children.empty()) active = &node.children.front();
             if (active) {
-                const std::string id = ident(!active->title.empty() ? active->title : active->type);
+                const std::string id = ident(!active->title.empty() ? active->title : !active->name.empty() ? active->name : active->type);
                 lines.push_back("$puts(mv." + id + ",)");
                 FclNode copy = *active;
                 copy.rect.clear();
@@ -489,7 +614,7 @@ private:
             break;
         }
         case FclNode::Kind::Smp:
-            scripts.push_back({ box, node.script, node.properties });
+            scripts.push_back({ box, node.script, node.panel_id, node.properties });
             lines.push_back(panel(box, "JS Panel"));
             break;
         case FclNode::Kind::Panel: {
@@ -594,6 +719,8 @@ ImportedSkin convert_fcl(const std::vector<FclPreset>& presets, const std::strin
         for (size_t i = 0; i < s.properties.size(); ++i)
             seed += (i ? ", " : "") + json_string(s.properties[i].first) + ": " + s.properties[i].second;
         seed += "};\n    for (const k in seed) window.GetProperty(k, seed[k]);\n})();\n";
+        if (!s.panel_id.empty())
+            seed += "Object.defineProperty(window, 'Name', { get: () => " + json_string(s.panel_id) + " });\n";
         out.files.emplace_back("js/" + s.box + ".js", seed + s.script + "\n" + kRefresh);
         out.ini += "panel." + s.box + ".script = js/" + s.box + ".js\n";
     }
@@ -620,7 +747,8 @@ std::string fcl_theme_root(const std::string& fclPath, const std::string& profil
     const auto prof = std::filesystem::weakly_canonical(fs_path(profile), ec);
     std::filesystem::path dir = std::filesystem::weakly_canonical(fs_path(fclPath), ec).parent_path();
     for (int up = 0; up < 4 && !dir.empty(); ++up, dir = dir.parent_path()) {
-        if (std::filesystem::is_directory(dir / "themes", ec)) return dir == prof ? std::string() : fs_utf8(dir);
+        if (std::filesystem::is_directory(dir / "themes", ec) || std::filesystem::is_directory(dir / "packages", ec))
+            return dir == prof ? std::string() : fs_utf8(dir);
         if (dir == dir.parent_path()) break;
     }
     return {};
@@ -630,17 +758,31 @@ bool copy_theme_folders(const std::string& root, const std::string& profile, std
     namespace fs = std::filesystem;
     std::error_code ec;
     const fs::path from = fs_path(root), to = fs_path(profile);
-    fs::copy(from / "themes", to / "themes", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
-    if (ec) {
+    auto failed = [&] {
         if (error) *error = ec.message();
         return false;
+    };
+    if (fs::is_directory(from / "themes", ec)) {
+        fs::copy(from / "themes", to / "themes", fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+        if (ec) return failed();
     }
     if (fs::is_directory(from / "wsh-data", ec)) {
         fs::copy(from / "wsh-data", to / "wsh-data", fs::copy_options::recursive | fs::copy_options::skip_existing, ec);
-        if (ec) {
-            if (error) *error = ec.message();
-            return false;
+        if (ec) return failed();
+    }
+    if (fs::is_directory(from / "packages", ec)) {
+        const fs::path packages = to / "foo_spider_monkey_panel" / "packages";
+        for (auto it = fs::recursive_directory_iterator(from / "packages", ec); !ec && it != fs::recursive_directory_iterator(); it.increment(ec)) {
+            if (it.depth() > 2 || it->path().filename() != "package.json") continue;
+            std::string meta = read_file(fs_utf8(it->path()));
+            if (meta.rfind("\xEF\xBB\xBF", 0) == 0) meta.erase(0, 3);
+            const std::string id = json_text(json_get(meta, "id"));
+            if (!safe_package_id(id)) continue;
+            fs::create_directories(packages / fs_path(id), ec);
+            if (!ec) fs::copy(it->path().parent_path(), packages / fs_path(id), fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+            if (ec) return failed();
         }
+        if (ec) return failed();
     }
     return true;
 }

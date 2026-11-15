@@ -3,6 +3,22 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.24.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.23.0...v1.24.0) (2026-11-15)
+
+### Highlights
+- **JS Panels drawn into the skin**: `panel.<name>.windowless = 1` in a skin's `foo_ui_panels.ini`
+  draws that JS Panel into Panels UI's own window instead of a window of its own. Whatever the
+  skin draws after it lands on top, and with `transparent = 1` the panel sees the skin beneath it
+  as it is right now. Mouse, wheel and keys still reach the panel (a skin button over it wins).
+  Needs JS Panel 1.7.0; an older one gets a window as before.
+- **Spider Monkey Panel 1.6 themes import**: *Import Columns UI layout…* now reads the panels of
+  Spider Monkey Panel 1.6 layouts (in-memory scripts, script files and packages, with their
+  properties and panel names) and installs the theme's `packages` folder into the profile.
+
+### Fixed
+- An imported layout's `$init_ps_global(...)` sets its value instead of being drawn as an unknown
+  function.
+
 ## [1.23.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.22.0...v1.23.0) (2026-11-09)
 
 ### Highlights
