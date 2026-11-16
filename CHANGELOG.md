@@ -3,6 +3,18 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.27.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.26.0...v1.27.0) (2026-11-16)
+
+### Highlights
+- **fooAvA without Python**: *View › Panels UI › Import fooAvA installer…* reads the fooAvA 1.05
+  installer from the author's DeviantArt page (without running it), writes the skin to
+  `foo_ui_panels-skins/fooAvA` in the profile and switches to it, on Windows and macOS. The skin is
+  the same one `tools/setup_fooava.py` made, which is gone.
+
+### Changed
+- The README says which way to get a skin: the layout wizard, the Columns UI import (Eole,
+  CaTRoX…), the fooAvA import, or a skin folder of your own.
+
 ## [1.26.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.25.0...v1.26.0) (2026-11-16)
 
 ### Highlights

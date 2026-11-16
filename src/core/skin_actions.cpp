@@ -11,6 +11,7 @@
 #include "skin_paths.h"
 #include "skin_templates.h"
 #include "fcl_import.h"
+#include "fooava_import.h"
 #include "fs_util.h"
 #include "ui_logic.h"
 #include "log.h"
@@ -296,6 +297,30 @@ bool SkinEngine::run_button_action(const std::string& action) {
             for (const auto& n : skin.hosted_by_name) names += (names.empty() ? "" : ", ") + n;
             ui::message_box(nullptr, "Panels UI", trf("These panels have no Panels UI equivalent and are hosted by name: {0}", { names }));
         }
+        return true;
+    }
+    if (a == "SKIN:IMPORT_FOOAVA" || a.compare(0, 19, "SKIN:IMPORT_FOOAVA:") == 0) {
+        if (!m_main) return true;
+        const std::string src = a.size() > 19 ? unquote(a.substr(19)) : ui::choose_file(*m_main, tr("Choose the fooAvA 1.05 installer (.exe)"), "exe");
+        if (src.empty()) return true;
+        std::string err;
+        FooavaFiles files;
+        std::error_code ec;
+        if (std::filesystem::is_directory(fs_path(src), ec)) files = read_fooava_folder(src);
+        else unpack_fooava_installer(read_file(src), files, &err);
+        const FooavaSkin skin = err.empty() ? convert_fooava(files, &err) : FooavaSkin{};
+        if (!err.empty()) {
+            ui::message_box(nullptr, "Panels UI", trf("Couldn't import fooAvA: {0}", { err }));
+            return true;
+        }
+        const std::string dir = install_skin_files("fooAvA", skin.main, skin.ini, skin.files, layout_skins_dir(), &err);
+        if (dir.empty()) { ui::message_box(nullptr, "Panels UI", err); return true; }
+        log::info("skin", "imported fooAvA from " + src + " (" + std::to_string(skin.images) + " images, " + std::to_string(skin.panels) +
+                              " panel scripts, " + std::to_string(skin.popups) + " popups) into " + dir);
+        PrefsModel prefs(prefs_backend());
+        prefs.load();
+        prefs.choose_skin_folder(dir);
+        apply_skin_choice(prefs);
         return true;
     }
     if (a == "MENU") {

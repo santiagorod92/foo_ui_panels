@@ -95,37 +95,41 @@ its top level (the skin starts as soon as one appears there, no restart), or sev
 (Preferences opens to pick the main one). Until a folder has a main script, a welcome screen offers
 the wizard, the folder chooser and the Preferences page.
 
+### Which way to get a skin
+
+| You have | What to do | Needs |
+|---|---|---|
+| Nothing yet | The layout wizard (above) | Nothing else |
+| A Columns UI + Spider Monkey Panel theme (Eole, CaTRoX…) | **View › Panels UI › Import Columns UI layout…** on its `.fcl` ([Importing a Columns UI layout](#importing-a-columns-ui-layout)) | [JS Panel](#works-with-js-panel) |
+| fooAvA, the old Panels UI skin | **View › Panels UI › Import fooAvA installer…** on its `.exe` ([Setting up fooAvA](#setting-up-fooava)) | Nothing else |
+| Another skin folder for this Panels UI | Pick its folder in Preferences | Nothing else |
+
+Both imports run inside foobar2000: no Python, no command line. Guides written for the original
+Panels UI (foobar2000 0.9) don't apply to this component.
+
 ### Setting up fooAvA
 
 fooAvA is distributed by its author (link above) as a Windows installer for the old Panels UI.
-[`tools/setup_fooava.py`](tools/setup_fooava.py) (Python 3, no extra packages, any OS) turns it
-into a ready-to-use skin folder in one step — you don't run the installer itself (it targets
-foobar2000 0.9):
+Panels UI reads that installer and turns it into a skin; you don't run the installer itself (it
+targets foobar2000 0.9), on Windows or macOS:
 
 1. Download fooAvA 1.05 from the author's DeviantArt page — `fooava_1_05_by_dawxxx666_*.exe`.
-2. Run `python3 tools/setup_fooava.py fooava_1_05_by_dawxxx666_*.exe` (on Windows: `py
-   tools\setup_fooava.py …`). It unpacks the installer, copies its images, converts the layout
-   and its panel scripts into `fooava.txt` + `panels/`, writes fooAvA's `foo_ui_panels.ini`, and
-   converts each popup window (settings, playlist, about) to where the skin's buttons look for
-   it. The skin goes to `fooava` in your **Documents** folder; add a second argument to put it
-   elsewhere. An already unpacked installer folder works too instead of the `.exe`.
-3. Point Panels UI at it: **Preferences › Display › Panels UI (reborn) › Browse…** (or the
-   wizard's **Use my own skin folder…**, the welcome screen's **Choose a skin folder…**) and pick the `fooava` folder.
-   Picking a skin's own folder or a folder that holds several skins both work: the skin list
-   only shows the subfolders that are skins.
-4. Optional, from a source checkout: `make skin-lint LINT_DIR=<the folder>` lists anything missing.
-
-On macOS, Documents is a protected folder: the first time, macOS asks whether foobar2000 may
-access it — **Allow**, or the skin can't load (System Settings › Privacy & Security › Files and
-Folders changes it later). Keeping the skin in `~/Library/foobar2000-v2/foo_ui_panels/` instead
-needs no permission.
+2. **View › Panels UI › Import fooAvA installer…** and pick that `.exe`. Panels UI unpacks it,
+   copies its images, converts the layout and its panel scripts into `main.txt` + `panels/`,
+   writes fooAvA's `foo_ui_panels.ini` and converts each popup window (settings, playlist, about)
+   to where the skin's buttons look for it. The skin is written to `foo_ui_panels-skins/fooAvA` in
+   the foobar2000 profile folder and Panels UI switches to it. Importing again writes a new
+   folder (`fooAvA 2`…), so edits are never overwritten; pick any of them in Preferences.
 
 fooAvA's fonts (Calibri, Swis721 Cn BT) are optional: without them it uses the stand-ins its
 `foo_ui_panels.ini` names. Cover flow needed the long-gone foo_chronflow; the native one replaces it.
 The left column's lyrics view (**L**) shows the lyrics inside the CD case, over the cover, instead
-of across the whole column. A skin set up with an older version gets this by running the setup again.
-The lower-level tools it runs are `tools/recover_fooava_images.py` (unpacks the installer) and
-`tools/extract_fooava.py` (converts one configuration).
+of across the whole column.
+
+From a source checkout, `make fooava-skin FOOAVA=<installer .exe or unpacked folder> SKIN=<folder>`
+writes the same skin without foobar2000, and `make skin-lint LINT_DIR=<folder>` lists anything
+missing in it. The installer is unpacked with [miniz](https://github.com/richgel999/miniz) (MIT)
+and [bzip2](https://sourceware.org/bzip2/) (BSD-style), both in `third_party/`.
 
 ### Skin configuration
 
@@ -274,7 +278,8 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
   `PANEL:RESET:<name>` (back to the script's place; every override is dropped when the skin reloads),
   `WINDOWSTYLE:hidetitlebar`/`WINDOWSTYLE:showtitlebar` (as `$windowstyle()`),
   `PREFERENCES` (this component's Preferences page), `URL:<address>`, `SKIN:CHOOSE_FOLDER` and
-  `SKIN:IMPORT_FCL[:<path>]` (see [Importing a Columns UI layout](#importing-a-columns-ui-layout)).
+  `SKIN:IMPORT_FCL[:<path>]` (see [Importing a Columns UI layout](#importing-a-columns-ui-layout)),
+  `SKIN:IMPORT_FOOAVA[:<installer or folder>]` (see [Setting up fooAvA](#setting-up-fooava)).
 - Switching skin or main script in Preferences applies immediately (no restart). The skin picker
   shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /
   `screenshot.png` in its folder), else a picture the component takes of it the first time it is
@@ -694,5 +699,7 @@ in detail. Changes reach `main` through pull requests.
 
 ## License
 
-The component's source code is released under the [MIT License](LICENSE).
+The component's source code is released under the [MIT License](LICENSE). It includes
+[miniz](https://github.com/richgel999/miniz) 3.0.2 (MIT, `third_party/miniz/LICENSE`) and
+[bzip2](https://sourceware.org/bzip2/) 1.0.8 (BSD-style, `third_party/bzip2/LICENSE`).
 fooAvA and its artwork belong to dawxxx666, who licenses them under CC BY-NC-SA 3.0.

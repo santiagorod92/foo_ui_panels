@@ -91,6 +91,10 @@ file(GLOB COMP_SRC CONFIGURE_DEPENDS
   "${CMAKE_SOURCE_DIR}/src/panels/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/platform/${PLATFORM_DIR}/*.cpp"
   "${CMAKE_SOURCE_DIR}/src/platform/${PLATFORM_DIR}/*.mm")
+file(GLOB THIRD_PARTY_SRC "${CMAKE_SOURCE_DIR}/third_party/*/*.c")
+add_library(pui_third_party STATIC ${THIRD_PARTY_SRC})
+target_compile_definitions(pui_third_party PRIVATE BZ_NO_STDIO)
+target_compile_options(pui_third_party PRIVATE -w)
 include(cmake/embed_images.cmake)
 pui_embed_images("${CMAKE_SOURCE_DIR}/res" "${PUI_GENERATED_DIR}/builtin_images.cpp")
 list(APPEND COMP_SRC "${PUI_GENERATED_DIR}/builtin_images.cpp")
@@ -106,7 +110,7 @@ if(WIN32)
   add_library(foo_ui_panels SHARED ${COMP_SRC})
   set_target_properties(foo_ui_panels PROPERTIES PREFIX "" SUFFIX ".dll")
   target_link_libraries(foo_ui_panels PRIVATE
-    fb2ksdk pfc
+    fb2ksdk pfc pui_third_party
     "${SDK}/foobar2000/shared/${PUI_SHARED_LIB}"
     user32 gdi32 shell32 ole32 oleaut32 uuid comctl32 comdlg32 advapi32 shlwapi winmm msimg32 gdiplus uxtheme)
 else()
@@ -120,7 +124,7 @@ else()
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PUI_BUNDLE_VERSION}"
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_SOURCE_DIR}/cmake/mac/Info.plist.in")
   target_compile_options(foo_ui_panels PRIVATE -fobjc-arc)
-  target_link_libraries(foo_ui_panels PRIVATE fb2ksdk pfc
+  target_link_libraries(foo_ui_panels PRIVATE fb2ksdk pfc pui_third_party
     "-framework Cocoa" "-framework CoreGraphics" "-framework CoreText" "-framework ImageIO"
     "-framework QuartzCore" "-framework CoreFoundation" "-framework Security")
 endif()

@@ -70,5 +70,5 @@ panels and draws directly. Heritage: Panel Stack Splitter (PSS) scripting (`SCPL
 - `raw/s1.bin` — bitmap/gradient data.
 
 Note: skin references hardcoded author paths (`G:\Dawid\Muza\...`, `F:\Program Files\foobar2000_VISTA\...`)
-— blanked on import by `tools/extract_fooava.py` (`AUTHOR_PATH_PVARS` / `scrub_author_paths`),
+— blanked on import by `src/core/fooava_import.cpp` (`convert_config` / `scrub_author_paths`),
 image path casing (Windows fs was case-insensitive, ours isn't) fixed the same way (`fix_image_case`).

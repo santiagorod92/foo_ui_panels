@@ -21,7 +21,8 @@ python3 scripts/i18n-check.py
 SRC=(tests/*.cpp src/core/script_util.cpp src/core/lyrics_parse.cpp src/core/skin_config.cpp src/core/ui_logic.cpp
      src/core/script_runtime.cpp src/core/skin_lint.cpp src/core/prefs_model.cpp src/core/list_logic.cpp
      src/core/builtin_skin.cpp src/core/skin_templates.cpp src/core/log.cpp src/core/diagnostics.cpp
-     src/core/i18n.cpp src/core/i18n_table.cpp src/core/fcl_import.cpp)
+     src/core/i18n.cpp src/core/i18n_table.cpp src/core/fcl_import.cpp src/core/fooava_import.cpp)
+C_SRC=(third_party/*/*.c)
 
 win_build() {
   . scripts/toolchain.sh
@@ -30,9 +31,10 @@ win_build() {
   local out=build/tests-win tp=()
   mkdir -p "$out"
   for f in "${SRC[@]}"; do tp+=("/Tp$PWD/$f"); done
+  for f in "${C_SRC[@]}"; do tp+=("/Tc$PWD/$f"); done
   echo "==> unit tests: clang-cl (Windows x64)" >&2
   clang-cl --target=x86_64-pc-windows-msvc -fuse-ld=lld-link /std:c++20 /EHsc /MT /GR /O1 /W3 /utf-8 \
-    /D_CRT_SECURE_NO_WARNINGS "-I$PWD/src" \
+    /D_CRT_SECURE_NO_WARNINGS /DNOMINMAX /DBZ_NO_STDIO -Wno-unused-command-line-argument "-I$PWD/src" \
     "/imsvc$XWIN/crt/include" "/imsvc$XWIN/sdk/include/ucrt" "/imsvc$XWIN/sdk/include/um" "/imsvc$XWIN/sdk/include/shared" \
     "${tp[@]}" "/Fe$out/run_tests.exe" "/Fo$out/" /link \
     "/libpath:$XWIN/crt/lib/x86_64" "/libpath:$XWIN/sdk/lib/ucrt/x86_64" "/libpath:$XWIN/sdk/lib/um/x86_64" >&2
@@ -41,9 +43,15 @@ win_build() {
 
 case "$MODE" in
   host)
-    mkdir -p build/tests
+    mkdir -p build/tests/c
+    objs=()
+    for f in "${C_SRC[@]}"; do
+      o="build/tests/c/$(basename "${f%.c}").o"
+      "${CC_HOST:-clang}" -g -O1 -w -DBZ_NO_STDIO -fsanitize=address,undefined -fno-omit-frame-pointer -c "$f" -o "$o"
+      objs+=("$o")
+    done
     "${CXX_HOST:-clang++}" -std=c++20 -g -O1 -Wall -Wextra -fsanitize=address,undefined -fno-omit-frame-pointer \
-      -Isrc "${SRC[@]}" -o build/tests/run_tests
+      -Isrc "${SRC[@]}" "${objs[@]}" -o build/tests/run_tests
     ./build/tests/run_tests
     ;;
   win)
