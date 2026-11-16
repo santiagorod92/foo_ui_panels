@@ -10,6 +10,37 @@ The original Panels UI (`foo_ui_panels`) stopped at foobar2000 0.9.5.2 and was n
 as source. This is a from-scratch reimplementation for foobar2000 v2, built with one concrete
 goal: making the **fooAvA** skin fully usable again on a current foobar2000.
 
+## Start here
+
+New to foobar2000 skins? This is the whole picture in plain words.
+
+- **foobar2000** is the music player. What its window looks like is decided by a *user interface
+  module*: the Default UI ships with it, and others can replace it.
+- **Panels UI** (this component) is one of those modules. Instead of fixed lists and buttons, it
+  draws whatever a **skin** says: a skin is a folder with a small script (where every image,
+  button and text goes) plus its images. Change the skin and the whole player looks different.
+- **[JS Panel](https://github.com/santiagorod92/foo_js_panel)** is a separate component, from a
+  separate repository. It adds boxes whose contents are a little program written in JavaScript
+  (the "JS" in its name). Many popular themes, such as Eole and CaTRoX, are built from those
+  boxes, so they need JS Panel installed next to Panels UI. Old Panels UI skins like fooAvA
+  don't.
+- **[foo_navidrome](https://github.com/santiagorod92/foo_navidrome)** is optional: it plays the
+  music on your own Navidrome (Subsonic) server, and Panels UI and JS Panel show it like local
+  files.
+
+Every piece is a `.fb2k-component` file: double-click it (or drag it onto foobar2000) and restart
+foobar2000. Nothing else to install: no Python, no command line.
+
+| I want to… | Install | Follow |
+|---|---|---|
+| Try Panels UI with a ready-made look | Panels UI | [Installation](#installation) (the layout wizard opens by itself) |
+| Bring back **fooAvA**, the classic Panels UI skin | Panels UI | [Setting up fooAvA](#setting-up-fooava) |
+| Use **Eole**, **CaTRoX** or another Columns UI + Spider Monkey Panel theme | Panels UI + JS Panel | [Setting up Eole (or another Columns UI theme)](#setting-up-eole-or-another-columns-ui-theme) |
+| Use a skin folder someone gave me | Panels UI | Pick its folder in *Preferences › Display › Panels UI (reborn)* |
+
+Guides written for the original Panels UI (foobar2000 0.9, such as old forum or wiki pages) don't
+apply to this component.
+
 ## Why this exists
 
 I've been a foobar2000 user since its early days. When Panels UI came out, people started
@@ -95,31 +126,28 @@ its top level (the skin starts as soon as one appears there, no restart), or sev
 (Preferences opens to pick the main one). Until a folder has a main script, a welcome screen offers
 the wizard, the folder chooser and the Preferences page.
 
-### Which way to get a skin
-
-| You have | What to do | Needs |
-|---|---|---|
-| Nothing yet | The layout wizard (above) | Nothing else |
-| A Columns UI + Spider Monkey Panel theme (Eole, CaTRoX…) | **View › Panels UI › Import Columns UI layout…** on its `.fcl` ([Importing a Columns UI layout](#importing-a-columns-ui-layout)) | [JS Panel](#works-with-js-panel) |
-| fooAvA, the old Panels UI skin | **View › Panels UI › Import fooAvA installer…** on its `.exe` ([Setting up fooAvA](#setting-up-fooava)) | Nothing else |
-| Another skin folder for this Panels UI | Pick its folder in Preferences | Nothing else |
-
-Both imports run inside foobar2000: no Python, no command line. Guides written for the original
-Panels UI (foobar2000 0.9) don't apply to this component.
-
 ### Setting up fooAvA
 
 fooAvA is distributed by its author (link above) as a Windows installer for the old Panels UI.
 Panels UI reads that installer and turns it into a skin; you don't run the installer itself (it
-targets foobar2000 0.9), on Windows or macOS:
+targets foobar2000 0.9). This works the same on Windows and macOS:
 
-1. Download fooAvA 1.05 from the author's DeviantArt page — `fooava_1_05_by_dawxxx666_*.exe`.
-2. **View › Panels UI › Import fooAvA installer…** and pick that `.exe`. Panels UI unpacks it,
-   copies its images, converts the layout and its panel scripts into `main.txt` + `panels/`,
-   writes fooAvA's `foo_ui_panels.ini` and converts each popup window (settings, playlist, about)
-   to where the skin's buttons look for it. The skin is written to `foo_ui_panels-skins/fooAvA` in
-   the foobar2000 profile folder and Panels UI switches to it. Importing again writes a new
-   folder (`fooAvA 2`…), so edits are never overwritten; pick any of them in Preferences.
+1. Install Panels UI: download `foo_ui_panels_<version>.fb2k-component` from the
+   [Releases](../../releases) page, double-click it (or drag it onto foobar2000) and restart
+   foobar2000.
+2. Make it the interface: *Preferences › Display › User interface module* → **Panels UI
+   (reborn)**, then restart foobar2000. If the layout wizard opens, close it.
+3. Download fooAvA 1.05 from the author's
+   [DeviantArt page](https://www.deviantart.com/dawxxx666/art/fooAvA-1.05-91986779):
+   `fooava_1_05_by_dawxxx666_*.exe`. Keep it anywhere; don't run it.
+4. **View › Panels UI › Import fooAvA installer…** and pick that `.exe`. That's it: Panels UI
+   switches to fooAvA.
+
+What step 4 does: it unpacks the installer, copies its images, converts the layout and its panel
+scripts into `main.txt` + `panels/`, writes fooAvA's `foo_ui_panels.ini` and converts each popup
+window (settings, playlist, about) to where the skin's buttons look for it. The skin is written to
+`foo_ui_panels-skins/fooAvA` in the foobar2000 profile folder. Importing again writes a new folder
+(`fooAvA 2`…), so edits are never overwritten; pick any of them in Preferences.
 
 fooAvA's fonts (Calibri, Swis721 Cn BT) are optional: without them it uses the stand-ins its
 `foo_ui_panels.ini` names. Cover flow needed the long-gone foo_chronflow; the native one replaces it.
@@ -130,6 +158,30 @@ From a source checkout, `make fooava-skin FOOAVA=<installer .exe or unpacked fol
 writes the same skin without foobar2000, and `make skin-lint LINT_DIR=<folder>` lists anything
 missing in it. The installer is unpacked with [miniz](https://github.com/richgel999/miniz) (MIT)
 and [bzip2](https://sourceware.org/bzip2/) (BSD-style), both in `third_party/`.
+
+### Setting up Eole (or another Columns UI theme)
+
+[Eole](https://github.com/Ottodix/Eole-foobar-theme), [CaTRoX](https://github.com/TheQwertiest/CaTRoX_QWR)
+and many other themes were made for Columns UI + Spider Monkey Panel, two Windows-only
+components. Panels UI rebuilds them as a skin, and JS Panel runs their JavaScript panels, so they
+work on macOS too. On Windows or macOS:
+
+1. Install Panels UI and [JS Panel](https://github.com/santiagorod92/foo_js_panel/releases/latest):
+   double-click each `.fb2k-component` (or drag it onto foobar2000) and restart foobar2000.
+   Columns UI and Spider Monkey Panel aren't needed.
+2. Make Panels UI the interface: *Preferences › Display › User interface module* → **Panels UI
+   (reborn)**, then restart foobar2000. If the layout wizard opens, close it.
+3. Download the theme and unzip it anywhere. Eole: the green *Code* button › *Download ZIP* on
+   its GitHub page.
+4. **View › Panels UI › Import Columns UI layout…** and pick the theme's layout file, the one
+   ending in `.fcl` (Eole: `themes/eole/columnsUI_eole.fcl`; CaTRoX: `layout/theme.fcl`). Panels UI
+   builds the skin and switches to it.
+
+The skin stays in `foo_ui_panels-skins/<theme name>` in the profile folder; pick it again any time
+in *Preferences › Display › Panels UI (reborn)*. Eole's own settings (dark theme, title bar,
+library filter, Navidrome) are in JS Panel's README,
+[Running the Eole theme](https://github.com/santiagorod92/foo_js_panel#running-the-eole-theme);
+what the import converts is in [Importing a Columns UI layout](#importing-a-columns-ui-layout).
 
 ### Skin configuration
 
