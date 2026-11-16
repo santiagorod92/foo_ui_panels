@@ -24,7 +24,7 @@ std::string guid(const char* text) {
 const std::string kHeader = guid("9faadff3-e51a-4a8b-b4a3-d209a36ab301"), kLayout = guid("2cf00365-f2d7-4e78-9fca-c1d56e2707d8"),
                   kHorizontal = guid("8fa0bc24-882a-4fff-8a3b-215ea7fbd07f"), kTabs = guid("5cb67c98-b77f-4926-a79f-49d9b21b9705"),
                   kSmp = guid("32271525-436d-4afa-8dfd-437ab0c83118"), kStack = guid("4532ec89-c567-4267-b33a-0c154b6f0105"),
-                  kLyrics = guid("547abb10-d8ac-4c39-9f8b-9c7af989443d");
+                  kLyrics = guid("547abb10-d8ac-4c39-9f8b-9c7af989443d"), kWsh = guid("75a7b642-786c-4f24-9b52-17d737dea09a");
 
 std::string smp(const std::string& script, int rows = -1) {
     std::string out = u32(1) + std::string(1, '\0') + std::string(16, 'g') + std::string(1, '\0');
@@ -37,15 +37,34 @@ std::string item(const std::string& g, const std::string& data, uint32_t size) {
     return g + u32(0) + std::string(4, '\0') + u32(size) + std::string(1, '\0') + str(data) + std::string(1, '\0') + str("");
 }
 
-std::string stack(const std::string& script, const std::vector<std::tuple<std::string, std::string, std::vector<std::string>, std::string>>& kids) {
-    std::string out = u32(1) + u32(1) + u32(1) + u32(0) + u32(0x101010) + u32(0) + u32(0) + str(script) + std::string(24 + 92, '\0');
+std::string head(bool share, bool forced, double size) {
+    std::string out = u32(100) + u32(share ? 1 : 0) + u32(forced ? 1 : 0) + std::string(72 - 12 - 8, '\0');
+    out.append((const char*)&size, sizeof size);
+    return out;
+}
+
+std::string stack(const std::string& script, const std::vector<std::tuple<std::string, std::string, std::vector<std::string>, std::string>>& kids,
+                  const std::vector<std::string>& heads = {}, bool vertical = true) {
+    std::string out = u32(1) + u32(vertical ? 1 : 0) + u32(1) + u32(0) + u32(0x101010) + u32(0) + u32(0) + str(script) + std::string(24 + 92, '\0');
     out += u32(0) + u32((uint32_t)kids.size());
+    size_t n = 0;
     for (const auto& [g, name, rect, data] : kids) {
-        out += g + str(name) + u32(100) + u32(1) + std::string(72 - 8, '\0');
+        out += g + str(name) + (n < heads.size() ? heads[n] : head(true, true, 100));
+        ++n;
         for (const auto& r : rect) out += str(r);
         out += std::string(16, '\0') + str(data);
     }
     return out;
+}
+
+std::string fcl(const std::string& root);
+
+std::string wsh(const std::string& engine, const std::string& script) {
+    std::string out = u32(0x7b) + std::string(1, '\1') + std::string(16, 'g') + u32(0) + u32(3);
+    out += str("Size") + std::string{ 3, 0 } + u32((uint32_t)-5);
+    out += str("Dark") + std::string{ 11, 0 } + std::string{ '\xff', '\xff' };
+    out += str("Font") + std::string{ 8, 0 } + str("Segoe \"UI\"");
+    return out + std::string(2 + 44, '\0') + str(engine) + str(script) + std::string(1, '\0');
 }
 
 std::string sample() {
@@ -57,11 +76,27 @@ std::string sample() {
     std::string tabs = u32(0) + u32(1) + u32(2);
     for (const auto& [script, title] : { std::pair{ "// one", "One" }, std::pair{ "// two", "Two" } })
         tabs += kSmp + str(smp(script)) + std::string(1, '\1') + str(title);
-    const std::string root = u32(0) + u32(3) + item(kSmp, smp("// left"), 150) + item(kTabs, tabs, 300) + item(kStack, inner, 100);
+    return fcl(u32(0) + u32(3) + item(kSmp, smp("// left"), 150) + item(kTabs, tabs, 300) + item(kStack, inner, 100));
+}
+
+std::string fcl(const std::string& root) {
     std::string out = kHeader + u32(2) + u32(0) + u32(4) + kHorizontal + str("Horizontal splitter") + kTabs + str("Tab stack") + kSmp +
                       str("Spider Monkey Panel") + kLyrics + str("ESLyric");
     const std::string layout = u32(0) + u32(0) + u32(1) + kHorizontal + str("Main") + str(root);
     return out + u32(1) + kLayout + str("Layout") + u32(0) + str(layout);
+}
+
+std::string split_sample() {
+    const std::vector<std::string> none = { "", "", "", "" };
+    const std::string row = stack("", { { kSmp, "Side", none, smp("// side") }, { kSmp, "List", none, smp("// list") } },
+                                  { head(true, false, 91), head(true, false, 116) }, false);
+    const std::string body = stack("", { { kSmp, "Top", { "0", "0", "%ps_width%", "50" }, smp("// top") }, { kStack, "Row", none, row },
+                                         { kSmp, "Bar", none, smp("// bar") } },
+                                   { head(false, false, 39), head(true, false, 100), head(false, false, 26) });
+    const std::string outer = stack("$showpanel_c(Body,1)$movepanel_c(Body,0,28,%ps_width%,$sub(%ps_height%,28))$showpanel(2,%MINI%)$showpanel(9,1)",
+                                    { { kSmp, "Menu", none, smp("// menu") }, { kStack, "Body", none, body }, { kSmp, "Mini", none, smp("// mini") } },
+                                    { head(false, false, 28), head(true, true, 100), head(false, true, 100) });
+    return fcl(u32(0) + u32(1) + item(kStack, outer, 100));
 }
 
 bool has(const std::string& text, const std::string& part) { return text.find(part) != std::string::npos; }
@@ -85,6 +120,45 @@ TEST("fcl import: reads splitters, tab stacks and Panel Stack Splitter container
     CHECK_EQ(st.children[1].properties.size(), (size_t)1);
     CHECK_EQ(st.children[1].properties[0].second, std::string("3"));
     CHECK(parse_fcl("nope", &err).empty() && !err.empty());
+}
+
+TEST("fcl import: Panel Stack Splitter children without a forced layout are split along the stack") {
+    std::string err;
+    const auto presets = parse_fcl(split_sample(), &err);
+    CHECK_EQ(err, std::string());
+    const FclNode& outer = presets[0].root.children[0];
+    CHECK(outer.vertical && !outer.children[0].forced && outer.children[0].fixed && outer.children[0].share == 28);
+    CHECK(outer.children[1].forced && outer.children[1].visible && !outer.children[2].visible);
+    const FclNode& row = outer.children[1].children[1];
+    CHECK(!row.vertical && !row.children[1].fixed && row.children[1].share == 116);
+    const std::string main = convert_fcl(presets, "", false, &err).main;
+    CHECK_EQ(err, std::string());
+    CHECK(has(main, "$puts(vis.Menu,1)") && has(main, "$puts(vis.Mini,0)"));
+    CHECK(has(main, ".r,$max(0,$sub($get(") && has(main, ".h),$add(0,$ifequal($get(vis.Menu),0,0,28)))))"));
+    CHECK(has(main, "$puts(sp.Body.r,$max(0,$sub($get(Body.h),$add(0,$ifequal($get(vis.Top),0,0,39),$ifequal($get(vis.Bar),0,0,26)))))"));
+    CHECK(has(main, "$puts(sp.Body.s,$max(1,$add(0,$ifequal($get(vis.Row),0,0,10000))))"));
+    CHECK(has(main, "$puts(sp.Body.l,39)$if($get(mv.Top),,$puts(mv.Top,1)$puts(mv.Top.x,0)$puts(mv.Top.y,$get(sp.Body.o))$puts(mv.Top.w,$get(Body.w))"
+                    "$puts(mv.Top.h,$get(sp.Body.l)))$puts(sp.Body.o,$add($get(sp.Body.o),$ifequal($get(vis.Top),0,0,$get(sp.Body.l))))"));
+    CHECK(has(main, "$puts(sp.Row.l,$muldiv($get(sp.Row.r),9100,$get(sp.Row.s)))$if($get(mv.Side),,$puts(mv.Side,1)$puts(mv.Side.x,$get(sp.Row.o))"
+                    "$puts(mv.Side.y,0)$puts(mv.Side.w,$get(sp.Row.l))$puts(mv.Side.h,$get(Row.h)))"));
+    CHECK(!has(main, "$ifequal($get(vis.Body),0,0,"));
+    CHECK(has(main, "$puts(mv.Body.y,28)"));
+    CHECK(has(main, "$puts(vis.Mini,$ifequal(%MINI%,0,0,1))") && !has(main, "showpanel("));
+}
+
+TEST("fcl import: WSH Panel Mod panels become JS Panels with their properties, VBScript ones stay hosted by name") {
+    std::string err;
+    const auto presets = parse_fcl(fcl(u32(0) + u32(2) + item(kWsh, wsh("JScript", "// @feature \"v1.4\""), 100) + item(kWsh, wsh("VBScript", "x"), 100)), &err);
+    CHECK_EQ(err, std::string());
+    const FclNode& js = presets[0].root.children[0];
+    CHECK(js.kind == FclNode::Kind::Smp && js.script == "// @feature \"v1.4\"");
+    CHECK_EQ(js.properties.size(), (size_t)3);
+    CHECK(js.properties[0] == std::make_pair(std::string("Size"), std::string("-5")));
+    CHECK(js.properties[1] == std::make_pair(std::string("Dark"), std::string("true")));
+    CHECK(js.properties[2] == std::make_pair(std::string("Font"), std::string("\"Segoe \\\"UI\\\"\"")));
+    CHECK(presets[0].root.children[1].kind == FclNode::Kind::Panel);
+    const ImportedSkin skin = convert_fcl(presets, "", false, &err);
+    CHECK_EQ(skin.js_panels, 1);
 }
 
 TEST("fcl import: the skin places every panel and translates the stack's script") {
@@ -171,6 +245,9 @@ TEST("fcl import: a theme's Spider Monkey Panel packages are installed by their 
     write_file(theme + "/packages/Menu/{AAA}/package.json", "\xEF\xBB\xBF{\n  \"author\": \"a\",\n  \"id\": \"{AAA}\"\n}");
     write_file(theme + "/packages/Menu/{AAA}/scripts/m.js", "menu");
     write_file(theme + "/packages/Evil/x/package.json", "{\"id\": \"../../escape\"}");
+    std::filesystem::create_directories(theme + "/fonts");
+    write_file(theme + "/fonts/Icons.TTF", "font");
+    write_file(theme + "/fonts/readme.txt", "x");
     const std::string root = fcl_theme_root(theme + "/layout/theme.fcl", profile);
     CHECK(has(root, "CaTRoX"));
     std::string err;
@@ -178,6 +255,8 @@ TEST("fcl import: a theme's Spider Monkey Panel packages are installed by their 
     CHECK_EQ(read_file(profile + "/foo_spider_monkey_panel/packages/{AAA}/scripts/m.js"), std::string("menu"));
     CHECK(!std::filesystem::exists(base + "/escape"));
     CHECK(!std::filesystem::exists(profile + "/themes"));
+    CHECK_EQ(read_file(profile + "/foo_js_panel/fonts/Icons.TTF"), std::string("font"));
+    CHECK(!std::filesystem::exists(profile + "/foo_js_panel/fonts/readme.txt"));
     std::error_code ec;
     std::filesystem::remove_all(base, ec);
 }

@@ -2,6 +2,7 @@
 #include "fs_util.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -32,6 +33,7 @@ const Guid kHorizontal = guid("8fa0bc24-882a-4fff-8a3b-215ea7fbd07f");
 const Guid kVertical = guid("77653a44-66d1-49e0-9a7a-1c71898c0441");
 const Guid kTabs = guid("5cb67c98-b77f-4926-a79f-49d9b21b9705");
 const Guid kSmp = guid("32271525-436d-4afa-8dfd-437ab0c83118");
+const Guid kWsh = guid("75a7b642-786c-4f24-9b52-17d737dea09a");
 const Guid kStack = guid("4532ec89-c567-4267-b33a-0c154b6f0105");
 constexpr size_t kStackChildHead = 72, kStackChildTail = 16, kLogFont = 92, kWindowPlacement = 44;
 
@@ -222,6 +224,81 @@ void parse_smp(const std::string& data, FclNode& node) {
     }
 }
 
+std::string lower(std::string s);
+
+std::string wsh_value(Reader& r, uint16_t vt) {
+    auto number = [](double d) {
+        char buf[40];
+        std::snprintf(buf, sizeof buf, "%.17g", d);
+        return std::string(buf);
+    };
+    auto bytes = [&](size_t n) {
+        const std::string b = r.take(n);
+        int64_t v = 0;
+        std::memcpy(&v, b.data(), n);
+        return v;
+    };
+    switch (vt) {
+    case 16: return std::to_string((int8_t)bytes(1));
+    case 17: return std::to_string((uint8_t)bytes(1));
+    case 2: return std::to_string((int16_t)bytes(2));
+    case 18: return std::to_string((uint16_t)bytes(2));
+    case 11: return bytes(2) ? "true" : "false";
+    case 3:
+    case 22: return std::to_string((int32_t)bytes(4));
+    case 19:
+    case 23: return std::to_string((uint32_t)bytes(4));
+    case 4: {
+        const uint32_t v = (uint32_t)bytes(4);
+        float f = 0;
+        std::memcpy(&f, &v, 4);
+        return number(f);
+    }
+    case 20: return std::to_string(bytes(8));
+    case 21: return std::to_string((uint64_t)bytes(8));
+    case 6: return number((double)bytes(8) / 10000);
+    case 5:
+    case 7: {
+        const int64_t v = bytes(8);
+        double d = 0;
+        std::memcpy(&d, &v, 8);
+        return number(d);
+    }
+    case 8: return json_string(r.string());
+    default: return {};
+    }
+}
+
+bool parse_wsh(const std::string& data, FclNode& node) {
+    try {
+        Reader r(data);
+        const uint32_t version = r.u32();
+        if (version < 0x73 || version > 0x7b) return false;
+        if (version >= 0x7a) r.take(1);
+        if (version >= 0x79) r.take(16);
+        if (version >= 0x78) r.u32();
+        if (version >= 0x77) {
+            const uint32_t count = r.u32();
+            if (count > 100000) return false;
+            for (uint32_t i = 0; i < count; ++i) {
+                const std::string name = r.string();
+                const std::string vt = r.take(2);
+                const std::string value = wsh_value(r, (uint16_t)((unsigned char)vt[0] | ((unsigned char)vt[1] << 8)));
+                if (!value.empty()) node.properties.emplace_back(name, value);
+            }
+        }
+        if (version >= 0x76) r.take(1);
+        if (version >= 0x75) r.take(1);
+        if (version >= 0x74) r.take(kWindowPlacement);
+        const std::string engine = lower(r.string());
+        if (!engine.empty() && engine.find("jscript") == std::string::npos && engine.find("javascript") == std::string::npos) return false;
+        node.script = r.string();
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+
 FclNode parse_node(const Guid& g, const std::string& data, const std::map<Guid, std::string>& names, int depth);
 
 std::vector<FclNode> parse_splitter(const std::string& data, const std::map<Guid, std::string>& names, int depth) {
@@ -276,7 +353,9 @@ std::vector<FclNode> parse_tabs(const std::string& data, const std::map<Guid, st
 
 void parse_stack(const std::string& data, const std::map<Guid, std::string>& names, int depth, FclNode& node) {
     Reader r(data);
-    for (int i = 0; i < 7; ++i) r.u32();
+    r.u32();
+    node.vertical = r.u32() != 0;
+    for (int i = 0; i < 5; ++i) r.u32();
     node.script = r.string();
     r.take(24 + kLogFont);
     r.u32();
@@ -291,7 +370,11 @@ void parse_stack(const std::string& data, const std::map<Guid, std::string>& nam
         FclNode child = parse_node(g, r.string(), names, depth + 1);
         child.name = name;
         child.rect = rect;
-        child.visible = head[4] || head[5] || head[6] || head[7];
+        const bool share = head[4] || head[5] || head[6] || head[7];
+        child.forced = head[8] || head[9] || head[10] || head[11];
+        child.fixed = !share;
+        child.visible = share || !child.forced;
+        std::memcpy(&child.share, head.data() + 64, sizeof child.share);
         node.children.push_back(std::move(child));
     }
 }
@@ -310,6 +393,8 @@ FclNode parse_node(const Guid& g, const std::string& data, const std::map<Guid, 
     } else if (g == kStack) {
         node.kind = FclNode::Kind::Stack;
         parse_stack(data, names, depth, node);
+    } else if (g == kWsh) {
+        if (parse_wsh(data, node)) node.kind = FclNode::Kind::Smp;
     } else if (g == kSmp) {
         node.kind = FclNode::Kind::Smp;
         parse_smp(data, node);
@@ -420,6 +505,11 @@ const char* const kRefresh = R"JS(
 })();
 )JS";
 
+struct Kids {
+    std::map<std::string, std::string> names;
+    std::vector<std::string> ids;
+};
+
 class Converter {
 public:
     explicit Converter(bool outline) : m_outline(outline) {}
@@ -471,11 +561,18 @@ private:
         return name;
     }
 
-    std::string tf(const std::string& text, const std::string& box, const std::map<std::string, std::string>* kids) {
+    std::string tf(const std::string& text, const std::string& box, const Kids* kids) {
         auto kid = [&](const std::string& n) -> std::string {
             if (!kids) return {};
-            auto it = kids->find(lower(trim(n)));
-            return it == kids->end() ? std::string() : it->second;
+            auto it = kids->names.find(lower(trim(n)));
+            return it == kids->names.end() ? std::string() : it->second;
+        };
+        auto nth = [&](const std::string& n) -> std::string {
+            const std::string t = trim(n);
+            if (!kids || t.empty() || t.size() > 4 || !std::all_of(t.begin(), t.end(), [](unsigned char c) { return std::isdigit(c); }))
+                return {};
+            const size_t i = std::stoul(t);
+            return i < kids->ids.size() ? kids->ids[i] : std::string();
         };
         return rewrite(
             text,
@@ -487,13 +584,13 @@ private:
                     return true;
                 }
                 if (low == "get_ps_global" && !a.empty()) { out = "$get(ps." + trim(a[0]) + ")"; return true; }
-                if (low == "showpanel_c" && a.size() >= 2) {
-                    const std::string k = kid(a[0]);
+                if ((low == "showpanel_c" || low == "showpanel") && a.size() >= 2) {
+                    const std::string k = low == "showpanel" ? nth(a[0]) : kid(a[0]);
                     out = k.empty() ? std::string() : "$puts(vis." + k + ",$ifequal(" + a[1] + ",0,0,1))";
                     return true;
                 }
-                if (low == "movepanel_c" && a.size() >= 5) {
-                    const std::string k = kid(a[0]);
+                if ((low == "movepanel_c" || low == "movepanel") && a.size() >= 5) {
+                    const std::string k = low == "movepanel" ? nth(a[0]) : kid(a[0]);
                     out.clear();
                     if (k.empty()) return true;
                     out = "$puts(mv." + k + ",1)";
@@ -529,7 +626,7 @@ private:
             });
     }
 
-    void place(const FclNode& node, const std::string& box, const std::string& parent, const std::map<std::string, std::string>* kids) {
+    void place(const FclNode& node, const std::string& box, const std::string& parent, const Kids* kids) {
         const char* keys = "xywh";
         const std::string defaults[4] = { "0", "0", "$get(" + parent + ".w)", "$get(" + parent + ".h)" };
         for (int i = 0; i < 4; ++i) {
@@ -549,15 +646,43 @@ private:
                ".y),2),$get(" + box + ".w),16,255-220-120)";
     }
 
-    void emit(const FclNode& node, const std::string& box, const std::string* parent, const std::map<std::string, std::string>* kids) {
+    void split(const FclNode& node, const std::string& box, const std::vector<std::string>& ids) {
+        const std::string sp = "sp." + box, along = node.vertical ? "h" : "w", across = node.vertical ? "w" : "h";
+        std::string fixed = "$add(0", weight = "$add(0";
+        bool any = false;
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const FclNode& c = node.children[i];
+            if (c.forced) continue;
+            any = true;
+            const std::string amount = std::to_string(std::lround(c.fixed ? c.share : c.share * 100));
+            (c.fixed ? fixed : weight) += ",$ifequal($get(vis." + ids[i] + "),0,0," + amount + ")";
+        }
+        if (!any) return;
+        lines.push_back("$puts(" + sp + ".r,$max(0,$sub($get(" + box + "." + along + ")," + fixed + "))))$puts(" + sp + ".s,$max(1," + weight +
+                        ")))$puts(" + sp + ".o,0)");
+        for (size_t i = 0; i < ids.size(); ++i) {
+            const FclNode& c = node.children[i];
+            if (c.forced) continue;
+            const std::string& id = ids[i];
+            const std::string length = c.fixed ? std::to_string(std::lround(c.share))
+                                               : "$muldiv($get(" + sp + ".r)," + std::to_string(std::lround(c.share * 100)) + ",$get(" + sp + ".s))";
+            const std::string offset = "$get(" + sp + ".o)", full = "$get(" + box + "." + across + ")", size = "$get(" + sp + ".l)";
+            lines.push_back("$puts(" + sp + ".l," + length + ")$if($get(mv." + id + "),,$puts(mv." + id + ",1)$puts(mv." + id + ".x," +
+                            (node.vertical ? "0" : offset) + ")$puts(mv." + id + ".y," + (node.vertical ? offset : "0") + ")$puts(mv." + id +
+                            ".w," + (node.vertical ? full : size) + ")$puts(mv." + id + ".h," + (node.vertical ? size : full) + "))$puts(" + sp +
+                            ".o,$add(" + offset + ",$ifequal($get(vis." + id + "),0,0," + size + ")))");
+        }
+    }
+
+    void emit(const FclNode& node, const std::string& box, const std::string* parent, const Kids* kids) {
         if (parent) place(node, box, *parent, kids);
         switch (node.kind) {
         case FclNode::Kind::Stack: {
-            std::vector<std::string> ids;
-            std::map<std::string, std::string> mine;
+            Kids mine;
+            std::vector<std::string>& ids = mine.ids;
             for (const auto& c : node.children) {
                 ids.push_back(ident(c.name.empty() ? c.type : c.name));
-                mine[lower(c.name)] = ids.back();
+                mine.names[lower(c.name)] = ids.back();
             }
             for (size_t i = 0; i < ids.size(); ++i)
                 lines.push_back("$puts(vis." + ids[i] + "," + (node.children[i].visible ? "1" : "0") + ")$puts(mv." + ids[i] + ",)");
@@ -566,6 +691,7 @@ private:
                 s.erase(std::remove(s.begin(), s.end(), '\r'), s.end());
                 lines.push_back(s);
             }
+            split(node, box, ids);
             for (size_t i = 0; i < ids.size(); ++i) {
                 const size_t start = lines.size();
                 emit(node.children[i], ids[i], &box, &mine);
@@ -780,6 +906,17 @@ bool copy_theme_folders(const std::string& root, const std::string& profile, std
             if (!safe_package_id(id)) continue;
             fs::create_directories(packages / fs_path(id), ec);
             if (!ec) fs::copy(it->path().parent_path(), packages / fs_path(id), fs::copy_options::recursive | fs::copy_options::overwrite_existing, ec);
+            if (ec) return failed();
+        }
+        if (ec) return failed();
+    }
+    if (fs::is_directory(from / "fonts", ec)) {
+        const fs::path fonts = to / "foo_js_panel" / "fonts";
+        for (auto it = fs::directory_iterator(from / "fonts", ec); !ec && it != fs::directory_iterator(); it.increment(ec)) {
+            const std::string ext = lower(fs_utf8(it->path().extension()));
+            if (ext != ".ttf" && ext != ".otf" && ext != ".ttc") continue;
+            fs::create_directories(fonts, ec);
+            if (!ec) fs::copy_file(it->path(), fonts / it->path().filename(), fs::copy_options::overwrite_existing, ec);
             if (ec) return failed();
         }
         if (ec) return failed();

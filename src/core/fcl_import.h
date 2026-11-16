@@ -12,7 +12,8 @@ struct FclNode {
     std::vector<std::pair<std::string, std::string>> properties;
     std::vector<FclNode> children;
     unsigned size = 0;
-    bool hidden = false, visible = true, active = false;
+    double share = 0;
+    bool hidden = false, visible = true, active = false, vertical = true, forced = true, fixed = false;
 };
 
 struct FclPreset {

@@ -3,6 +3,26 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.25.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.24.0...v1.25.0) (2026-11-16)
+
+### Highlights
+- **CaTRoX imports whole**: *Import Columns UI layout…* now lays out Panel Stack Splitter
+  children the way the stack does when they aren't placed by its script (one after another, fixed
+  sizes and shares of the rest), so CaTRoX's menu bar, top panel and controls show up instead of a
+  black window. `$showpanel`/`$movepanel` by index work too.
+- **Theme fonts come along**: the theme's `fonts` folder is copied to `foo_js_panel/fonts` in the
+  profile, where JS Panel 1.8.0 loads them without installing them in the system.
+
+### Added
+- WSH Panel Mod panels (JScript) in a Columns UI layout become JS Panels with their scripts and
+  properties.
+- macOS: Marlett, the Windows caption-button font, draws its minimize, maximize, restore, close,
+  arrow and check glyphs as symbols.
+
+### Fixed
+- An imported Panel Stack Splitter child is no longer hidden when its stack lays it out (Eole's
+  lyrics title now gets the height Columns UI gave it).
+
 ## [1.24.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.23.0...v1.24.0) (2026-11-15)
 
 ### Highlights

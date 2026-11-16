@@ -265,18 +265,27 @@ anything repo-specific stays in the repo's own sections.
   Import Columns UI layout…*, `skin_lint --import-fcl`, `make fcl-skin`). `.fcl` format from Columns
   UI's `fcl.cpp`/`splitter_*.cpp`: header GUID, panel list, datasets; the layout dataset's presets;
   flat splitters' items + per-item extra size/DPI; tab stacks. Panel Stack Splitter is closed, its
-  blob was read from Eole's: 7 u32 (background at [4]), script, 24 bytes, LOGFONT (92), u32, child
-  count, then per child GUID, name, 72 bytes (visible flag at +4), x/y/w/h expression strings, 16
-  bytes, config blob. Output is one `main.txt`: every box is `$puts(<id>.x/y/w/h)` from its
-  parent's, PSS globals are `ps.*`, `$showpanel_c`/`$movepanel_c` set `vis.*`/`mv.*` before the
+  blob was read from Eole's and CaTRoX's: 7 u32 ([1] 1 = vertical, [4] background), script, 24
+  bytes, LOGFONT (92), u32, child count, then per child GUID, name, 72 bytes, x/y/w/h expression
+  strings, 16 bytes, config blob. In the 72 bytes: +4 nonzero = a share (else a fixed size), +8
+  nonzero = forced layout (placed by expressions/script), +16..32 the last RECT, +64 a double: px
+  when fixed, the weight when a share. Non-forced children are split along the stack in order
+  (`Converter::split`: fixed sizes first, the rest by weight, runtime `vis.*` respected; their
+  expressions are ignored, as PSS does: Eole's `Title` says 50 px, PSS gave it 715 × 15/115 = 93).
+  A child is visible unless forced with +4 = 0. Output is one `main.txt`: every box is
+  `$puts(<id>.x/y/w/h)` from its parent's, PSS globals are `ps.*`, `$showpanel_c`/`$movepanel_c`
+  (and `$showpanel`/`$movepanel` by child index) set `vis.*`/`mv.*` before the
   children are placed (names compared lowercased: Eole writes `shpeck` for `Shpeck`),
   `%ps_user_profile_path%` → `%pui_profile_folder%` (`%foobar_path%` is a `~` display path on
   macOS), a `pss.refresh` pvar toggle re-runs the layout for `RefreshPSS()`. SMP panels become JS
   Panels with their properties seeded into the script. SMP 1.6 panels are version 2 + a
   length-prefixed JSON (`scriptType` 1 script, 3 file by `locationType`, 4/5 package id →
-  `include(utils.GetPackagePath(id) + 'main.js')`); its `panelId` is seeded as `window.Name` (the box
+  `include(utils.GetPackagePath(id) + 'main.js')`); WSH Panel Mod panels (GUID `75a7b642-…`, config
+  versions 0x73–0x7b: the enum after `VERSION_0x79` counts on, so "0x80"/"0x81" are 0x7a/0x7b; props are
+  key + VARTYPE + value) become JS Panels when their engine is JScript; its `panelId` is seeded as `window.Name` (the box
   keeps the PSS name, which the stack's script refers to), and a theme root's
-  `packages/**/package.json` folders go to `<profile>/foo_spider_monkey_panel/packages/<id>`. An `.fcl` under an unzipped theme
+  `packages/**/package.json` folders go to `<profile>/foo_spider_monkey_panel/packages/<id>` and its
+  `fonts/*.ttf|otf|ttc` to `<profile>/foo_js_panel/fonts` (JS Panel registers them per process). An `.fcl` under an unzipped theme
   (`fcl_theme_root`: an ancestor with `themes/`) gets `themes/` copied over the profile's and
   `wsh-data/` without overwriting.
 - **Windowless JS Panels:** `ScriptRuntime::f_panel` calls `ScriptEnv::panel_placed` after

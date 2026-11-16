@@ -148,7 +148,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 
 On macOS the Windows UI faces need no alias: Segoe UI (with its Light, Semilight, Semibold, Bold, Black
 and Italic variants), Tahoma, Verdana, Calibri and Bahnschrift draw with the system font at that weight,
-Consolas and Cascadia with the system's monospaced font.
+Consolas and Cascadia with the system's monospaced font, and Marlett (the Windows caption-button font)
+draws its minimize, maximize, restore, close, arrow and check glyphs as the matching symbols.
 | `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
 | `asset.nocover`, `asset.cd_case`, `asset.cd_case_window` | Album browser: missing-cover art, case art and the cover's window inside it (`x y w h`, case pixels). |
@@ -374,10 +375,16 @@ switches to it, no tools needed:
 The theme's `themes` folder is copied into the foobar2000 profile folder (replacing an older copy)
 and its `wsh-data` too, without overwriting settings you already have. Spider Monkey Panel 1.6
 packages in its `packages` folder (each folder with a `package.json`) are installed into
-`foo_spider_monkey_panel/packages/<id>` in the profile, where JS Panel finds them. The skin is written to
+`foo_spider_monkey_panel/packages/<id>` in the profile, where JS Panel finds them, and the fonts
+in its `fonts` folder go to `foo_js_panel/fonts`, where JS Panel (1.8.0 or later) loads them for
+foobar2000 alone, so its icon fonts work without installing them. The skin is written to
 `foo_ui_panels-skins/<theme name>` and stays there: pick it again in Preferences like any other.
 Splitters, tab stacks and Panel Stack Splitter containers (with their layout scripts) become the
-skin's `main.txt`; each Spider Monkey Panel becomes a JS Panel running its script, with its
+skin's `main.txt`. A Panel Stack Splitter child placed by its stack's script or position fields
+(*forced layout*) keeps that placement; the others are laid out the way the stack does, one after
+another down or across it, each with its fixed size or its share of what's left (CaTRoX is built
+that way). `$showpanel`/`$movepanel` by index work like the `_c` ones by name. Each Spider Monkey
+Panel, and each WSH Panel Mod panel written in JScript, becomes a JS Panel running its script, with its
 properties (both the 1.x settings and 1.6's: an in-memory script, a script file or a package, and
 the panel name, which the script sees as `window.Name`); ESLyric/OpenLyrics and Shpeck/spectrum panels become Panels UI's own *Lyric Show* and
 *Spectrum*, playlist/library/album art panels their Panels UI equivalents. A panel with no known

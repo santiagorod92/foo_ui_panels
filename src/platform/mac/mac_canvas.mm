@@ -97,7 +97,7 @@ Substitute windows_substitute(const std::string& face) {
         { "segoe ui symbol", Substitute::System }, { "segoe ui", Substitute::System }, { "tahoma", Substitute::System }, { "ms sans serif", Substitute::System },
         { "microsoft sans serif", Substitute::System }, { "verdana", Substitute::System }, { "calibri", Substitute::System },
         { "bahnschrift", Substitute::System }, { "consolas", Substitute::Mono }, { "lucida console", Substitute::Mono },
-        { "cascadia mono", Substitute::Mono }, { "cascadia code", Substitute::Mono },
+        { "cascadia mono", Substitute::Mono }, { "cascadia code", Substitute::Mono }, { "marlett", Substitute::System },
     };
     static const std::pair<const char*, const char*> named[] = {
         { "segoe ui emoji", "Apple Color Emoji" },
@@ -492,14 +492,32 @@ bool CGCanvas::set_font(const FontSpec& spec) {
     if (m_font) CFRelease(m_font);
     m_font = (CTFontRef)CFRetain(font);
     m_underline = spec.underline;
+    CFStringRef fam = CTFontCopyFamilyName(font);
+    m_marlett = same_name(CFSTR("Marlett"), spec.face) && !same_name(fam, "Marlett");
+    if (fam) CFRelease(fam);
     return matched;
+}
+
+std::string CGCanvas::shown(std::string_view text) const {
+    if (!m_marlett) return std::string(text);
+    static const std::map<char, const char*> glyphs = {
+        { '0', "\u2013" }, { '1', "\u25A1" }, { '2', "\u2750" }, { '3', "\u25C0" }, { '4', "\u25B6" },
+        { '5', "\u25B2" }, { '6', "\u25BC" }, { 'a', "\u2713" }, { 'r', "\u2715" },
+    };
+    std::string out;
+    for (char c : text) {
+        auto it = glyphs.find(c);
+        if (it != glyphs.end()) out += it->second;
+        else out += c;
+    }
+    return out;
 }
 
 void CGCanvas::draw_text(std::string_view text, const Rect& r, unsigned flags, Color c) {
     if (!m_font) set_font(FontSpec{ "Helvetica", 12, false });
     CGColorRef col = make_color(c);
     Layout L;
-    build_layout(L, text, m_font, m_underline, col, r.w, flags);
+    build_layout(L, shown(text), m_font, m_underline, col, r.w, flags);
     draw_layout(m_ctx, L, r, flags);
     CGColorRelease(col);
 }
@@ -508,7 +526,7 @@ int CGCanvas::text_width(std::string_view text) {
     if (!m_font) set_font(FontSpec{ "Helvetica", 12, false });
     CGColorRef col = make_color(Color());
     Layout L;
-    build_layout(L, text, m_font, false, col, 0, kSingleLine);
+    build_layout(L, shown(text), m_font, false, col, 0, kSingleLine);
     CGColorRelease(col);
     return L.lines.empty() || !L.lines[0] ? 0
          : (int)std::ceil(CTLineGetTypographicBounds(L.lines[0], nullptr, nullptr, nullptr));
@@ -518,7 +536,7 @@ int CGCanvas::text_height(std::string_view text, int w, unsigned flags) {
     if (!m_font) set_font(FontSpec{ "Helvetica", 12, false });
     CGColorRef col = make_color(Color());
     Layout L;
-    build_layout(L, text.empty() ? std::string_view(" ") : text, m_font, false, col, w, flags);
+    build_layout(L, text.empty() ? std::string(" ") : shown(text), m_font, false, col, w, flags);
     CGColorRelease(col);
     return (int)std::ceil(std::max<size_t>(1, L.lines.size()) * L.lineH);
 }
@@ -536,7 +554,7 @@ bool CGCanvas::text_coverage(std::string_view text, const Rect& r, unsigned flag
     CGContextTranslateCTM(g, -area.x, -area.y);
     CGColorRef white = make_color(Color(255, 255, 255));
     Layout L;
-    build_layout(L, text, m_font, m_underline, white, r.w, flags);
+    build_layout(L, shown(text), m_font, m_underline, white, r.w, flags);
     draw_layout(g, L, r, flags);
     CGColorRelease(white);
     const uint8_t* px = (const uint8_t*)CGBitmapContextGetData(g);

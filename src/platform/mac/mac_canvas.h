@@ -44,7 +44,8 @@ private:
     int m_w, m_h;
     double m_scale = 1.0;
     CTFontRef m_font = nullptr;
-    bool m_underline = false;
+    bool m_underline = false, m_marlett = false;
+    std::string shown(std::string_view text) const;
 };
 
 ImagePtr image_from_cgimage(CGImageRef img, double scale = 1.0);
