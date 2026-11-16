@@ -89,6 +89,7 @@ public:
     bool windowless_mouse(int kind, int x, int y, unsigned mask);
     bool windowless_wheel(int x, int y, int step);
     bool windowless_key(const void* native_event);
+    int windowless_drag(int kind, int x, int y, unsigned keys, int effects, const void* native_data);
     int windowless_cursor() const;
 
     bool update_hover(int x, int y);
@@ -197,7 +198,7 @@ private:
     void dispatch_placement(const Placement& p, int offsetX, int offsetY);
 
     using Kind = PanelKind;
-    class WindowlessHost : public js_panel::js_panel_windowless_host {
+    class WindowlessHost final : public js_panel::js_panel_windowless_host {
     public:
         WindowlessHost(SkinEngine* e, std::string name) : m_e(e), m_name(std::move(name)) {}
         void* native_window() override;
@@ -237,7 +238,7 @@ private:
     std::string windowless_at(int x, int y) const;
     void focus_windowless(const std::string& name);
     std::vector<std::string> m_wlOrder;
-    std::string m_wlHover, m_wlCapture, m_wlFocus;
+    std::string m_wlHover, m_wlCapture, m_wlFocus, m_wlDrag;
     int m_wlCursor = 0;
     bool m_rendering = false;
 

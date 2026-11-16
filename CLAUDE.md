@@ -83,7 +83,11 @@ anything repo-specific stays in the repo's own sections.
   so far in the caller's buffer, and puts the result back, so later skin drawing lands on top. It
   forwards mouse, wheel, focus and the native key event (`MSG*` / `NSEvent*`, so the VK mapping
   stays JS Panel's) and answers the panel through `js_panel_windowless_host` (invalidate, cursor,
-  tooltip, `to_native` for menus). No drag and drop yet.
+  tooltip, `to_native` for menus). Drag and drop is `js_panel_windowless_v2::drag(kind, x, y,
+  keys, effects, native)`: Panels UI's main window is the drop target (Windows: an OLE
+  `IDropTarget` passing the `IDataObject*`, which hands drops outside a windowless panel on as
+  `WM_DROPFILES`; macOS: the root view also registers `js_panel::drag_type_tracks` and passes the
+  `NSDraggingInfo`) and JS Panel inserts the tracks.
 - **Script → skin panels:** `panels_ui_api_v2` (queried from the v1 service) names a hosted JS
   Panel's slot from its native view (HWND / NSView), gives panel rects and, for a
   `panel.<name>.transparent = 1` panel, the skin pixels beneath it (`get_backdrop`, PARGB into the

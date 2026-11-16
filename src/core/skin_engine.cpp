@@ -305,6 +305,29 @@ bool SkinEngine::windowless_key(const void* native_event) {
     return panel->key(native_event);
 }
 
+int SkinEngine::windowless_drag(int kind, int x, int y, unsigned keys, int effects, const void* native_data) {
+    using W = js_panel::js_panel_windowless_v2;
+    const auto v2_of = [this](const std::string& name) {
+        service_ptr_t<W> out;
+        if (Slot* s = windowless_slot(name)) s->windowless->panel->service_query_t(out);
+        return out;
+    };
+    std::string target = kind == W::drag_leave ? std::string() : windowless_at(x, y);
+    service_ptr_t<W> panel = v2_of(target);
+    if (panel.is_empty()) target.clear();
+    const bool entered = !target.empty() && target != m_wlDrag;
+    if (target != m_wlDrag) {
+        if (auto old = v2_of(m_wlDrag); old.is_valid()) old->drag(W::drag_leave, 0, 0, 0, 0, native_data);
+        m_wlDrag = target;
+    }
+    if (panel.is_empty()) return -1;
+    const gfx::Rect r = windowless_slot(target)->rect;
+    if (entered && kind == W::drag_drop) panel->drag(W::drag_enter, x - r.x, y - r.y, keys, effects, native_data);
+    const int effect = panel->drag(entered && kind == W::drag_over ? W::drag_enter : kind, x - r.x, y - r.y, keys, effects, native_data);
+    if (kind == W::drag_drop) m_wlDrag.clear();
+    return effect;
+}
+
 int SkinEngine::windowless_cursor() const { return m_wlHover.empty() ? 0 : m_wlCursor; }
 
 void* SkinEngine::WindowlessHost::native_window() { return m_e->m_main ? m_e->m_main->native() : nullptr; }

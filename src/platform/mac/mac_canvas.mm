@@ -98,6 +98,7 @@ Substitute windows_substitute(const std::string& face) {
         { "microsoft sans serif", Substitute::System }, { "verdana", Substitute::System }, { "calibri", Substitute::System },
         { "bahnschrift", Substitute::System }, { "consolas", Substitute::Mono }, { "lucida console", Substitute::Mono },
         { "cascadia mono", Substitute::Mono }, { "cascadia code", Substitute::Mono }, { "marlett", Substitute::System },
+        { "segoe fluent icons", Substitute::System }, { "segoe mdl2 assets", Substitute::System },
     };
     static const std::pair<const char*, const char*> named[] = {
         { "segoe ui emoji", "Apple Color Emoji" },
@@ -493,13 +494,41 @@ bool CGCanvas::set_font(const FontSpec& spec) {
     m_font = (CTFontRef)CFRetain(font);
     m_underline = spec.underline;
     CFStringRef fam = CTFontCopyFamilyName(font);
-    m_marlett = same_name(CFSTR("Marlett"), spec.face) && !same_name(fam, "Marlett");
+    m_symbols = same_name(CFSTR("Marlett"), spec.face) && !same_name(fam, "Marlett") ? Symbols::Marlett
+              : (same_name(CFSTR("Segoe Fluent Icons"), spec.face) && !same_name(fam, "Segoe Fluent Icons")) ||
+                        (same_name(CFSTR("Segoe MDL2 Assets"), spec.face) && !same_name(fam, "Segoe MDL2 Assets"))
+                  ? Symbols::Fluent
+                  : Symbols::None;
     if (fam) CFRelease(fam);
     return matched;
 }
 
 std::string CGCanvas::shown(std::string_view text) const {
-    if (!m_marlett) return std::string(text);
+    if (m_symbols == Symbols::None) return std::string(text);
+    if (m_symbols == Symbols::Fluent) {
+        static const std::map<char32_t, const char*> icons = {
+            { 0xE700, "\u2630" }, { 0xE70D, "\u2304" }, { 0xE70E, "\u2303" }, { 0xE711, "\u2715" }, { 0xE713, "\u2699" },
+            { 0xE71A, "\u25A0\uFE0E" }, { 0xE721, "\u2315" }, { 0xE72E, "\u26BF" }, { 0xE734, "\u2606" }, { 0xE735, "\u2605\uFE0E" },
+            { 0xE739, "\u2610" }, { 0xE73A, "\u2611\uFE0E" }, { 0xE73E, "\u2713" }, { 0xE74D, "\u2715" }, { 0xE76B, "\u2039" },
+            { 0xE76C, "\u203A" }, { 0xE767, "\U0001F508\uFE0E" }, { 0xE768, "\u25B6\uFE0E" }, { 0xE769, "\u23F8\uFE0E" },
+            { 0xE892, "\u23EE\uFE0E" }, { 0xE893, "\u23ED\uFE0E" }, { 0xE8B1, "\u292E" }, { 0xE8ED, "\u21BB\u00B9" },
+            { 0xE8EE, "\u21BB" }, { 0xE916, "\u25CC" }, { 0xE93C, "\u29BF" }, { 0xE9CE, "\u2684" }, { 0xEA37, "\u2630" },
+            { 0xEA69, "\u2261" }, { 0xEB51, "\u2661" }, { 0xEB52, "\u2665\uFE0E" }, { 0xEC4F, "\u266B" }, { 0xECCA, "\u25CB" },
+            { 0xECCB, "\u25C9" }, { 0xED25, "\U0001F5C0" }, { 0xEF2C, "\u2715" }, { 0xF5E7, "\u2192" },
+        };
+        std::string out;
+        for (size_t i = 0; i < text.size();) {
+            const unsigned char c = (unsigned char)text[i];
+            const size_t n = c < 0x80 ? 1 : (c >> 5) == 6 ? 2 : (c >> 4) == 14 ? 3 : (c >> 3) == 30 ? 4 : 1;
+            char32_t cp = n == 1 ? c : c & (0x7F >> n);
+            for (size_t k = 1; k < n && i + k < text.size(); ++k) cp = (cp << 6) | ((unsigned char)text[i + k] & 0x3F);
+            auto it = icons.find(cp);
+            if (it != icons.end()) out += it->second;
+            else out.append(text.substr(i, n));
+            i += n;
+        }
+        return out;
+    }
     static const std::map<char, const char*> glyphs = {
         { '0', "\u2013" }, { '1', "\u25A1" }, { '2', "\u2750" }, { '3', "\u25C0" }, { '4', "\u25B6" },
         { '5', "\u25B2" }, { '6', "\u25BC" }, { 'a', "\u2713" }, { 'r', "\u2715" },

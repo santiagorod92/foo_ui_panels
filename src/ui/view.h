@@ -18,6 +18,8 @@ struct MouseEvent {
 
 class ViewHost;
 
+enum DragKind { kDragEnter, kDragOver, kDragLeave, kDragDrop };
+
 class View {
 public:
     virtual ~View() = default;
@@ -34,6 +36,7 @@ public:
     virtual void on_visibility(bool ) {}
     virtual void on_focus() {}
     virtual void on_drop_files(const std::vector<std::string>& , int , int ) {}
+    virtual int on_native_drag(int , int , int , unsigned , int , const void* ) { return -1; }
     virtual void on_attached() {}
     virtual void on_destroy() {}
 
@@ -50,6 +53,7 @@ struct ViewOptions {
     bool double_clicks = false;
     int render_fps = 0;
     bool accept_files = false;
+    std::vector<std::string> drag_types;
     std::string accessible_name;
     std::function<void(bool back)> on_tab;
 };

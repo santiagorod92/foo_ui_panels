@@ -44,7 +44,8 @@ private:
     int m_w, m_h;
     double m_scale = 1.0;
     CTFontRef m_font = nullptr;
-    bool m_underline = false, m_marlett = false;
+    bool m_underline = false;
+    enum class Symbols { None, Marlett, Fluent } m_symbols = Symbols::None;
     std::string shown(std::string_view text) const;
 };
 

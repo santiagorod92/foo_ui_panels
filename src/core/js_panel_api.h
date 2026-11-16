@@ -9,6 +9,8 @@ inline constexpr const char* element_name = "JS Panel";
 
 inline constexpr const char* script_key = "script";
 
+inline constexpr const char* drag_type_tracks = "com.santiagorod92.foo-js-panel.tracks";
+
 class NOVTABLE js_panel_notify_api : public service_base {
     FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(js_panel_notify_api);
 public:
@@ -51,6 +53,13 @@ public:
     virtual void detach() = 0;
 };
 
+class NOVTABLE js_panel_windowless_v2 : public js_panel_windowless {
+    FB2K_MAKE_SERVICE_INTERFACE(js_panel_windowless_v2, js_panel_windowless);
+public:
+    enum { drag_enter, drag_over, drag_leave, drag_drop };
+    virtual int drag(int kind, int x, int y, unsigned keys, int effects, const void* native_data) = 0;
+};
+
 class NOVTABLE js_panel_windowless_api : public service_base {
     FB2K_MAKE_SERVICE_INTERFACE_ENTRYPOINT(js_panel_windowless_api);
 public:
@@ -65,6 +74,9 @@ inline const GUID js_panel_notify_api_v2::class_guid =
 
 inline const GUID js_panel_windowless::class_guid =
     { 0x767764da, 0x7dd0, 0x4e87, { 0x8f, 0x53, 0x9f, 0xcc, 0x1f, 0x7a, 0x2b, 0x15 } };
+
+inline const GUID js_panel_windowless_v2::class_guid =
+    { 0x2c51e0a4, 0x6f3b, 0x4d18, { 0x9a, 0x77, 0x41, 0x0e, 0xc3, 0x5d, 0x92, 0xb6 } };
 
 inline const GUID js_panel_windowless_api::class_guid =
     { 0x93740c3b, 0x8b72, 0x45eb, { 0xb7, 0xe2, 0x31, 0xa4, 0x2a, 0xc6, 0x06, 0xae } };

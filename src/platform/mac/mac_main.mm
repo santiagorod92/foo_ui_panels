@@ -31,6 +31,7 @@ public:
     explicit PanelsRoot(bool owns_window = false) : m_owns_window(owns_window) {
         pui::ui::ViewOptions opts;
         opts.accept_files = true;
+        opts.drag_types = { js_panel::drag_type_tracks };
         m_host = pui::ui::mac::create_root_view(this, opts);
         m_zoom = pui::ui::mac::zoom_factor();
         pui::ui::mac::set_root_zoom(*m_host, m_zoom);
@@ -126,6 +127,9 @@ public:
         if (dirty) invalidate();
     }
     void on_drop_files(const std::vector<std::string>& paths, int, int) override { pui::SkinEngine::add_files(paths); }
+    int on_native_drag(int kind, int x, int y, unsigned keys, int effects, const void* native_data) override {
+        return m_skin.windowless_drag(kind, x, y, keys, effects, native_data);
+    }
 
     void* native() const override { return m_host ? m_host->native() : nullptr; }
     pui::gfx::Rect client_rect() const override {

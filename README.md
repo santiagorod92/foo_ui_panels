@@ -148,7 +148,9 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 
 On macOS the Windows UI faces need no alias: Segoe UI (with its Light, Semilight, Semibold, Bold, Black
 and Italic variants), Tahoma, Verdana, Calibri and Bahnschrift draw with the system font at that weight,
-Consolas and Cascadia with the system's monospaced font, and Marlett (the Windows caption-button font)
+Consolas and Cascadia with the system's monospaced font, Segoe Fluent Icons and Segoe MDL2 Assets draw
+the icons scripts use most (playback, rating, hearts, check boxes, chevrons, menu, volume, repeat and
+shuffle) as the matching Unicode symbols, and Marlett (the Windows caption-button font)
 draws its minimize, maximize, restore, close, arrow and check glyphs as the matching symbols.
 | `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
@@ -168,7 +170,7 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
 | `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
 | `panel.<name>.script` | Script for a hosted [JS Panel](#works-with-js-panel) `$panel(<name>,JS Panel,…)`, relative to the skin folder (e.g. `js/now_playing.js`). Unset: JS Panel's own script. |
 | `panel.<name>.transparent` | `1`: that hosted JS Panel is drawn over the skin beneath it instead of its own background (its script sees `window.IsTransparent`). |
-| `panel.<name>.windowless` | `1`: that JS Panel has no window of its own: Panels UI draws it into the skin at its `$panel` call, so whatever the script draws later lands on top of it and, with `transparent = 1`, it sees the skin beneath it as it is right now. Mouse, wheel and keys reach it from the skin's window (a skin button over it still wins). Needs a JS Panel that supports it (otherwise it gets a window as before); no drag and drop. |
+| `panel.<name>.windowless` | `1`: that JS Panel has no window of its own: Panels UI draws it into the skin at its `$panel` call, so whatever the script draws later lands on top of it and, with `transparent = 1`, it sees the skin beneath it as it is right now. Mouse, wheel and keys reach it from the skin's window (a skin button over it still wins). Tracks and files dragged over it reach the script too (drops elsewhere in the window still go to the playlist), and the script's pseudo-caption drags the window. Needs a JS Panel that supports it (otherwise it gets a window as before; drag and drop needs JS Panel 1.9). |
 | `action.remap.<action>` | Run another button action instead. |
 | `onboarding.pvars` | First-run flags set to 1 when a popup opens: names, `prefix*`, `!exclusion`. |
 | `pvar.once.<name>` | Set this variable once, then leave it to the user. |

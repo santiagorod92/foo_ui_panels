@@ -3,6 +3,7 @@
 #include "gdi_canvas.h"
 #include "tooltip.h"
 #include "drop_files.h"
+#include "drop_target.h"
 #include "tray.h"
 #include "zoom.h"
 #include "dark_mode.h"
@@ -95,6 +96,15 @@ public:
         pui::log::info("ui", "main window created");
         m_theme = std::make_unique<pui::win::dark::WindowTheme>(m_wnd);
         DragAcceptFiles(m_wnd, TRUE);
+        if (m_ole_ok) {
+            m_drop = new pui::win::MainDropTarget(m_wnd, [this](int kind, POINT p, DWORD keys, DWORD offered, IDataObject* data) {
+                return m_skin.windowless_drag(kind, logical(p.x), logical(p.y), keys, (int)offered, data);
+            });
+            if (FAILED(RegisterDragDrop(m_wnd, m_drop))) {
+                m_drop->Release();
+                m_drop = nullptr;
+            }
+        }
         build_menu();
         const int show = restore_placement(m_wnd);
         pui::win::refresh_zoom(m_wnd);
@@ -263,6 +273,7 @@ private:
     HookProc_t  m_hook    = nullptr;
     HMENU       m_menubar = nullptr;
     bool        m_ole_ok  = false;
+    pui::win::MainDropTarget* m_drop = nullptr;
     std::string m_title;
     pui::win::Tooltip m_tooltip;
     pui::win::TrayIcon m_tray;
@@ -424,7 +435,9 @@ private:
             TrackMouseEvent(&tme);
         }
         if (!m_skin.windowless_mouse(kind, logical(GET_X_LPARAM(lp)), logical(GET_Y_LPARAM(lp)), (unsigned)(wp & 0xffff))) return false;
-        if (kind == W::mouse_left_down || kind == W::mouse_right_down || kind == W::mouse_middle_down) SetCapture(wnd);
+        if ((kind == W::mouse_left_down || kind == W::mouse_right_down || kind == W::mouse_middle_down) &&
+            (GetKeyState(VK_LBUTTON) | GetKeyState(VK_RBUTTON) | GetKeyState(VK_MBUTTON)) < 0)
+            SetCapture(wnd);
         if ((kind == W::mouse_left_up || kind == W::mouse_right_up || kind == W::mouse_middle_up) && !(wp & (MK_LBUTTON | MK_RBUTTON | MK_MBUTTON)) &&
             GetCapture() == wnd)
             ReleaseCapture();
@@ -608,6 +621,11 @@ private:
             standard_commands::main_exit();
             return 0;
         case WM_DESTROY:
+            if (self && self->m_drop) {
+                RevokeDragDrop(wnd);
+                self->m_drop->Release();
+                self->m_drop = nullptr;
+            }
             return 0;
         }
         return DefWindowProcW(wnd, msg, wp, lp);

@@ -3,6 +3,17 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.26.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.25.0...v1.26.0) (2026-11-16)
+
+### Highlights
+- **Drag and drop onto windowless JS Panels**: tracks and files dragged over a
+  `panel.<name>.windowless = 1` JS Panel reach its script (JS Panel 1.9.0); drops anywhere else in
+  the window still add the files to the playlist.
+
+### Added
+- macOS: Segoe Fluent Icons and Segoe MDL2 Assets draw the icons scripts use most (playback,
+  rating, hearts, check boxes, chevrons, menu, volume, repeat and shuffle) as symbols.
+
 ## [1.25.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.24.0...v1.25.0) (2026-11-16)
 
 ### Highlights

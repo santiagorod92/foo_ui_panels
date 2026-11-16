@@ -103,7 +103,11 @@ public:
         m_ns.host = this;
         m_ns.cursor = cursor_of(opts.cursor);
         m_ns.wantsLayer = YES;
-        if (opts.accept_files) [m_ns registerForDraggedTypes:@[ NSPasteboardTypeFileURL ]];
+        if (opts.accept_files) {
+            NSMutableArray<NSPasteboardType>* types = [NSMutableArray arrayWithObject:NSPasteboardTypeFileURL];
+            for (const auto& t : opts.drag_types) [types addObject:ns(t)];
+            [m_ns registerForDraggedTypes:types];
+        }
         if (!opts.accessible_name.empty()) {
             m_ns.accessibilityElement = YES;
             m_ns.accessibilityRole = NSAccessibilityGroupRole;
@@ -337,12 +341,33 @@ MacViewHost* host_of(FooUIPanelsView* v) { return (MacViewHost*)v.host; }
     if (h && h->live() && h->view()->on_native_key((__bridge const void*)e)) return;
     [super keyUp:e];
 }
-- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)s {
+- (int)nativeDrag:(int)kind info:(id<NSDraggingInfo>)s {
+    auto* h = host_of(self);
+    if (!h || !h->live()) return -1;
+    const NSPoint p = [self convertPoint:s.draggingLocation fromView:nil];
+    const NSDragOperation ops = s.draggingSourceOperationMask;
+    const int offered = ((ops & NSDragOperationCopy) ? 1 : 0) | ((ops & (NSDragOperationMove | NSDragOperationGeneric)) ? 2 : 0) |
+                        ((ops & NSDragOperationLink) ? 4 : 0);
+    const NSEventModifierFlags f = NSEvent.modifierFlags;
+    const unsigned keys = 0x1 | ((f & NSEventModifierFlagShift) ? 0x4 : 0) | ((f & (NSEventModifierFlagControl | NSEventModifierFlagCommand)) ? 0x8 : 0) |
+                          ((f & NSEventModifierFlagOption) ? 0x20 : 0);
+    return h->view()->on_native_drag(kind, (int)p.x, (int)p.y, keys, offered, (__bridge const void*)s);
+}
+static NSDragOperation drag_operation(int effect) {
+    return (effect & 2) ? NSDragOperationMove : (effect & 1) ? NSDragOperationCopy : (effect & 4) ? NSDragOperationLink : NSDragOperationNone;
+}
+- (NSDragOperation)draggingEntered:(id<NSDraggingInfo>)s { return [self drag:pui::ui::kDragEnter info:s]; }
+- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)s { return [self drag:pui::ui::kDragOver info:s]; }
+- (NSDragOperation)drag:(int)kind info:(id<NSDraggingInfo>)s {
+    const int effect = [self nativeDrag:kind info:s];
+    if (effect >= 0) return drag_operation(effect);
     auto* h = host_of(self);
     return h && h->live() ? NSDragOperationCopy : NSDragOperationNone;
 }
-- (NSDragOperation)draggingUpdated:(id<NSDraggingInfo>)s { return [self draggingEntered:s]; }
+- (void)draggingExited:(id<NSDraggingInfo>)s { [self nativeDrag:pui::ui::kDragLeave info:s]; }
 - (BOOL)performDragOperation:(id<NSDraggingInfo>)s {
+    const int effect = [self nativeDrag:pui::ui::kDragDrop info:s];
+    if (effect >= 0) return effect != 0;
     auto* h = host_of(self);
     if (!h || !h->live()) return NO;
     NSArray<NSURL*>* urls = [s.draggingPasteboard readObjectsForClasses:@[ NSURL.class ]
