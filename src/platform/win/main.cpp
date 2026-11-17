@@ -486,6 +486,12 @@ private:
                 return 0;
             }
             break;
+        case WM_NCHITTEST: {
+            const LRESULT ht = DefWindowProcW(wnd, msg, wp, lp);
+            if (ht == HTMENU && MenuItemFromPoint(wnd, GetMenu(wnd), POINT{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) }) < 0)
+                return HTCAPTION;
+            return ht;
+        }
         case WM_NCLBUTTONDOWN:
             if (self && under_wine()) {
                 if (const int edges = resize_edges(wp)) {

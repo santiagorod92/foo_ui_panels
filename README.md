@@ -339,6 +339,8 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
 - The Preferences page and the main window's title bar, menu bar and menus follow foobar2000's
   **Dark Mode** (Preferences › Display › Default User Interface; on *Auto* it tracks Windows' app
   theme live, also with Panels UI as the UI module).
+- Windows: the empty part of the menu bar works like the title bar: drag it to move the window
+  (handy with skins that hide the title bar), double-click it to maximize.
 - Album browser / cover flow: type to search by artist or album (Backspace edits, Esc clears),
   right-click empty space to sort by artist, album, year, decade or recently added (remembered), arrow
   keys / Page Up/Down / Home/End move through the grid.

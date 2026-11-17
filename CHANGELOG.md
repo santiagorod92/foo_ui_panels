@@ -3,6 +3,13 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.27.1](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.0...v1.27.1) (2026-11-17)
+
+### Fixed
+- Windows: dragging the empty part of the menu bar moves the window, like the title bar (with a
+  skin that hides the title bar there was nowhere up there to drag it from); a click there no
+  longer puts the menu bar in menu mode ([#32](https://github.com/santiagorod92/foo_ui_panels/issues/32)).
+
 ## [1.27.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.26.0...v1.27.0) (2026-11-16)
 
 ### Highlights
