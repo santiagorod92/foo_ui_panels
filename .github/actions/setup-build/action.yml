@@ -59,14 +59,14 @@ runs:
       uses: actions/cache@v6
       with:
         path: ~/.xwin
-        key: xwin-${{ runner.os }}-x86-x86_64-aarch64-v3
+        key: xwin-${{ runner.os }}-x86-x86_64-aarch64-xwin0.10.0
 
     - name: Splat Windows SDK/CRT with xwin
       if: inputs.xwin == 'true' && steps.xwin-cache.outputs.cache-hit != 'true'
       shell: bash
       run: |
         set -euo pipefail
-        XWIN_VER=0.6.5
+        XWIN_VER=0.10.0
         mkdir -p "$RUNNER_TEMP/xwin"
         curl -fsSL "https://github.com/Jake-Shadle/xwin/releases/download/$XWIN_VER/xwin-$XWIN_VER-x86_64-unknown-linux-musl.tar.gz" \
           | tar -xz -C "$RUNNER_TEMP/xwin" --strip-components=1
