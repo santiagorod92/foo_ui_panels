@@ -205,8 +205,8 @@ it, a skin gets neutral defaults. Edits are picked up live, like script edits.
 On macOS the Windows UI faces need no alias: Segoe UI (with its Light, Semilight, Semibold, Bold, Black
 and Italic variants), Tahoma, Verdana, Calibri and Bahnschrift draw with the system font at that weight,
 Consolas and Cascadia with the system's monospaced font, Segoe Fluent Icons and Segoe MDL2 Assets draw
-the icons scripts use most (playback, rating, hearts, check boxes, chevrons, menu, volume, repeat and
-shuffle) as the matching Unicode symbols, and Marlett (the Windows caption-button font)
+the icons scripts use most (playback, rating, hearts, check boxes, chevrons, menu, more, volume, repeat,
+shuffle and the minimize / maximize / close window buttons) as the matching Unicode symbols, and Marlett (the Windows caption-button font)
 draws its minimize, maximize, restore, close, arrow and check glyphs as the matching symbols.
 | `background.image_pvar`, `background.enabled_pvar`, `background.alpha_pvar`, `background.alpha`, `background.top` | The wallpaper the main script draws (file relative to `images`, on/off variable, opacity, top offset), so native panels can show the same one. |
 | `asset.bar_fill`, `asset.volume_knob` | Seek/volume bar art (`{theme}` allowed). |
