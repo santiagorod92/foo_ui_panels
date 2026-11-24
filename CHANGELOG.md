@@ -3,6 +3,14 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.27.2](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.1...v1.27.2) (2026-11-24)
+
+### Fixed
+- Windows: scrolling a windowless JS Panel with a touchpad or a smooth-scroll mouse wheel works:
+  their small wheel movements were each rounded down to no step at all, so lists didn't move or
+  stopped after a few lines. They now add up to whole steps, as a mouse wheel notch does
+  ([foo_js_panel#5](https://github.com/santiagorod92/foo_js_panel/issues/5)).
+
 ## [1.27.1](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.0...v1.27.1) (2026-11-17)
 
 ### Fixed

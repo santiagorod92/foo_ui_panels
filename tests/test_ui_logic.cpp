@@ -4,6 +4,18 @@
 
 using namespace pui;
 
+TEST("WheelAccumulator: small Windows wheel deltas add up to whole steps") {
+    WheelAccumulator w;
+    CHECK_EQ(w.take(120), 1);
+    CHECK_EQ(w.take(-240), -2);
+    CHECK_EQ(w.take(40), 0);
+    CHECK_EQ(w.take(40), 0);
+    CHECK_EQ(w.take(40), 1);
+    CHECK_EQ(w.take(100), 0);
+    CHECK_EQ(w.take(-100), 0);
+    CHECK_EQ(w.take(-20), -1);
+}
+
 TEST("zoom_step: presets up and down, clamped at the ends") {
     CHECK_EQ(zoom_step(100, +1), 110);
     CHECK_EQ(zoom_step(100, -1), 90);

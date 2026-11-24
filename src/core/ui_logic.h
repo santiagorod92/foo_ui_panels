@@ -17,6 +17,17 @@ std::vector<std::string> split_actions(const std::string& s);
 void parse_anchor(const std::string& s, std::string& halign, std::string& valign);
 void name_hash128(const std::string& name, uint8_t out[16]);
 
+struct WheelAccumulator {
+    int rest = 0;
+    int take(int delta) {
+        if ((delta > 0 && rest < 0) || (delta < 0 && rest > 0)) rest = 0;
+        rest += delta;
+        const int steps = rest / 120;
+        rest -= steps * 120;
+        return steps;
+    }
+};
+
 struct MiniPlan {
     bool act = false;
     bool enter = false;

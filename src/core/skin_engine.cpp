@@ -290,9 +290,10 @@ bool SkinEngine::windowless_mouse(int kind, int x, int y, unsigned mask) {
 }
 
 bool SkinEngine::windowless_wheel(int x, int y, int step) {
-    if (step == 0 || over_button(x, y)) return false;
+    if (over_button(x, y)) return false;
     Slot* s = windowless_slot(windowless_at(x, y));
     if (!s) return false;
+    if (step == 0) return true;
     auto panel = s->windowless->panel;
     panel->wheel(step, false);
     return true;

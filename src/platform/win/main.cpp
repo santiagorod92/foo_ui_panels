@@ -314,6 +314,7 @@ private:
     }
 
     pui::SkinEngine m_skin;
+    pui::WheelAccumulator m_wheel;
 
     struct MenuGroup { service_ptr_t<mainmenu_manager> mgr; UINT base; HMENU popup; const GUID* guid; };
     std::vector<MenuGroup> m_groups;
@@ -410,7 +411,7 @@ private:
         case WM_MOUSEWHEEL: {
             POINT p{ GET_X_LPARAM(lp), GET_Y_LPARAM(lp) };
             ScreenToClient(wnd, &p);
-            return m_skin.windowless_wheel(logical(p.x), logical(p.y), GET_WHEEL_DELTA_WPARAM(wp) / WHEEL_DELTA);
+            return m_skin.windowless_wheel(logical(p.x), logical(p.y), m_wheel.take(GET_WHEEL_DELTA_WPARAM(wp)));
         }
         case WM_KEYDOWN:
         case WM_SYSKEYDOWN:
