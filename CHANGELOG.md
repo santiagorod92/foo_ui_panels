@@ -3,6 +3,17 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.27.3](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.2...v1.27.3) (2026-11-24)
+
+### Fixed
+- Windows: dragging tracks onto a windowless JS Panel works: the drop was refused whenever the
+  drag entered the window somewhere else first (between two panels, for instance), because the
+  dragged data only reached the panel on that first contact. JS Panel 1.10.0 is the matching
+  release.
+- macOS: the "more" (⋯) and the minimize / maximize / close window-button icons of Segoe Fluent
+  Icons and Segoe MDL2 Assets draw as symbols instead of question marks (the Cadence JScript
+  Panel 3 theme's caption buttons).
+
 ## [1.27.2](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.1...v1.27.2) (2026-11-24)
 
 ### Fixed

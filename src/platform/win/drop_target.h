@@ -11,7 +11,7 @@ class MainDropTarget : public IDropTarget {
 public:
     using Forward = std::function<int(int kind, POINT client, DWORD keys, DWORD offered, IDataObject* data)>;
     MainDropTarget(HWND wnd, Forward forward) : m_wnd(wnd), m_forward(std::move(forward)) {}
-    virtual ~MainDropTarget() = default;
+    virtual ~MainDropTarget() { hold(nullptr); }
 
     HRESULT STDMETHODCALLTYPE QueryInterface(REFIID iid, void** out) override {
         if (!out) return E_POINTER;
@@ -33,18 +33,27 @@ public:
     HRESULT STDMETHODCALLTYPE DragEnter(IDataObject* data, DWORD keys, POINTL pt, DWORD* effect) override {
         FORMATETC f{ CF_HDROP, nullptr, DVASPECT_CONTENT, -1, TYMED_HGLOBAL };
         m_files = data && data->QueryGetData(&f) == S_OK;
+        hold(data);
         return route(0, keys, pt, effect, data);
     }
-    HRESULT STDMETHODCALLTYPE DragOver(DWORD keys, POINTL pt, DWORD* effect) override { return route(1, keys, pt, effect, nullptr); }
+    HRESULT STDMETHODCALLTYPE DragOver(DWORD keys, POINTL pt, DWORD* effect) override { return route(1, keys, pt, effect, m_data); }
     HRESULT STDMETHODCALLTYPE DragLeave() override {
         m_forward(2, POINT{}, 0, DROPEFFECT_NONE, nullptr);
+        hold(nullptr);
         return S_OK;
     }
     HRESULT STDMETHODCALLTYPE Drop(IDataObject* data, DWORD keys, POINTL pt, DWORD* effect) override {
-        return route(3, keys, pt, effect, data);
+        const HRESULT hr = route(3, keys, pt, effect, data);
+        hold(nullptr);
+        return hr;
     }
 
 private:
+    void hold(IDataObject* data) {
+        if (data) data->AddRef();
+        if (m_data) m_data->Release();
+        m_data = data;
+    }
     HRESULT route(int kind, DWORD keys, POINTL pt, DWORD* effect, IDataObject* data) {
         POINT p{ pt.x, pt.y };
         ScreenToClient(m_wnd, &p);
@@ -86,6 +95,7 @@ private:
     Forward m_forward;
     LONG m_refs = 1;
     bool m_files = false;
+    IDataObject* m_data = nullptr;
 };
 
 }
