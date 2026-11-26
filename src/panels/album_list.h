@@ -1,6 +1,6 @@
 #pragma once
 #include "../ui/view.h"
-#include "../core/navidrome_library_api.h"
+#include "../core/navidrome_link.h"
 #include "../core/list_logic.h"
 #include "../core/ui_logic.h"
 #include <atomic>

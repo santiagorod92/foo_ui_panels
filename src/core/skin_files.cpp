@@ -80,8 +80,8 @@ bool SkinEngine::load_main_script() {
     return ok;
 }
 
-std::string SkinEngine::panel_script(const std::string& panel) const {
-    const std::string rel = m_st.cfg.str("panel." + panel + ".script");
+std::string SkinEngine::panel_script(const std::string& panel, const char* key) const {
+    const std::string rel = m_st.cfg.str("panel." + panel + "." + key);
     if (rel.empty() || m_st.base.empty()) return rel;
     if (fs_path(rel).is_absolute()) return rel;
     return fs_utf8((fs_path(m_st.base) / fs_path(rel)).make_preferred());

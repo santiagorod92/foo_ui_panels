@@ -5,6 +5,7 @@
 #include <memory>
 #include <set>
 #include <string>
+#include <unordered_map>
 #include <vector>
 
 namespace pui {
@@ -29,14 +30,17 @@ private:
         std::string name, id;
         bool remote = false;
         std::vector<metadb_handle_ptr> items;
+        std::vector<std::string> labels;
     };
     struct Artist { std::string name, remote_id; std::vector<Album> albums; };
-    enum Kind { kLoading, kPlaylists, kPlaylist, kArtist, kAlbum };
+    enum Kind { kLoading, kPlaylists, kPlaylist, kArtist, kAlbum, kTrack };
     struct RemoteAlbum { std::string artist, album, id, artist_id; };
 
     void load_local();
     void start_remote_load();
     void merge_remote(std::vector<RemoteAlbum>&& add);
+    void start_remote_tracks();
+    void merge_remote_tracks(const metadb_handle_list& tracks);
     void finish_data();
     void refresh_tree();
     int  row_at(int y) const;
@@ -45,13 +49,14 @@ private:
     void toggle(int item);
     void activate(int item);
     void context_menu(int item, int x, int y);
-    void play_album(const Album& al, bool replace);
+    void play_album(const Album& al, bool replace, int start = 0);
     void play_artist(const Artist& ar, bool replace);
     Artist& artist_for(const std::string& name);
     std::string item_key(int item) const;
 
     SkinEngine* m_engine = nullptr;
     std::vector<Artist> m_artists;
+    std::unordered_map<std::string, size_t> m_artistIndex;
     TreeRows m_tree;
     int m_sel = -1;
     int m_scroll = 0;

@@ -80,4 +80,8 @@ using PanelOverrides = std::map<std::string, PanelOverride>;
 bool panel_action(PanelOverrides& o, const std::string& args);
 bool apply_panel_override(const PanelOverrides& o, const std::string& name, int& x, int& y, int& w, int& h);
 
+std::string html_to_text(const std::string& html);
+
+std::string track_identity(const std::string& path);
+
 }

@@ -159,6 +159,19 @@ writes the same skin without foobar2000, and `make skin-lint LINT_DIR=<folder>` 
 missing in it. The installer is unpacked with [miniz](https://github.com/richgel999/miniz) (MIT)
 and [bzip2](https://sourceware.org/bzip2/) (BSD-style), both in `third_party/`.
 
+### Setting up another Panels UI skin (.pui)
+
+Other skins made for the original Panels UI (0.13.x, foobar2000 0.9) came as a `.pui` file in a
+folder with its images, often with `.pp` popup layouts next to it. **View › Panels UI › Import
+Panels UI configuration (.pui)…** and pick the `.pui`: Panels UI converts its variables, main
+script and Track Display panels into `main.txt` + `panels/`, each popup into the file its `POPUP:`
+buttons look for, copies the folder's images and switches to the new skin (written to
+`foo_ui_panels-skins/<name>`; importing again writes `<name> 2`…). Single Column Playlist panels
+become the native playlist (their own layout scripts aren't run), Library Filter the playlist
+switcher. Panels placed inside a popup aren't shown yet (*basic*'s library popup has one). Tested with fooAvA's `.pui` and *basic*, the sample skin that came with Panels UI 0.13.7.
+From a source checkout, `make pui-skin PUI=<file.pui> SKIN=<folder>` does the same without
+foobar2000.
+
 ### Setting up Eole (or another Columns UI theme)
 
 [Eole](https://github.com/Ottodix/Eole-foobar-theme), [CaTRoX](https://github.com/TheQwertiest/CaTRoX_QWR)
@@ -214,6 +227,7 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
 | `playlist.header` | Show the playlist's sortable column header (`1`; default `0`, so classic skins keep their look — the layout wizard's layouts turn it on). |
 | `playlist.row_format` | Titleformat for each playlist row's text (`[$num(%tracknumber%,2). ][%title%]`, so tracks without a track number show just the title). |
 | `playlist.column.<n>` | Extra playlist columns, `1`, `2`, … in order: `Label\|titleformat\|width\|align`, e.g. `Bitrate\|%bitrate% kbps\|70\|right` (width in px, default `60`; align `left` or `right`, default `left`). They sit between the title and the rating, and the column header sorts by them. Columns that don't fit the panel's width are left out. |
+| `drawrect.zero_fills` | `1`: a `$drawrect` width or height of 0 reaches the panel's edge, as in the original Panels UI (`.pui` imports set it). Default `0`: a 0 draws nothing. |
 | `button.feedback` | Light up buttons with no hover art under the pointer and darken them while pressed (`1`; `0` turns it off). |
 | `asset.rating_stars` | Playlist rating-star art, `{n}` = 0–5 stars. Without it the playlist shows no stars. |
 | `spectrum.mirror_below`, `spectrum.grow`, `spectrum.raise` | Spectrum strips shorter than N px draw the reflection; grow/raise them by N px. |
@@ -225,6 +239,7 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
 | `cover.pvar`, `cover.pattern` | Set this variable to the track folder's cover (`*folder*.*`) before each panel script runs. |
 | `panel.remap.<name>` | Replace a `$panel()`: `<new name>` or `<new name>\|<new type>`. |
 | `panel.<name>.script` | Script for a hosted [JS Panel](#works-with-js-panel) `$panel(<name>,JS Panel,…)`, relative to the skin folder (e.g. `js/now_playing.js`). Unset: JS Panel's own script. |
+| `panel.<name>.fallback` | A JS Panel script for a panel that hosts a foobar2000 UI element by name, used when no installed element has that name (on macOS most Windows-only elements; needs JS Panel). `skin-lint` reports a missing file. |
 | `panel.<name>.transparent` | `1`: that hosted JS Panel is drawn over the skin beneath it instead of its own background (its script sees `window.IsTransparent`). |
 | `panel.<name>.windowless` | `1`: that JS Panel has no window of its own: Panels UI draws it into the skin at its `$panel` call, so whatever the script draws later lands on top of it and, with `transparent = 1`, it sees the skin beneath it as it is right now. Mouse, wheel and keys reach it from the skin's window (a skin button over it still wins; a touchpad's small wheel movements add up to whole steps). Tracks and files dragged over it reach the script too (drops elsewhere in the window still go to the playlist), and the script's pseudo-caption drags the window. Needs a JS Panel that supports it (otherwise it gets a window as before; drag and drop needs JS Panel 1.9). |
 | `action.remap.<action>` | Run another button action instead. |
@@ -250,10 +265,19 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
   Skins can also read `%pui_skin_folder%`, `%pui_profile_folder%` (the foobar2000 profile folder),
   `%pui_mini_mode%` (`1` in mini mode, false for `$if` otherwise) and `%pui_zoom%` (percent)
   and look files up with `$findfile(pattern)` (Panel Stack Splitter's, `*`/`?` in the file name).
+  From Panels UI 0.13: `$fontexists(face)` (true when the font is installed, for `$if`) and
+  `%_trackinfo_notrack%` (true while nothing plays); `$glass(…)` (Windows Vista glass) is
+  ignored and `%glass%` is always false, so skins take their non-glass look.
 - Native versions of the panels fooAvA uses: track display (CD case, rating stars), seek bar,
   volume, grouped playlist, spectrum analyser, peak meter, album art, album browser + cover
-  flow, playlist switcher, quick search and a synced-lyrics panel — all drawn by the component
-  itself, so they work the same on macOS.
+  flow, playlist switcher (also for the old *Library Filter*), quick search and a synced-lyrics
+  panel — all drawn by the component itself, so they work the same on macOS.
+- **Playlist switcher**: artists › albums › tracks; double-click or Enter plays a track from
+  where it sits in its album, right-click adds it to the current playlist.
+- **Biography panel** (`$panel(<name>,Biography,…)`, also the old *Biography View*): the playing
+  artist's photo, biography and Last.fm link, from your Navidrome server (see
+  [Works with foo_navidrome](#works-with-foo_navidrome)); the mouse wheel scrolls it. Colours:
+  `color.biography.background`, `text`, `text_secondary`, `link`.
 - Grouped playlist: keyboard navigation (arrows, Page Up/Down, Home/End with Shift to extend
   the selection, Enter to play, type a few letters to jump to a title or album artist), drag
   selected tracks to reorder them, and drop files or folders from Explorer / Finder onto it
@@ -331,7 +355,8 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
   `WINDOWSTYLE:hidetitlebar`/`WINDOWSTYLE:showtitlebar` (as `$windowstyle()`),
   `PREFERENCES` (this component's Preferences page), `URL:<address>`, `SKIN:CHOOSE_FOLDER` and
   `SKIN:IMPORT_FCL[:<path>]` (see [Importing a Columns UI layout](#importing-a-columns-ui-layout)),
-  `SKIN:IMPORT_FOOAVA[:<installer or folder>]` (see [Setting up fooAvA](#setting-up-fooava)).
+  `SKIN:IMPORT_FOOAVA[:<installer or folder>]` (see [Setting up fooAvA](#setting-up-fooava)) and
+  `SKIN:IMPORT_PUI[:<file.pui>]` (see [Setting up another Panels UI skin](#setting-up-another-panels-ui-skin-pui)).
 - Switching skin or main script in Preferences applies immediately (no restart). The skin picker
   shows a preview of the skin: its own (`preview` in `foo_ui_panels.ini`, else a `preview.png` /
   `screenshot.png` in its folder), else a picture the component takes of it the first time it is
@@ -359,7 +384,8 @@ draws its minimize, maximize, restore, close, arrow and check glyphs as the matc
   (General, Script, Variables and Overrides tabs, same wording and choices — including "the
   component's own folder" as a skin) and full-resolution Retina rendering.
   Panels that host foobar2000's own UI elements only work if a Mac element of the same name
-  exists.
+  exists; `panel.<name>.fallback` in the skin's ini gives such a panel a JS Panel script to run
+  instead (see [Skin configuration](#skin-configuration)).
 
 ## Works with foo_navidrome
 
@@ -374,8 +400,14 @@ own):
 - **Album browser / cover flow**: your Navidrome albums appear next to the Media Library ones,
   with their cover art; clicking one plays it. *Recently added* orders them by the date the server
   added them (needs foo_navidrome 1.31 or newer; older versions don't send that date).
-- **Playlist switcher panel**: browse Navidrome artists and albums and play them straight from
-  the skin.
+- **Playlist switcher panel**: browse Navidrome artists, albums and their tracks and play them
+  straight from the skin (the tracks need foo_navidrome 1.38 or newer; older versions list the
+  albums only).
+- **Quick search**: after the Media Library and playlist matches, the server's search adds its
+  matching songs to the *Search results* playlist (needs foo_navidrome 1.40 or newer).
+- **Biography panel**: the playing artist's photo and biography from the server (Last.fm's
+  through Navidrome), for any track whose artist the server knows (needs foo_navidrome 1.38 or
+  newer).
 - **Lyrics panel**: a Navidrome track's lyrics come from your server (synced ones scroll and
   highlight like a local `.lrc`), looked up as soon as the track plays — no need to turn on
   online search. When the server has none, lrclib.net is tried if online search is on, or from
@@ -414,7 +446,8 @@ the CUI ones) return the skin's colours and fonts (`color.*`, `font.*` in
 [Skin configuration](#skin-configuration)), so a script follows the skin it's in without editing.
 `panelsui.Eval(expr)` runs titleformat the way the skin does (`$getpvar`, `%_width%`,
 `%pui_mini_mode%`…), and scripts hear `on_panelsui_mini_mode(on)` and `on_panelsui_zoom(percent)`
-when the window enters or leaves mini mode or the zoom changes. For state the skin should show but
+when the window enters or leaves mini mode or the zoom changes, and
+`on_panelsui_panel_changed(name, visible, x, y, w, h)` when a skin panel is shown, hidden or moved. For state the skin should show but
 not keep (a hovered item, a loading flag) a script calls `panelsui.SetValue(name, value)` and the
 skin reads it with `$getvalue(name)`: nothing is saved, the skin repaints only when the value
 changes, and every value is dropped when the skin reloads. Actions that replace the skin
@@ -479,7 +512,8 @@ rotates at 2 MB to `foo_ui_panels.log.1`. Warnings and errors also show in **Vie
 
 ## Roadmap
 
-- More Panels UI skins from the 0.9.x days (only fooAvA has been tried so far — see Contributing).
+- More Panels UI skins from the 0.9.x days: fooAvA and *basic* are tested; other `.pui` skins
+  import the same way, but may use functions or panels not covered yet (see Contributing).
 
 ## Contributing
 

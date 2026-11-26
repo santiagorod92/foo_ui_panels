@@ -15,6 +15,7 @@ struct ScriptOut {
     virtual ~ScriptOut() = default;
     virtual void write(std::string_view text) = 0;
     void write_int(long v) { write(std::to_string(v)); }
+    int truth = -1;
 };
 
 struct ScriptArgs {
@@ -43,6 +44,7 @@ struct ScriptEnv {
     virtual void set_titlebar_visible(bool) {}
     virtual void set_tray(const std::string&) {}
     virtual void set_title(const std::string&) {}
+    virtual bool font_exists(const std::string&) { return false; }
 };
 
 struct ScriptState {
@@ -117,6 +119,7 @@ private:
     bool f_gp_set_pen(const ScriptArgs&, ScriptOut&);
     bool f_gp_draw_rectangle(const ScriptArgs&, ScriptOut&);
     bool f_stub(const ScriptArgs&, ScriptOut&);
+    bool f_fontexists(const ScriptArgs&, ScriptOut&);
 
     std::string eval_arg(const std::string& in);
     std::string image_path(const std::string& raw);

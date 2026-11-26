@@ -113,6 +113,14 @@ public:
             if (idx != pfc_infinite && pm->playlist_get_name(idx, nm)) o.write(nm.get_ptr());
             return true;
         }
+        if (eq(name, len, "glass")) { found = false; return true; }
+        if (eq(name, len, "_trackinfo_notrack")) {
+            metadb_handle_ptr t = m_track;
+            if (t.is_empty()) playback_control::get()->get_now_playing(t);
+            found = t.is_empty();
+            if (found) o.write("1");
+            return true;
+        }
         if (eq(name, len, "pui_skin_folder")) { o.write(m_e->m_st.base); return true; }
         if (eq(name, len, "pui_mini_mode")) {
             found = m_e->in_mini_mode();
@@ -147,8 +155,9 @@ public:
         a.v.reserve(argc);
         for (t_size i = 0; i < argc; ++i) a.v.push_back(param_str(p, i));
         TfOut o(out);
-        found = m_rt.call(std::string_view(name, len), a, o);
-        return found;
+        const bool known = m_rt.call(std::string_view(name, len), a, o);
+        found = known && o.truth != 0;
+        return known;
     }
 
     titleformat_object::ptr compile_cached(std::map<std::string, titleformat_object::ptr>& cache, const std::string& text) {
@@ -216,6 +225,15 @@ public:
     void report(const std::string& msg) override { m_e->report_once(msg); }
     void set_titlebar_visible(bool v) override { if (m_e->m_main) m_e->m_main->set_titlebar_visible(v); }
     void set_tray(const std::string& tip) override { if (m_e->m_main) m_e->m_main->set_tray(tip); }
+    bool font_exists(const std::string& face) override {
+        gfx::Pixels px;
+        px.w = px.h = 1;
+        px.pargb.assign(1, 0);
+        auto cv = gfx::pixels_canvas(px);
+        gfx::FontSpec spec;
+        spec.face = face;
+        return cv && cv->set_font(spec);
+    }
     void set_title(const std::string& t) override { if (m_e->m_main) m_e->m_main->set_title(t); }
 
 private:
@@ -313,6 +331,12 @@ void SkinEngine::notify_state() {
     PvarMap now;
     now["mini_mode"] = in_mini_mode() ? "1" : "0";
     now["zoom"] = std::to_string((int)std::lround(m_main->zoom() * 100));
+    for (const auto& [name, slot] : m_panels) {
+        const gfx::Rect& r = slot.rect;
+        now["panel." + name] = slot.shown ? std::to_string(r.x) + "," + std::to_string(r.y) + "," +
+                                                std::to_string(r.w) + "," + std::to_string(r.h)
+                                          : std::string();
+    }
     const bool first = m_stateNotified.empty();
     const auto changes = changed_pvars(m_stateNotified, now);
     m_stateNotified = now;

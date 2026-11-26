@@ -21,7 +21,7 @@ python3 scripts/i18n-check.py
 SRC=(tests/*.cpp src/core/script_util.cpp src/core/lyrics_parse.cpp src/core/skin_config.cpp src/core/ui_logic.cpp
      src/core/script_runtime.cpp src/core/skin_lint.cpp src/core/prefs_model.cpp src/core/list_logic.cpp
      src/core/builtin_skin.cpp src/core/skin_templates.cpp src/core/log.cpp src/core/diagnostics.cpp
-     src/core/i18n.cpp src/core/i18n_table.cpp src/core/fcl_import.cpp src/core/fooava_import.cpp)
+     src/core/i18n.cpp src/core/i18n_table.cpp src/core/fcl_import.cpp src/core/fooava_import.cpp src/core/pui_import.cpp)
 C_SRC=(third_party/*/*.c)
 
 win_build() {

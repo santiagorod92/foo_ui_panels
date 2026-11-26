@@ -12,6 +12,7 @@
 #include "skin_templates.h"
 #include "fcl_import.h"
 #include "fooava_import.h"
+#include "pui_import.h"
 #include "fs_util.h"
 #include "ui_logic.h"
 #include "log.h"
@@ -316,6 +317,27 @@ bool SkinEngine::run_button_action(const std::string& action) {
         const std::string dir = install_skin_files("fooAvA", skin.main, skin.ini, skin.files, layout_skins_dir(), &err);
         if (dir.empty()) { ui::message_box(nullptr, "Panels UI", err); return true; }
         log::info("skin", "imported fooAvA from " + src + " (" + std::to_string(skin.images) + " images, " + std::to_string(skin.panels) +
+                              " panel scripts, " + std::to_string(skin.popups) + " popups) into " + dir);
+        PrefsModel prefs(prefs_backend());
+        prefs.load();
+        prefs.choose_skin_folder(dir);
+        apply_skin_choice(prefs);
+        return true;
+    }
+    if (a == "SKIN:IMPORT_PUI" || a.compare(0, 16, "SKIN:IMPORT_PUI:") == 0) {
+        if (!m_main) return true;
+        const std::string src = a.size() > 16 ? unquote(a.substr(16)) : ui::choose_file(*m_main, tr("Choose a Panels UI configuration (.pui)"), "pui");
+        if (src.empty()) return true;
+        const std::filesystem::path p = fs_path(src);
+        std::string err;
+        const PuiSkin skin = convert_pui(read_fooava_folder(fs_utf8(p.parent_path())), fs_utf8(p.filename()), &err);
+        if (!err.empty()) {
+            ui::message_box(nullptr, "Panels UI", trf("Couldn't import the configuration: {0}", { err }));
+            return true;
+        }
+        const std::string dir = install_skin_files(fs_utf8(p.stem()), skin.main, skin.ini, skin.files, layout_skins_dir(), &err);
+        if (dir.empty()) { ui::message_box(nullptr, "Panels UI", err); return true; }
+        log::info("skin", "imported " + src + " (" + std::to_string(skin.assets) + " files, " + std::to_string(skin.panels) +
                               " panel scripts, " + std::to_string(skin.popups) + " popups) into " + dir);
         PrefsModel prefs(prefs_backend());
         prefs.load();

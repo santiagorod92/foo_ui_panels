@@ -199,6 +199,12 @@ struct Linter {
             if (a.find('.') == std::string::npos) continue;
             check_file(SkinConfig::kFileName, imgDir + "/" + a, "asset." + key);
         }
+        for (auto& [key, value] : cfg.with_prefix("panel.")) {
+            const size_t dot = key.rfind('.');
+            if (dot == std::string::npos || value.empty() || fs_path(value).is_absolute()) continue;
+            const std::string what = key.substr(dot + 1);
+            if (what == "script" || what == "fallback") check_file(SkinConfig::kFileName, dir + "/" + value, "panel." + key);
+        }
     }
 };
 

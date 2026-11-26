@@ -31,7 +31,7 @@ void parse_img_opts(const std::string& o, int& alpha, int& flip);
 unsigned text_opts(const std::string& o);
 void parse_glow_tail(const std::string& t, int& expand, int& alpha);
 enum class PanelKind { TrackDisplay, Seekbar, Volume, Playlist, Spectrum, PeakMeter, AlbumArt, AlbumList,
-                       Lyrics, QuickSearch, LibraryTree, Embedded };
+                       Lyrics, QuickSearch, LibraryTree, Biography, Embedded };
 enum class PanelZ { Child, Top, Bottom };
 PanelKind panel_kind(const std::string& type, PanelZ* z = nullptr);
 const char* panel_kind_name(PanelKind k);

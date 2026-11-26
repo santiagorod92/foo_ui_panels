@@ -158,7 +158,7 @@ private:
             StringOut o;
             m_rt->call(name, a, o);
             out += o.text;
-            return !o.text.empty();
+            return o.truth >= 0 ? o.truth > 0 : !o.text.empty();
         }
         out += "[UNKNOWN FUNCTION]";
         return false;

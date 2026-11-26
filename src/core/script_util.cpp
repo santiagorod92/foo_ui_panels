@@ -216,6 +216,7 @@ const char* panel_kind_name(PanelKind k) {
     case PanelKind::Lyrics: return "Lyric Show";
     case PanelKind::QuickSearch: return "Quick Search";
     case PanelKind::LibraryTree: return "Playlist Switcher";
+    case PanelKind::Biography: return "Biography";
     case PanelKind::Embedded: return "UI element";
     }
     return "?";
@@ -225,9 +226,10 @@ PanelKind panel_kind(const std::string& type, PanelZ* z) {
     auto has = [&](const char* k) { return type.find(k) != std::string::npos; };
     PanelZ zz = PanelZ::Child;
     PanelKind k;
-    if (has("Playlist switcher"))                                  k = PanelKind::LibraryTree;
+    if (has("Playlist switcher") || has("Library Filter"))         k = PanelKind::LibraryTree;
     else if (has("Quick Search"))                                  { k = PanelKind::QuickSearch; zz = PanelZ::Top; }
     else if (has("Lyric"))                                         k = PanelKind::Lyrics;
+    else if (has("Biography"))                                     k = PanelKind::Biography;
     else if (has("Track Display"))                                 k = PanelKind::TrackDisplay;
     else if (has("Seek"))                                          { k = PanelKind::Seekbar; zz = PanelZ::Bottom; }
     else if (has("Volume"))                                        { k = PanelKind::Volume; zz = PanelZ::Bottom; }
@@ -246,7 +248,7 @@ const char* map_type(const std::string& t) {
     if (has("Channel spectrum") || t == "Spectrum")      return "Spectrum";
     if (has("Single Column Playlist") || has("ELPlaylist")) return "Playlist View";
     if (has("Track Display") || has("Peakmeter") || has("Peak Meter") || has("Album Art") || has("Lyric") || has("Playlist switcher") || has("Seek") || has("Volume") || has("Chronflow") ||
-        has("Quick Search") || has("Album list") || has("Graphical Browser"))
+        has("Quick Search") || has("Album list") || has("Graphical Browser") || has("Biography") || has("Library Filter"))
         return nullptr;
     return t.c_str();
 }

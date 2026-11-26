@@ -1,4 +1,4 @@
-.PHONY: help build build-arm64ec build-x86 deploy launch run kill clean check-portable test i18n-check i18n-missing skin-lint fcl-skin fooava-skin docs mac-build mac-vm mac-vm-open mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config \
+.PHONY: help build build-arm64ec build-x86 deploy launch run kill clean check-portable test i18n-check i18n-missing skin-lint fcl-skin fooava-skin pui-skin docs mac-build mac-vm mac-vm-open mac-vm-test mac-vm-skin mac-vm-navidrome mac-vm-navidrome-config \
 	ui ui-smoke ui-bridge ui-compare mac-vm-smoke mac-vm-bridge win11-smoke win11 win11-open win11-test win11-release win11-skin \
 	win-test win11-arm win11-arm-deploy win11-arm-skin win11-arm-test
 
@@ -21,6 +21,7 @@ help:
 	@echo "  skin-lint       build build/tools/skin_lint; LINT_DIR=<folder> also runs it on that skin"
 	@echo "  fcl-skin        FCL=<layout.fcl> SKIN=<folder> [PRESET=name] [OUTLINE=1]: a Columns UI layout as a skin"
 	@echo "  fooava-skin     FOOAVA=<installer .exe or unpacked folder> SKIN=<folder>: fooAvA as a skin"
+	@echo "  pui-skin        PUI=<config .pui> SKIN=<folder>: an original Panels UI skin as a skin"
 	@echo "  docs            regenerate docs/SCRIPT_FUNCTIONS.md from the engine's function table"
 	@echo "  mac-build       build the macOS bundle (build-mac/foo_ui_panels.component, universal)"
 	@echo "  ui              scripts/ui-test.sh wine ARGS='smoke' / 'click X Y' / 'shot FILE.png' / 'pvars k=v' / 'restart' / 'log 50'"
@@ -102,7 +103,7 @@ win-test:
 	./scripts/run-unit-tests.sh win
 
 LINT_SRC = tools/skin_lint.cpp src/core/script_runtime.cpp src/core/script_util.cpp src/core/skin_config.cpp src/core/skin_lint.cpp src/core/fcl_import.cpp \
-           src/core/fooava_import.cpp src/core/i18n.cpp src/core/i18n_table.cpp
+           src/core/fooava_import.cpp src/core/pui_import.cpp src/core/i18n.cpp src/core/i18n_table.cpp
 THIRD_PARTY_C = $(wildcard third_party/*/*.c)
 THIRD_PARTY_OBJ = $(patsubst third_party/%.c,build/tools/third_party/%.o,$(THIRD_PARTY_C))
 LINT_BIN = build/tools/skin_lint
@@ -120,6 +121,9 @@ fcl-skin: $(LINT_BIN)
 
 fooava-skin: $(LINT_BIN)
 	./$(LINT_BIN) --import-fooava "$(FOOAVA)" "$(SKIN)"
+
+pui-skin: $(LINT_BIN)
+	./$(LINT_BIN) --import-pui "$(PUI)" "$(SKIN)"
 
 docs: $(LINT_BIN)
 	@mkdir -p docs

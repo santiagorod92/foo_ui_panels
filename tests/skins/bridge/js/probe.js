@@ -9,6 +9,12 @@ function on_paint(gr) {
 
 function on_panelsui_mini_mode(on) { minis.push(on); }
 
+const changes = [];
+function on_panelsui_panel_changed(name, visible, x, y, w, h) {
+    if (name === 'Other') changes.push(visible ? [x, y, w, h].join(',') : 'hidden');
+}
+let lyrics = 'not asked';
+
 check('name at load', panelsui.PanelName === 'Probe');
 
 const steps = [
@@ -18,6 +24,14 @@ const steps = [
         check('font', window.GetFontDUI(0).Name === 'Arial');
         check('rect', rect_is(panelsui.GetPanelRect(), 20, 20, 300, 160));
         check('zoom field', /^[0-9]+$/.test(panelsui.Eval('%pui_zoom%')));
+        check('fontexists', panelsui.Eval('$if($fontexists(Arial),1,0)') === '1' && panelsui.Eval('$if($fontexists(No Such Face Qz),1,0)') === '0');
+        check('fallback', panelsui.GetValue('bridge.fallback') === 'Fallback');
+        const items = plman.PlaylistCount ? plman.GetPlaylistItems(0) : null;
+        if (navidrome.IsAvailable && items && items.Count) {
+            lyrics = 'pending';
+            navidrome.GetLyricsAsync(items.Item(0)).then(l => { lyrics = items.Item(0).RawPath.startsWith('navidrome://') ? 'ok' : (l === null ? 'ok' : 'local track got lyrics'); },
+                                                       e => { lyrics = 'rejected: ' + e.message; });
+        } else lyrics = 'ok';
         panelsui.SetValue('bridge.v', '42');
         check('value', panelsui.GetValue('bridge.v') === '42' && panelsui.Eval('$getvalue(bridge.v)') === '42');
         panelsui.MovePanel('Other', 340, 120, 180, 90);
@@ -25,11 +39,13 @@ const steps = [
     },
     () => {
         check('move', rect_is(panelsui.GetPanelRect('Other'), 340, 120, 180, 90));
+        check('moved event', changes.indexOf('340,120,180,90') >= 0);
         check('notify', panelsui.GetValue('bridge.other') === 'got 7');
         panelsui.ShowPanel('Other', false);
     },
     () => {
         check('hide', panelsui.GetPanelRect('Other') === null);
+        check('hidden event', changes[changes.length - 1] === 'hidden');
         panelsui.ResetPanel('Other');
         panelsui.RunAction('MINIMODE:TOGGLE');
     },
@@ -40,6 +56,7 @@ const steps = [
     },
     () => {
         check('mini events', minis.join() === 'true,false');
+        check('lyrics ' + lyrics, lyrics === 'ok');
         console.log('bridge: result ' + (fails.length ? 'fail: ' + fails.join(', ') : 'ok'));
     },
 ];

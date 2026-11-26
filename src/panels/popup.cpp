@@ -1,5 +1,6 @@
 #include "popup.h"
 #include "../core/skin_engine.h"
+#include "../core/log.h"
 
 namespace pui {
 
@@ -11,7 +12,12 @@ void PopupView::paint(gfx::Canvas& cv) {
     cv.fill_rect(gfx::Rect{ 0, 0, cv.width(), cv.height() }, gfx::Color());
     metadb_handle_ptr track;
     playback_control::get()->get_now_playing(track);
-    if (m_engine) m_engine->draw_script(cv, cv.width(), cv.height(), m_script, track, &m_buttons);
+    if (m_engine) m_engine->draw_script(cv, cv.width(), cv.height(), m_script, track, &m_buttons, -1, -1, &m_placements);
+    if (!m_placements.empty() && !m_warnedPanels) {
+        m_warnedPanels = true;
+        log::warn("skin", "a popup places panels ('" + m_placements.front().name + "', " + m_placements.front().type +
+                              "); panels inside popups aren't supported yet, left out");
+    }
 }
 
 void PopupView::on_mouse_down(const ui::MouseEvent& e) {

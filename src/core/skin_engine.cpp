@@ -1,5 +1,6 @@
 #include <algorithm>
 #include "skin_engine.h"
+#include "js_panel_api.h"
 #include "image_cache.h"
 #include "script_util.h"
 #include "fs_util.h"
@@ -17,6 +18,7 @@
 #include "../panels/lyrics_panel.h"
 #include "../panels/quick_search.h"
 #include "../panels/library_tree.h"
+#include "../panels/biography.h"
 
 namespace pui {
 
@@ -160,6 +162,7 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     case Kind::Lyrics:      s.view = std::make_unique<LyricsPanel>(this); break;
     case Kind::QuickSearch: s.view = std::make_unique<QuickSearch>(this); opts.cursor = ui::Cursor::IBeam; break;
     case Kind::LibraryTree: s.view = std::make_unique<LibraryTree>(this); opts.double_clicks = true; break;
+    case Kind::Biography:   s.view = std::make_unique<Biography>(this); break;
     case Kind::Embedded: {
         const char* dui = map_type(p.type);
         if (!dui) return nullptr;
@@ -167,6 +170,15 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
         m_creatingPanel = name;
         s.embedded = ui::create_embedded_ui_element(*m_main, dui, panel_script(name));
         m_creatingPanel.clear();
+        if (!s.embedded) {
+            const std::string fallback = panel_script(name, "fallback");
+            if (!fallback.empty()) {
+                m_creatingPanel = name;
+                s.embedded = ui::create_embedded_ui_element(*m_main, js_panel::element_name, fallback);
+                m_creatingPanel.clear();
+                if (s.embedded) log::info("skin", "panel '" + name + "' (" + p.type + "): hosted by JS Panel running " + script_label(fallback));
+            }
+        }
         if (!s.embedded)
             report_once("panel '" + name + "' (" + p.type +
                         "): no installed UI element can host it, left empty");
@@ -175,7 +187,8 @@ SkinEngine::Slot* SkinEngine::ensure_slot(const std::string& name, Kind kind, co
     }
     static const char* const kNames[] = { N_("Now playing"), N_("Seek bar"), N_("Volume"), N_("Playlist"), N_("Spectrum analyser"),
                                           N_("Peak meter"), N_("Album art"), N_("Album browser"), N_("Lyrics"), N_("Search"),
-                                          N_("Playlists"), N_("Panel") };
+                                          N_("Playlists"), N_("Artist biography"), N_("Panel") };
+    static_assert(sizeof(kNames) / sizeof(kNames[0]) == (size_t)Kind::Embedded + 1, "one name per panel kind");
     opts.accessible_name = tr(kNames[(int)kind]);
     if (takes_keys(kind)) opts.on_tab = [this, name](bool back) { focus_next_panel(name, back); };
     if (s.view) {

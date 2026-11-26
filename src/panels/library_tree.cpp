@@ -1,7 +1,7 @@
 #include "library_tree.h"
 #include "../core/skin_engine.h"
 #include "../core/log.h"
-#include "../core/navidrome_library_api.h"
+#include "../core/navidrome_link.h"
 #include <algorithm>
 #include <map>
 
@@ -12,19 +12,31 @@ static const gfx::FontSpec kFont{ "Segoe UI", 13, false };
 
 static std::string lower_str(std::string s) { for (auto& c : s) c = (char)tolower((unsigned char)c); return s; }
 
-static navidrome::navidrome_library_api::ptr navidrome_api() {
-    service_enum_t<navidrome::navidrome_library_api> e;
-    navidrome::navidrome_library_api::ptr api;
-    e.next(api);
-    return api;
+static titleformat_object::ptr compile(const char* script) {
+    titleformat_object::ptr obj;
+    titleformat_compiler::get()->compile_safe(obj, script);
+    return obj;
 }
 
-static pfc::string8 fmt(const metadb_handle_ptr& h, const char* script) {
-    service_ptr_t<titleformat_object> obj;
-    titleformat_compiler::get()->compile_safe(obj, script);
+static std::string fmt(const metadb_handle_ptr& h, const titleformat_object::ptr& obj) {
     pfc::string8 o; if (h.is_valid()) h->format_title(nullptr, o, obj, nullptr);
-    return o;
+    return o.c_str();
 }
+
+struct TrackFields {
+    titleformat_object::ptr album_artist = compile("[%album artist%]"), artist = compile("[%artist%]"),
+                            album = compile("[%album%]"), order = compile("$num(%discnumber%,3)$num(%tracknumber%,4)%title%"),
+                            label = compile("[%tracknumber%. ]%title%");
+    std::string artist_of(const metadb_handle_ptr& h) const {
+        std::string a = fmt(h, album_artist);
+        if (a.empty()) a = fmt(h, artist);
+        return a.empty() ? std::string(tr("Unknown artist")) : a;
+    }
+    std::string album_of(const metadb_handle_ptr& h) const {
+        std::string a = fmt(h, album);
+        return a.empty() ? std::string(tr("(no album)")) : a;
+    }
+};
 
 void LibraryTree::on_attached() {
     load_local();
@@ -43,22 +55,19 @@ void LibraryTree::on_visibility(bool shown) {
 }
 
 LibraryTree::Artist& LibraryTree::artist_for(const std::string& name) {
-    const std::string k = lower_str(name);
-    for (auto& a : m_artists) if (lower_str(a.name) == k) return a;
-    m_artists.push_back({ name, "", {} });
-    return m_artists.back();
+    auto [it, added] = m_artistIndex.emplace(lower_str(name), m_artists.size());
+    if (added) m_artists.push_back({ name, "", {} });
+    return m_artists[it->second];
 }
 
 void LibraryTree::load_local() {
     m_artists.clear();
+    m_artistIndex.clear();
     metadb_handle_list all;
     library_manager::get()->get_all_items(all);
+    const TrackFields tf;
     for (t_size i = 0; i < all.get_count(); ++i) {
-        std::string artist = fmt(all[i], "[%album artist%]").c_str();
-        if (artist.empty()) artist = fmt(all[i], "[%artist%]").c_str();
-        if (artist.empty()) artist = tr("Unknown artist");
-        std::string album = fmt(all[i], "[%album%]").c_str();
-        if (album.empty()) album = tr("(no album)");
+        const std::string artist = tf.artist_of(all[i]), album = tf.album_of(all[i]);
         Artist& ar = artist_for(artist);
         Album* found = nullptr;
         for (auto& al : ar.albums) if (!al.remote && lower_str(al.name) == lower_str(album)) { found = &al; break; }
@@ -70,7 +79,7 @@ void LibraryTree::load_local() {
 void LibraryTree::start_remote_load() {
     ++m_gen;
     m_remote_err.clear(); m_remote_loading = false;
-    auto api = navidrome_api();
+    auto api = navidrome_library();
     if (api.is_empty()) return;
     if (!api->is_configured()) return;
     m_remote_loading = true;
@@ -94,8 +103,45 @@ void LibraryTree::start_remote_load() {
             if (!alive->load() || self->m_gen != gen) return;
             self->m_remote_loading = false; self->m_remote_err = errs;
             self->merge_remote(std::move(*shared));
+            if (errs.empty()) self->start_remote_tracks();
         });
     });
+}
+
+void LibraryTree::start_remote_tracks() {
+    auto api = navidrome_library_as<navidrome::navidrome_library_api_v3>();
+    if (api.is_empty()) return;
+    const unsigned gen = m_gen;
+    auto alive = m_alive; auto abort = m_abort; LibraryTree* self = this;
+    fb2k::splitTask([=]() {
+        struct Sink : navidrome::library_track_sink {
+            metadb_handle_list tracks;
+            void on_track(const metadb_handle_ptr& t) override { if (t.is_valid()) tracks.add_item(t); }
+        } sink;
+        pfc::string8 err; bool ok = false;
+        try { ok = api->list_tracks(sink, *abort, err); } catch (...) { err = "exception"; }
+        if (abort->is_aborting()) return;
+        if (!ok) { log::warn("navidrome", std::string("track list request failed: ") + err.c_str()); return; }
+        log::info("navidrome", "library tree: " + std::to_string(sink.tracks.get_count()) + " tracks");
+        auto shared = std::make_shared<metadb_handle_list>(sink.tracks);
+        fb2k::inMainThread([=]() {
+            if (!alive->load() || self->m_gen != gen) return;
+            self->merge_remote_tracks(*shared);
+        });
+    });
+}
+
+void LibraryTree::merge_remote_tracks(const metadb_handle_list& tracks) {
+    const TrackFields tf;
+    for (t_size i = 0; i < tracks.get_count(); ++i) {
+        Artist& ar = artist_for(tf.artist_of(tracks[i]));
+        const std::string album = tf.album_of(tracks[i]), key = lower_str(album);
+        Album* found = nullptr;
+        for (auto& al : ar.albums) if (lower_str(al.name) == key) { found = &al; break; }
+        if (!found) { ar.albums.push_back({ album, "", true, {} }); found = &ar.albums.back(); }
+        if (found->remote) found->items.push_back(tracks[i]);
+    }
+    finish_data();
 }
 
 void LibraryTree::merge_remote(std::vector<RemoteAlbum>&& add) {
@@ -116,8 +162,23 @@ void LibraryTree::finish_data() {
         for (const auto& it : items) names.push_back(it.name);
         apply_order(items, sort_order(ui::collation_ranks(names), false));
     };
-    for (auto& ar : m_artists) byName(ar.albums);
+    const TrackFields tf;
+    for (auto& ar : m_artists) {
+        byName(ar.albums);
+        for (auto& al : ar.albums) {
+            if (al.items.size() > 1) {
+                metadb_handle_list list;
+                for (auto& h : al.items) list.add_item(h);
+                list.sort_by_format(tf.order, nullptr);
+                for (t_size i = 0; i < list.get_count(); ++i) al.items[i] = list[i];
+            }
+            al.labels.clear();
+            for (auto& h : al.items) al.labels.push_back(fmt(h, tf.label));
+        }
+    }
     byName(m_artists);
+    m_artistIndex.clear();
+    for (size_t i = 0; i < m_artists.size(); ++i) m_artistIndex.emplace(lower_str(m_artists[i].name), i);
     refresh_tree();
 }
 
@@ -128,6 +189,7 @@ std::string LibraryTree::item_key(int i) const {
     case kPlaylist:  return "p:" + it.label;
     case kArtist:    return "a:" + m_artists[it.a].name;
     case kAlbum:     return "b:" + m_artists[it.a].name + "|" + m_artists[it.a].albums[it.b].name;
+    case kTrack:     return "t:" + m_artists[it.a].name + "|" + m_artists[it.a].albums[it.b].name + "|" + std::to_string(it.c);
     default:         return "l:" + it.label;
     }
 }
@@ -155,8 +217,14 @@ void LibraryTree::refresh_tree() {
     for (size_t a = 0; a < m_artists.size(); ++a) {
         const Artist& ar = m_artists[a];
         int ai = add(-1, ar.name + "  (" + std::to_string(ar.albums.size()) + ")", kArtist, (int)a);
-        for (size_t b = 0; b < ar.albums.size(); ++b)
-            add(ai, ar.albums[b].name, kAlbum, (int)a, (int)b);
+        for (size_t b = 0; b < ar.albums.size(); ++b) {
+            const int bi = add(ai, ar.albums[b].name, kAlbum, (int)a, (int)b);
+            const auto& labels = ar.albums[b].labels;
+            for (size_t t = 0; t < labels.size(); ++t) {
+                const int ti = add(bi, labels[t], kTrack, (int)a, (int)b);
+                m_tree.items[ti].c = (int)t;
+            }
+        }
     }
     m_sel = -1;
     for (int i = 0; i < (int)m_tree.items.size(); ++i) {
@@ -237,7 +305,7 @@ void LibraryTree::on_mouse_down(const ui::MouseEvent& e) {
     if (!it.children.empty() && e.x >= x - 2 && e.x < x + 12) { toggle(item); return; }
     if (e.double_click) {
         const int k = it.kind;
-        if (k == kAlbum || k == kPlaylist) activate(item);
+        if (k == kAlbum || k == kPlaylist || k == kTrack) activate(item);
         else toggle(item);
     }
 }
@@ -259,7 +327,7 @@ bool LibraryTree::on_key_down(int key, unsigned) {
     switch (key) {
     case ui::kKeyEnter: {
         const int k = it.kind;
-        if (k == kAlbum || k == kPlaylist || k == kArtist) activate(m_sel);
+        if (k == kAlbum || k == kPlaylist || k == kArtist || k == kTrack) activate(m_sel);
         else toggle(m_sel);
         return true;
     }
@@ -267,9 +335,9 @@ bool LibraryTree::on_key_down(int key, unsigned) {
     return false;
 }
 
-void LibraryTree::play_album(const Album& al, bool replace) {
-    if (al.remote) {
-        auto api = navidrome_api();
+void LibraryTree::play_album(const Album& al, bool replace, int start) {
+    if (al.remote && al.items.empty()) {
+        auto api = navidrome_library();
         if (api.is_valid()) api->play_album(al.id.c_str(), replace, replace);
         return;
     }
@@ -284,7 +352,7 @@ void LibraryTree::play_album(const Album& al, bool replace) {
         pm->playlist_remove_items(target, bit_array_true());
         pm->playlist_insert_items(target, 0, list, bit_array_true());
         pm->set_active_playlist(target);
-        pm->playlist_execute_default_action(target, 0);
+        pm->playlist_execute_default_action(target, (t_size)std::max(0, start));
     } else {
         pm->activeplaylist_add_items(list, bit_array_false());
     }
@@ -292,7 +360,7 @@ void LibraryTree::play_album(const Album& al, bool replace) {
 
 void LibraryTree::play_artist(const Artist& ar, bool replace) {
     if (!ar.remote_id.empty()) {
-        auto api = navidrome_api();
+        auto api = navidrome_library();
         if (api.is_valid()) api->play_artist(ar.remote_id.c_str(), replace, replace);
         return;
     }
@@ -310,6 +378,7 @@ void LibraryTree::play_artist(const Artist& ar, bool replace) {
 void LibraryTree::activate(int item) {
     const TreeItem& n = m_tree.items[item];
     if (n.kind == kAlbum) play_album(m_artists[n.a].albums[n.b], true);
+    else if (n.kind == kTrack) play_album(m_artists[n.a].albums[n.b], true, n.c);
     else if (n.kind == kArtist) play_artist(m_artists[n.a], true);
     else if (n.kind == kPlaylist) {
         playlist_manager::get()->set_active_playlist((t_size)n.a);
@@ -319,12 +388,15 @@ void LibraryTree::activate(int item) {
 
 void LibraryTree::context_menu(int item, int x, int y) {
     const TreeItem n = m_tree.items[item];
-    if (n.kind != kAlbum && n.kind != kPlaylist && n.kind != kArtist) return;
+    if (n.kind != kAlbum && n.kind != kPlaylist && n.kind != kArtist && n.kind != kTrack) return;
     auto mi = [](const char* label, int id) { ui::MenuItem m; m.label = label; m.id = id; return m; };
     ui::Menu menu;
     if (n.kind == kArtist) {
         menu.push_back(mi(tr("Play artist"), 4));
         menu.push_back(mi(tr("Add artist to current playlist"), 5));
+    } else if (n.kind == kTrack) {
+        menu.push_back(mi(tr("Play"), 6));
+        menu.push_back(mi(tr("Add to current playlist"), 7));
     } else if (n.kind == kAlbum) {
         menu.push_back(mi(tr("Play album"), 1));
         menu.push_back(mi(tr("Add to current playlist"), 2));
@@ -333,6 +405,11 @@ void LibraryTree::context_menu(int item, int x, int y) {
     if (cmd == 1 || cmd == 2) play_album(m_artists[n.a].albums[n.b], cmd == 1);
     else if (cmd == 3) activate(item);
     else if (cmd == 4 || cmd == 5) play_artist(m_artists[n.a], cmd == 4);
+    else if (cmd == 6) activate(item);
+    else if (cmd == 7) {
+        metadb_handle_list one; one.add_item(m_artists[n.a].albums[n.b].items[(size_t)n.c]);
+        playlist_manager::get()->activeplaylist_add_items(one, bit_array_false());
+    }
 }
 
 }

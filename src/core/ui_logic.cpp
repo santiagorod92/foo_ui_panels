@@ -4,6 +4,7 @@
 #include <cctype>
 #include <cmath>
 #include <cstdio>
+#include <cstdlib>
 
 namespace pui {
 
@@ -294,6 +295,57 @@ bool apply_panel_override(const PanelOverrides& o, const std::string& name, int&
     if (it == o.end()) return true;
     if (it->second.moved) { x = it->second.x; y = it->second.y; w = it->second.w; h = it->second.h; }
     return !it->second.hidden;
+}
+
+std::string html_to_text(const std::string& html) {
+    static const std::pair<const char*, const char*> kEntities[] = {
+        { "amp", "&" }, { "lt", "<" }, { "gt", ">" }, { "quot", "\"" }, { "apos", "'" }, { "nbsp", " " },
+    };
+    auto append_cp = [](std::string& o, unsigned cp) {
+        if (cp < 0x80) o += (char)cp;
+        else if (cp < 0x800) { o += (char)(0xC0 | (cp >> 6)); o += (char)(0x80 | (cp & 0x3F)); }
+        else if (cp < 0x10000) { o += (char)(0xE0 | (cp >> 12)); o += (char)(0x80 | ((cp >> 6) & 0x3F)); o += (char)(0x80 | (cp & 0x3F)); }
+        else if (cp < 0x110000) { o += (char)(0xF0 | (cp >> 18)); o += (char)(0x80 | ((cp >> 12) & 0x3F)); o += (char)(0x80 | ((cp >> 6) & 0x3F)); o += (char)(0x80 | (cp & 0x3F)); }
+    };
+    std::string out;
+    for (size_t i = 0; i < html.size();) {
+        const char c = html[i];
+        if (c == '<') {
+            const size_t end = html.find('>', i);
+            if (end == std::string::npos) { out += c; ++i; continue; }
+            std::string tag = html.substr(i + 1, end - i - 1);
+            for (auto& ch : tag) ch = (char)tolower((unsigned char)ch);
+            if (tag.rfind("br", 0) == 0 || tag == "p" || tag == "/p") out += '\n';
+            i = end + 1;
+            continue;
+        }
+        if (c == '&') {
+            const size_t end = html.find(';', i);
+            if (end != std::string::npos && end - i <= 10) {
+                const std::string name = html.substr(i + 1, end - i - 1);
+                bool done = false;
+                if (name.size() > 1 && name[0] == '#') {
+                    const bool hex = name[1] == 'x' || name[1] == 'X';
+                    char* stop = nullptr;
+                    const unsigned long cp = strtoul(name.c_str() + (hex ? 2 : 1), &stop, hex ? 16 : 10);
+                    if (stop && !*stop && cp) { append_cp(out, (unsigned)cp); done = true; }
+                } else {
+                    for (const auto& e : kEntities) if (name == e.first) { out += e.second; done = true; break; }
+                }
+                if (done) { i = end + 1; continue; }
+            }
+        }
+        out += c;
+        ++i;
+    }
+    size_t b = out.find_first_not_of(" \t\r\n"), e = out.find_last_not_of(" \t\r\n");
+    return b == std::string::npos ? std::string() : out.substr(b, e - b + 1);
+}
+
+std::string track_identity(const std::string& path) {
+    static const std::string scheme = "navidrome://track/";
+    if (path.compare(0, scheme.size(), scheme) != 0) return path;
+    return path.substr(0, path.find('?'));
 }
 
 }

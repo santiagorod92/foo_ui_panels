@@ -180,7 +180,7 @@ private:
     FileTimes scan_skin_files() const;
     bool load_main_script();
     std::string panels_dir() const { return m_st.base + "/" + m_st.cfg.str("panels", "panels"); }
-    std::string panel_script(const std::string& panel) const;
+    std::string panel_script(const std::string& panel, const char* key = "script") const;
     std::string script_label(const std::string& path) const;
     void seed_pvars();
     void apply_skin_size();

@@ -3,6 +3,36 @@
 All notable changes to foo_ui_panels (Panels UI, reborn). Versions are the `v*` git tags; the
 GitHub release of each version has the downloadable `.fb2k-component`.
 
+## [1.28.0](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.3...v1.28.0) (2026-11-26)
+
+### Highlights
+- **Skins made for the original Panels UI**: *View › Panels UI › Import Panels UI configuration
+  (.pui)…* turns a `.pui` file and the folder it's in (images, `.pp` popups) into a skin and
+  switches to it, on Windows and macOS. Tested with fooAvA's and with *basic*, the sample that came
+  with Panels UI 0.13.7.
+- **More from your Navidrome server** (with foo_navidrome 1.38 or newer): the playlist switcher
+  lists each album's tracks, quick search adds the server's matching songs to *Search results*, and
+  a new **Biography** panel shows the playing artist's photo and biography.
+
+### Added
+- Playlist switcher: artists › albums › tracks, for Media Library and Navidrome albums alike;
+  double-click or Enter plays a track from where it sits in its album, right-click adds it to the
+  current playlist.
+- Quick search: after the Media Library and playlist matches, the songs your Navidrome server
+  finds for the same words (needs foo_navidrome 1.40 or newer).
+- Biography panel (`$panel(<name>,Biography,…)`, also the old *Biography View*): photo, biography
+  and a Last.fm link for the playing artist, from your Navidrome server; colours
+  `color.biography.*`.
+- `panel.<name>.fallback` in a skin's `foo_ui_panels.ini`: a JS Panel script for a panel whose UI
+  element isn't installed (on macOS, most Windows-only elements).
+- JS Panel scripts hear `on_panelsui_panel_changed(name, visible, x, y, w, h)` when a skin panel
+  is shown, hidden or moved (JS Panel 1.11.0).
+- For old skins: `$fontexists(face)`, `%_trackinfo_notrack%`, `$glass(…)` (ignored; `%glass%` is
+  false), the *Library Filter* panel (shown as the playlist switcher) and `drawrect.zero_fills`
+  (a `$drawrect` size of 0 reaches the panel's edge, as in the original; `.pui` imports set it).
+- `make pui-skin PUI=<file.pui> SKIN=<folder>` and `skin_lint --import-pui` from a source
+  checkout; `skin-lint` reports a missing `panel.<name>.script` or `fallback` file.
+
 ## [1.27.3](https://github.com/santiagorod92/foo_ui_panels/compare/v1.27.2...v1.27.3) (2026-11-24)
 
 ### Fixed

@@ -245,3 +245,18 @@ TEST("panel_action: move keeps its rect through show and hide") {
     CHECK(!panel_action(o, "MOVE:Js:10,20,30,40x"));
     CHECK(!panel_action(o, "MOVE::10,20,30,40"));
 }
+
+TEST("ui_logic: html_to_text drops tags and decodes entities for artist biographies") {
+    CHECK_EQ(html_to_text("  Radiohead are an English band.<br/>Formed in 1985 &amp; more. <a href=\"https://www.last.fm/music/Radiohead\">Read more on Last.fm</a>\n"),
+             std::string("Radiohead are an English band.\nFormed in 1985 & more. Read more on Last.fm"));
+    CHECK_EQ(html_to_text("Bj&#246;rk &#x2014; &quot;Hom&ouml;genic&quot;"), std::string("Bj\xC3\xB6rk \xE2\x80\x94 \"Hom&ouml;genic\""));
+    CHECK_EQ(html_to_text("a < b"), std::string("a < b"));
+    CHECK_EQ(html_to_text("AT&T"), std::string("AT&T"));
+    CHECK_EQ(html_to_text(""), std::string());
+}
+
+TEST("ui_logic: track_identity drops the metadata a navidrome:// location carries") {
+    CHECK_EQ(track_identity("navidrome://track/abc?title=Hello&rating=3"), std::string("navidrome://track/abc"));
+    CHECK_EQ(track_identity("navidrome://track/abc"), std::string("navidrome://track/abc"));
+    CHECK_EQ(track_identity("file:///music/a.flac?x"), std::string("file:///music/a.flac?x"));
+}

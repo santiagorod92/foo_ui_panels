@@ -359,3 +359,37 @@ TEST("runtime: $findfile answers the first matching file, relative to the skin o
     CHECK_EQ(r.call("findfile", { "/profile/wsh-data/MAINPANEL_*" }), std::string("/profile/wsh-data/MAINPANEL_2"));
     CHECK_EQ(r.call("findfile", { "state/NOPE_*" }), std::string(""));
 }
+
+TEST("runtime: $fontexists asks the platform without touching the canvas, $glass is ignored") {
+    Rig r;
+    pui::ScriptArgs a; a.v = { "Calibri" };
+    t::StringOut yes;
+    r.call("font", { "Tahoma", "9" });
+    const size_t ops = r.ops().size();
+    CHECK(r.rt.call("fontexists", a, yes));
+    CHECK_EQ(yes.truth, 1);
+    CHECK(yes.text.empty());
+    CHECK_EQ(r.ops().size(), ops);
+    r.env.missingFonts.insert("Calibri");
+    t::StringOut no;
+    CHECK(r.rt.call("fontexists", a, no));
+    CHECK_EQ(no.truth, 0);
+    bool found = false;
+    r.call("glass", { "0", "0", "50", "30" }, &found);
+    CHECK(found);
+}
+
+TEST("runtime: $drawrect with a width or height of 0 reaches the panel's edge in legacy skins only") {
+    Rig plain;
+    plain.call("drawrect", { "10", "20", "0", "0", "brushcolor-1-2-3 pencolor-null" });
+    CHECK(plain.ops().back().find("10,20,0,0") != std::string::npos);
+    Rig r;
+    r.st.cfg.set("drawrect.zero_fills", "1");
+    r.call("drawrect", { "10", "20", "0", "0", "brushcolor-1-2-3 pencolor-null" });
+    r.call("drawrect", { "5", "0", "30", "0", "brushcolor-1-2-3 pencolor-null" });
+    std::vector<std::string> fills;
+    for (auto& op : r.ops()) if (op.rfind("fill", 0) == 0) fills.push_back(op);
+    CHECK_EQ(fills.size(), (size_t)2);
+    CHECK(fills[0].find("10,20,390,280") != std::string::npos);
+    CHECK(fills[1].find("5,0,30,300") != std::string::npos);
+}

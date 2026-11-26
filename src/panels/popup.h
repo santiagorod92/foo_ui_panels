@@ -23,6 +23,8 @@ private:
     SkinEngine* m_engine = nullptr;
     service_ptr_t<titleformat_object> m_script;
     std::vector<Button> m_buttons;
+    std::vector<Placement> m_placements;
+    bool m_warnedPanels = false;
 };
 
 }

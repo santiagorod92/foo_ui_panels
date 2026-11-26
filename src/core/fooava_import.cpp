@@ -1,4 +1,5 @@
 #include "fooava_import.h"
+#include "pui_import.h"
 #include "fs_util.h"
 #include "../../third_party/bzip2/bzlib.h"
 #include "../../third_party/miniz/miniz.h"
@@ -13,6 +14,8 @@ extern "C" void bz_internal_error(int) {}
 namespace pui {
 
 namespace {
+
+using namespace pui_text;
 
 const std::string kSkinConfig = R"(# foo_ui_panels skin configuration for fooAvA 1.05 (written by Panels UI's fooAvA import).
 # Keys: README.md, "Skin configuration".
@@ -90,36 +93,6 @@ const std::string kVolumeFillNew = "$imageabs2(0,12,0,0,$add($get(volume.level))
 const char* const kAuthorPaths[] = { "G:\\Dawid\\Muza\\Anberlin\\Cities\\", "F:\\Program Files\\foobar2000_VISTA\\\\Artists\\",
                                      "F:\\Program Files\\foobar2000_VISTA\\Artists\\" };
 
-uint32_t u16(const std::string& d, size_t o) { return o + 2 <= d.size() ? (uint8_t)d[o] | (uint8_t)d[o + 1] << 8 : 0; }
-uint32_t u32(const std::string& d, size_t o) {
-    return o + 4 <= d.size() ? (uint32_t)(uint8_t)d[o] | (uint32_t)(uint8_t)d[o + 1] << 8 | (uint32_t)(uint8_t)d[o + 2] << 16 |
-                                   (uint32_t)(uint8_t)d[o + 3] << 24
-                             : 0;
-}
-
-std::string lower(std::string s) {
-    for (auto& c : s) if (c >= 'A' && c <= 'Z') c = (char)(c - 'A' + 'a');
-    return s;
-}
-
-bool ends_with(const std::string& s, const std::string& tail) {
-    return s.size() >= tail.size() && s.compare(s.size() - tail.size(), tail.size(), tail) == 0;
-}
-
-std::string extension(const std::string& path) {
-    const size_t dot = path.rfind('.'), slash = path.rfind('/');
-    return dot == std::string::npos || (slash != std::string::npos && dot < slash) ? std::string() : lower(path.substr(dot + 1));
-}
-
-std::string latin1_to_utf8(const std::string& s) {
-    std::string out;
-    for (unsigned char c : s) {
-        if (c < 0x80) out += (char)c;
-        else { out += (char)(0xC0 | c >> 6); out += (char)(0x80 | (c & 0x3F)); }
-    }
-    return out;
-}
-
 std::string replace_all(std::string s, const std::string& from, const std::string& to) {
     for (size_t p = s.find(from); p != std::string::npos; p = s.find(from, p + to.size())) s.replace(p, from.size(), to);
     return s;
@@ -171,50 +144,6 @@ bool unpack(const std::string& d, size_t p, bool sized, size_t size, std::string
     if (n >= 2 && (unsigned char)in[0] == 0x78) return inflate(in + 2, n - 2, false, size, out);
     if (n >= 3 && d.compare(p, 3, "BZh") == 0) return bunzip2(in, n, size, out);
     return inflate(in, n, true, size, out);
-}
-
-std::string pystrip(const std::string& s) {
-    auto space = [](unsigned char c) { return c == ' ' || (c >= 9 && c <= 13) || (c >= 0x1c && c <= 0x1f) || c == 0x85 || c == 0xa0; };
-    size_t a = 0, b = s.size();
-    while (a < b && space((unsigned char)s[a])) ++a;
-    while (b > a && space((unsigned char)s[b - 1])) --b;
-    return s.substr(a, b - a);
-}
-
-size_t find_comment(const std::string& ln) {
-    bool q = false;
-    for (size_t i = 0; i + 1 < ln.size(); ++i) {
-        const char c = ln[i];
-        if (c == '\'') q = !q;
-        else if (!q && c == '/' && ln[i + 1] == '/' && (i == 0 || ln[i - 1] != ':')) return i;
-    }
-    return std::string::npos;
-}
-
-std::string preprocess(const std::string& text) {
-    std::string body;
-    for (size_t start = 0;;) {
-        const size_t nl = text.find('\n', start);
-        std::string ln = text.substr(start, nl == std::string::npos ? std::string::npos : nl - start);
-        const size_t c = find_comment(ln);
-        if (c != std::string::npos) ln.resize(c);
-        body += pystrip(ln);
-        if (nl == std::string::npos) break;
-        start = nl + 1;
-    }
-    const size_t lp = body.rfind(')');
-    if (lp != std::string::npos && body.size() - lp <= 8) body.resize(lp + 1);
-    std::string res;
-    size_t depth = 0;
-    for (char c : body) {
-        if (c == '(') ++depth;
-        else if (c == ')') {
-            if (!depth) continue;
-            --depth;
-        }
-        res += c;
-    }
-    return res + std::string(depth, ')');
 }
 
 std::string scrub_author_paths(std::string text) {
@@ -333,45 +262,6 @@ std::string lyrics_in_cd_case(std::string text) {
     return kLyricsCdFlag + text.substr(0, k) + lyrics + text.substr(k);
 }
 
-bool image_path_char(char c) {
-    return (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' || c == '/' || c == '\\' ||
-           c == ' ' || c == '-';
-}
-
-std::string fix_image_case(const std::string& text, const std::map<std::string, std::string>& index) {
-    static const char* const kExts[] = { "png", "bmp", "jpg", "jpeg", "ico" };
-    const std::string head = "/images\\";
-    std::string out;
-    size_t pos = 0, at = 0;
-    while (at < text.size()) {
-        if (text.size() - at < head.size() + 1 || lower(text.substr(at, head.size())) != head) { ++at; continue; }
-        size_t e = at + head.size();
-        while (e < text.size() && image_path_char(text[e])) ++e;
-        size_t end = std::string::npos;
-        for (size_t dot = e; end == std::string::npos && dot-- > at + head.size() + 1;) {
-            if (text[dot] != '.') continue;
-            for (const char* x : kExts) {
-                const size_t n = std::char_traits<char>::length(x);
-                if (dot + 1 + n <= e && lower(text.substr(dot + 1, n)) == x) { end = dot + 1 + n; break; }
-            }
-        }
-        if (end == std::string::npos) { ++at; continue; }
-        const std::string ref = text.substr(at, end - at);
-        std::string rel = ref.substr(1);
-        std::replace(rel.begin(), rel.end(), '\\', '/');
-        const auto real = index.find(lower(rel));
-        out += text.substr(pos, at - pos);
-        if (real == index.end() || real->second == rel) out += ref;
-        else {
-            std::string fixed = real->second;
-            std::replace(fixed.begin(), fixed.end(), '/', '\\');
-            out += "/" + fixed;
-        }
-        pos = at = end;
-    }
-    return out + text.substr(pos);
-}
-
 std::vector<std::pair<size_t, size_t>> printable_runs(const std::string& data) {
     std::vector<std::pair<size_t, size_t>> runs;
     size_t cur = 0, start = 0;
@@ -401,27 +291,6 @@ std::vector<std::string> runs_of(const std::string& seg) {
     }
     if (!cur.empty()) out.push_back(cur);
     return out;
-}
-
-std::set<std::string> referenced_panels(const std::string& data) {
-    std::set<std::string> names;
-    for (size_t p = data.find("$panel("); p != std::string::npos;) {
-        size_t j = p + 7;
-        while (j < data.size() && data[j] != ',' && data[j] != '(' && data[j] != ')') ++j;
-        if (j > p + 7 && j < data.size() && data[j] == ',') {
-            names.insert(data.substr(p + 7, j - p - 7));
-            p = data.find("$panel(", j + 1);
-        } else {
-            p = data.find("$panel(", p + 1);
-        }
-    }
-    return names;
-}
-
-bool safe_panel_name(const std::string& name) {
-    for (unsigned char c : name)
-        if (c < 0x20 || std::string("<>:\"/\\|?*").find((char)c) != std::string::npos) return false;
-    return true;
 }
 
 struct Converted {

@@ -1,5 +1,6 @@
 #include "core/fcl_import.h"
 #include "core/fooava_import.h"
+#include "core/pui_import.h"
 #include "core/script_runtime.h"
 #include "core/skin_lint.h"
 #include <cstdio>
@@ -57,9 +58,37 @@ int main(int argc, char** argv) {
         std::printf("%d images, %d panel scripts, %d popups\n", skin.images, skin.panels, skin.popups);
         return 0;
     }
+    if (argc == 4 && std::strcmp(argv[1], "--import-pui") == 0) {
+        const std::filesystem::path src = std::filesystem::absolute(argv[2]);
+        const std::filesystem::path folder = src.parent_path();
+        const std::string main = src.filename().string();
+        pui::SkinFiles files;
+        for (auto it = std::filesystem::recursive_directory_iterator(folder); it != std::filesystem::recursive_directory_iterator(); ++it) {
+            if (!it->is_regular_file()) continue;
+            std::ifstream in(it->path(), std::ios::binary);
+            files.push_back({ it->path().lexically_relative(folder).generic_string(),
+                              std::string((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()) });
+        }
+        std::string err;
+        const auto skin = pui::convert_pui(files, main, &err);
+        if (!err.empty()) {
+            std::fprintf(stderr, "%s\n", err.c_str());
+            return 1;
+        }
+        const std::filesystem::path dir = argv[3];
+        std::filesystem::create_directories(dir);
+        std::ofstream(dir / "main.txt", std::ios::binary) << skin.main;
+        std::ofstream(dir / "foo_ui_panels.ini", std::ios::binary) << skin.ini;
+        for (const auto& [rel, data] : skin.files) {
+            std::filesystem::create_directories((dir / rel).parent_path());
+            std::ofstream(dir / rel, std::ios::binary) << data;
+        }
+        std::printf("%d assets, %d panel scripts, %d popups\n", skin.assets, skin.panels, skin.popups);
+        return 0;
+    }
     if (argc != 2 || argv[1][0] == '-') {
         std::fprintf(stderr, "usage: skin_lint <skin folder> | --functions-md | --import-fcl LAYOUT.fcl OUT_DIR [PRESET [--outline]] | "
-                             "--import-fooava INSTALLER.exe|FOLDER OUT_DIR\n");
+                             "--import-fooava INSTALLER.exe|FOLDER OUT_DIR | --import-pui CONFIG.pui OUT_DIR\n");
         return 2;
     }
     const auto findings = pui::lint_skin(argv[1]);

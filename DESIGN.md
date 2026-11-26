@@ -36,5 +36,9 @@ User-facing detail: README "What's implemented".
 - Accepted but not implemented: `$scplsetlayout` — it only appears in Single Column Playlist's
   own layout scripts, which the native playlist doesn't run.
 - Panel types without a native view are hosted DUI elements by name, so on macOS they only work
-  if a Mac element of that name exists.
-- Only fooAvA has been tested; other Panels UI skins from the 0.9.x days are untested.
+  if a Mac element of that name exists, or the skin names a JS Panel `panel.<name>.fallback`.
+- `.pui` import is tested with fooAvA (v4) and *basic* (v3, Panels UI 0.13.7's sample); other
+  skins from the 0.9.x days may use panels or functions not covered yet. Single Column Playlist
+  layouts (group/track scripts inside its panel record) aren't converted.
+- `$panel` inside a `POPUP:` window isn't hosted (the popup is one view; it captures the placements
+  and logs a warning). *basic*'s `library.pp` needs it.

@@ -35,13 +35,6 @@ static pfc::string8 fmt(const metadb_handle_ptr& h, const service_ptr_t<titlefor
     pfc::string8 o; if (h.is_valid()) h->format_title(nullptr, o, s, nullptr); return o;
 }
 
-static navidrome::navidrome_library_api::ptr navidrome_api() {
-    service_enum_t<navidrome::navidrome_library_api> e;
-    navidrome::navidrome_library_api::ptr api;
-    e.next(api);
-    return api;
-}
-
 static std::string lower_str(std::string s) {
     for (auto& c : s) c = (char)tolower((unsigned char)c);
     return s;
@@ -154,7 +147,7 @@ void AlbumList::start_remote_load() {
     ++m_gen;
     m_remote_err.clear(); m_remote_loading = false;
     m_cover_failed.clear();
-    auto api = navidrome_api();
+    auto api = navidrome_library();
     if (api.is_empty()) return;
     if (!api->is_configured()) { m_remote_err = tr("Navidrome is not configured (Preferences > Tools > Navidrome)."); return; }
     m_remote_loading = true;
@@ -228,7 +221,7 @@ void AlbumList::request_cover(const std::string& coverId, int size) {
     const std::string ck = coverId + "@" + std::to_string(size);
     if (coverId.empty() || m_covers.count(ck) || m_cover_pending.count(ck) ||
         m_cover_failed.count(ck) || m_cover_inflight >= 4) return;
-    auto api = navidrome_api();
+    auto api = navidrome_library();
     if (api.is_empty()) return;
     m_cover_pending.insert(ck); ++m_cover_inflight;
     auto alive = m_alive; auto abort = m_abort; AlbumList* self = this;
@@ -445,7 +438,7 @@ void AlbumList::paint_coverflow(gfx::Canvas& cv, int W, int H) {
 void AlbumList::play_group(int idx) {
     if (idx < 0 || idx >= (int)m_groups.size()) return;
     if (m_groups[idx].remote) {
-        auto api = navidrome_api();
+        auto api = navidrome_library();
         if (api.is_valid()) api->play_album(m_groups[idx].remote_id.c_str(), true, true);
         return;
     }
@@ -509,7 +502,7 @@ void AlbumList::on_rclick(int x, int y) {
         ui::MenuItem play; play.label = tr("Play album"); play.id = 1; menu.push_back(play);
         ui::MenuItem add; add.label = tr("Add to current playlist"); add.id = 2; menu.push_back(add);
         int cmd = ui::popup_menu(host(), x, y, menu);
-        auto api = navidrome_api();
+        auto api = navidrome_library();
         if (cmd && api.is_valid()) api->play_album(m_groups[idx].remote_id.c_str(), cmd == 1, cmd == 1);
         return;
     }

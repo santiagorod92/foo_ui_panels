@@ -60,8 +60,9 @@ anything repo-specific stays in the repo's own sections.
   interface, its consumers and its vendored copies.
 - **Current links:** `navidrome_rating_api` drives Panels UI's star ratings on `navidrome://`
   tracks, which also read the `NAVIDROME_RATING` field. `navidrome_library_api` feeds the
-  Panels UI album grid (`album_list`) and `library_tree`, and JS Panel's `navidrome` script
-  object. `navidrome_lyrics_api` feeds Panels UI's `lyrics_panel`.
+  Panels UI album grid (`album_list`), `library_tree` (its tracks too), `quick_search` (the
+  server's search) and `biography` (`artist_info`), and JS Panel's `navidrome` script object.
+  `navidrome_lyrics_api` feeds Panels UI's `lyrics_panel` and JS Panel's `navidrome.GetLyricsAsync`.
 - **Shared source:** foo_js_panel compiles foo_ui_panels' `src/gfx/canvas.h` and its backends
   (`src/platform/win/gdi_canvas.*`, `src/platform/mac/mac_canvas.*`) from the sibling checkout
   (`PANELS_UI_SRC`); its CI checks foo_ui_panels out next to it. A change to those files is
@@ -75,8 +76,10 @@ anything repo-specific stays in the repo's own sections.
   UI calls `notify(name, info)` for a `JSPANEL:<name>[:<info>]` action and
   `variable_changed(name, value)` from `save_pvars` for each changed skin variable (not the `_`
   ones); JS Panel hands them to every panel as `on_notify_data` / `on_panelsui_variable_changed`.
-  `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`; sent after a render
-  that changed them) becomes `on_panelsui_mini_mode` / `on_panelsui_zoom`.
+  `js_panel_notify_api_v2::state_changed(name, value)` (`mini_mode`, `zoom`, `panel.<name>` =
+  `x,y,w,h` or empty when hidden; sent after a render that changed them; a receiver ignores names it
+  doesn't know, so a new state needs no new interface) becomes `on_panelsui_mini_mode` /
+  `on_panelsui_zoom` / `on_panelsui_panel_changed`.
 - **Windowless panels:** `js_panel_windowless_api` (same header, published by JS Panel) creates a
   JS Panel with no window of its own for a `panel.<name>.windowless = 1` skin panel. Panels UI
   calls `paint(pargb, w, h, scale)` at the `$panel` call's place in the frame, with the skin drawn
@@ -408,6 +411,8 @@ anything repo-specific stays in the repo's own sections.
   (JS Panel's element GUID + how a host hands it a script; byte-identical to foo_js_panel's).
   `SkinEngine::panel_script()` reads `panel.<name>.script` and the embed passes it on
   (`create_embedded_ui_element(…, script)`).
+- `src/core/navidrome_link.h` — `navidrome_library()` / `navidrome_library_as<v3|v4>()` (configured
+  only); `src/core/http_get.{h,cpp}` — foobar2000's HTTP client GET (lyrics, biography photos).
 - `src/core/panels_ui_api.h` + `panels_ui_service.cpp` — `panels_ui::panels_ui_api` (GUID
   `2f6a91c4-…`), Panels UI's own contract, published as a service: `is_active`, `get_variable` /
   `set_variable` (pvars, through `SkinEngine::live()`; set saves and repaints) and `run_action`
@@ -418,8 +423,10 @@ anything repo-specific stays in the repo's own sections.
   (settings popup), `album_list` ("Graphical Browser"/"Album list"/"Chronflow" — no stock DUI
   element; Media Library + Navidrome albums, grid or cover flow), `lyrics_panel` ("Lyric Show":
   LRC sync, tags → sidecar → cache → `navidrome_lyrics_api` (navidrome:// tracks, always on, worker
-  thread, result cached as LRC via `lyrics_text`) → lrclib.net; `lyr.*` pvars), `quick_search`, `library_tree`
-  ("Playlist switcher", self-drawn tree), `cover_menu` (now-playing cover right-click menu +
+  thread, result cached as LRC via `lyrics_text`) → lrclib.net; `lyr.*` pvars), `quick_search` (+ the
+  server's search through v4, appended to *Search results*), `library_tree`
+  ("Playlist switcher"/"Library Filter", self-drawn tree, tracks from v3 `list_tracks` after the albums),
+  `biography` ("Biography", v3 `artist_info` + the photo over `http_get`), `cover_menu` (now-playing cover right-click menu +
   full-size viewer, shared by album_art/track_display).
 - Engine extras: script problems + "!" marker (`script_problems`, `draw_problem_marker`), per-panel
   view state in `_view.*` pvars (`view_state`, saved at shutdown), Tab traversal
@@ -464,6 +471,17 @@ anything repo-specific stays in the repo's own sections.
   (`systemCollationRanks`).
 - Text drawing on Windows: **always wide APIs** (GdiCanvas converts UTF-8). `DrawTextA`
   mojibakes non-ASCII foobar strings (titleformat output, tags).
+- `.pui` import: `src/core/pui_import.cpp` (SDK-free; `SKIN:IMPORT_PUI[:path]`, *View › Panels UI ›
+  Import Panels UI configuration (.pui)…*, `skin_lint --import-pui`, `make pui-skin`, `PUI_SKIN=<file.pui>
+  make test`). Format (Panels UI 0.13): u32 version (3; 4 = fooAvA, one more u32 at +4), header to 48
+  (52), u32 pvar count + (len, name, len, value), length-prefixed globals, then the root panel's
+  blob: LOGFONT etc., the length-prefixed main script, then child records `GUID(16) + len name + u32
+  size + config`, nested in their parent's config. The parser keeps names some `$panel(name,` uses
+  and takes the longest length-prefixed text before the next record as that panel's script. Its
+  `pui_text` helpers are the ones fooAvA's import uses (moved, output unchanged); the generic path
+  calls `preprocess(text, false)`: fooAvA's tail cut (≤ 8 chars after the last `)`) drops real text
+  like `%title%` once the text is read exactly. A sample (*basic*) is in the Wayback Machine:
+  `panels.fooblog2000.com/foo_ui_panels.zip` (2007), never committed.
 - fooAvA import: `src/core/fooava_import.cpp` (SDK-free; `SKIN:IMPORT_FOOAVA[:path]`, *View › Panels
   UI › Import fooAvA installer…*, `skin_lint --import-fooava`, `make fooava-skin`; ported 2026-11-16
   from the old `tools/*fooava*.py`, output byte-identical). The ClickTeam SFX: signature

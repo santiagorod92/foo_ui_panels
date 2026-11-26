@@ -83,7 +83,7 @@ void apply_order(std::vector<T>& v, const std::vector<size_t>& order) {
 
 struct TreeItem {
     std::string label;
-    int kind = 0, a = -1, b = -1;
+    int kind = 0, a = -1, b = -1, c = -1;
     std::vector<int> children;
     bool expanded = false;
     int depth = 0;

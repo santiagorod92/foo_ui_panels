@@ -128,6 +128,11 @@ TEST("map_type: legacy panel types") {
     CHECK_EQ(std::string(map_type("Single Column Playlist")), std::string("Playlist View"));
     CHECK(map_type("Peakmeter") == nullptr);
     CHECK(map_type("Album Art") == nullptr);
+    CHECK(map_type("Biography View") == nullptr);
+    CHECK(panel_kind("Biography View") == PanelKind::Biography);
+    CHECK(map_type("Library Filter") == nullptr);
+    CHECK(panel_kind("Library Filter") == PanelKind::LibraryTree);
+    CHECK_EQ(std::string(panel_kind_name(PanelKind::Biography)), std::string("Biography"));
     CHECK(map_type("Track Display") == nullptr);
     CHECK(map_type("Album list") == nullptr);
     CHECK(map_type("Chronflow") == nullptr);

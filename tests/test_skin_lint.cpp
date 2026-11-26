@@ -50,7 +50,8 @@ TEST("lint: a skin with problems") {
           "$button(0,0,0,0,0,0,img/ok.png,img/ok.png,'POPUP:settings.ava')"
           "$frobnicate(1)$drawrect(1,2)$scplsetlayout(x)");
     s.put("panels/disp.txt", "$panel(inner,Track Display,0,0,1,1)$upper(%title%)");
-    s.put("foo_ui_panels.ini", "asset.nocover = img/none_{theme}.png\n");
+    s.put("img/bio.js", "x");
+    s.put("foo_ui_panels.ini", "asset.nocover = img/none_{theme}.png\npanel.eq.fallback = js/eq.js\npanel.bio.fallback = img/bio.js\n");
     auto f = lint_skin(s.dir);
     CHECK(has(f, LintFinding::Level::Warning, "main.txt: image not found: img/gone.png"));
     CHECK(!has(f, LintFinding::Level::Warning, "getpvar"));
@@ -62,6 +63,8 @@ TEST("lint: a skin with problems") {
     CHECK(has(f, LintFinding::Level::Error, "panel script not found: panels/inner.txt"));
     CHECK(!has(f, LintFinding::Level::Error, "panels/disp.txt"));
     CHECK(has(f, LintFinding::Level::Warning, "asset.nocover not found: img/none_1.png"));
+    CHECK(has(f, LintFinding::Level::Warning, "panel.eq.fallback not found: js/eq.js"));
+    CHECK(!has(f, LintFinding::Level::Warning, "img/bio.js"));
     CHECK(f.front().level == LintFinding::Level::Error);
     CHECK(format_findings(f).find(" error(s), ") != std::string::npos);
 }

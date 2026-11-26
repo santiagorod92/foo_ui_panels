@@ -34,7 +34,7 @@ $button2(40,130,0,0,24,24,images\btn.png,images\btn_hover.png,POPUP:Popup,TOOLTI
 $button2(70,130,0,0,24,24,$imageabs2(24,24,0,0,0,0,0,0,images\btn.png),$imageabs2(24,24,0,0,0,0,0,0,images\btn_hover.png),POPUP:Popup,TOOLTIP:Sized state images)
 $textbutton(70,130,80,24,Play,Play!,Playback/Play,TOOLTIP,Start playback)
 $imagebutton(160,130,images\btn.png,images\btn_hover.png,'Playback/Stop',TOOLTIP,Stop)
-$scplsetlayout(ignored)
+$scplsetlayout(ignored)$if($fontexists(Tahoma),,)$glass(0,0,0,0)
 $panel(display,Track Display,10,160,200,60)
 $panel(playlist,Single Column Playlist,220,160,200,120)
 $panel(seek,Seek Bar,10,290,200,8)

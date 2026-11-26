@@ -5,6 +5,7 @@
 #include "../core/list_logic.h"
 #include "../core/lyrics_parse.h"
 #include "../core/log.h"
+#include "../core/http_get.h"
 #include "../core/navidrome_lyrics_api.h"
 #include <algorithm>
 #include <cmath>
@@ -196,26 +197,6 @@ bool load_local(const metadb_handle_ptr& np, const TrackIds& ids, std::vector<Ly
 
 const char* const kInstrumental = "\xE2\x99\xAA Instrumental \xE2\x99\xAA";
 
-bool http_get(const std::string& url, std::string& body, abort_callback& ab) {
-    try {
-        auto req = http_client::get()->create_request("GET");
-        req->add_header("User-Agent", "foo_ui_panels lyrics (foobar2000 component)");
-        file::ptr f = req->run(url.c_str(), ab);
-        char buf[4096];
-        body.clear();
-        for (;;) {
-            t_size n = f->read(buf, sizeof buf, ab);
-            if (!n) break;
-            body.append(buf, n);
-            if (body.size() > (2u << 20)) break;
-        }
-        return !body.empty();
-    } catch (const std::exception& e) {
-        log::warn("lyrics", "GET " + url + " failed: " + e.what());
-        return false;
-    } catch (...) { return false; }
-}
-
 service_ptr_t<navidrome::navidrome_lyrics_api> navidrome_lyrics_for(const metadb_handle_ptr& h) {
     service_enum_t<navidrome::navidrome_lyrics_api> e;
     service_ptr_t<navidrome::navidrome_lyrics_api> api;
@@ -310,8 +291,8 @@ void LyricsPanel::start_fetch(bool web) {
                 if (json_true(body, "instrumental")) { text = kInstrumental; return true; }
                 return false;
             };
-            if (http_get(base + "get?" + exact, body, ab)) ok = pick();
-            if (!ok && http_get(base + "search?" + q, body, ab)) ok = pick();
+            if (http_get(base + "get?" + exact, body, ab, "lyrics")) ok = pick();
+            if (!ok && http_get(base + "search?" + q, body, ab, "lyrics")) ok = pick();
             log::info("lyrics", std::string("lrclib.net ") + (ok ? "found" : "has no") + " lyrics for " + ids.artist + " - " + ids.title);
         } catch (const std::exception& e) {
             log::warn("lyrics", std::string("lrclib.net lookup failed: ") + e.what());

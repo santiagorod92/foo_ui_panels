@@ -1,5 +1,7 @@
 $drawrect(0,0,%_width%,%_height%,brushcolor-30-60-120 pencolor-null)
 $panel(Probe,JS Panel,20,20,300,160)
 $panel(Other,JS Panel,340,20,200,100)
+$panel(Fallback,No Such UI Element,560,20,60,60)
+$panel(Bio,Biography,20,230,520,160)
 $font(Arial,12,bold,255-255-255)
-$alignabs(20,200,520,20,left,top)value $getvalue(bridge.v)
+$alignabs(20,200,520,20,left,top)value $getvalue(bridge.v) $if($fontexists(Arial),font yes,font no)

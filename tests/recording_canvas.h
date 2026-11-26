@@ -2,6 +2,7 @@
 #include "core/script_runtime.h"
 #include <cstdio>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -71,6 +72,8 @@ public:
     std::map<std::string, std::pair<int, int>> images;
     std::vector<std::string> reports, subscripts;
     bool titlebar = true; std::string tray = "-", title;
+    std::set<std::string> missingFonts;
+    bool font_exists(const std::string& face) override { return !missingFonts.count(face); }
 
     explicit FakeEnv(std::vector<std::string>& log) : ops(log) {}
     std::string eval(const std::string& s) override { auto it = evals.find(s); return it != evals.end() ? it->second : s; }

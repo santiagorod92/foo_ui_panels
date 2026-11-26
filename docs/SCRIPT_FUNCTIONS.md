@@ -32,7 +32,7 @@ pixels; colours are `r-g-b` unless noted.
 | `$drawstring(text,x,y,w,h[,r-g-b[,opts]])` | yes | Draws text in a box; opts: center right vcenter, and wrap (several lines — this engine's addition). |
 | `$draw_text(text,x,y,w,h[,opts])` | yes | Draws text in a box in the current text colour. |
 | `$calcwidth(text)` | yes | Pixel width of text in the current font. |
-| `$drawrect(x,y,w,h,spec)` | yes | Rectangle; spec: brushcolor-r-g-b pencolor-r-g-b alpha-N (null = none). |
+| `$drawrect(x,y,w,h,spec)` | yes | Rectangle (w or h 0 = to the panel's edge with drawrect.zero_fills = 1); spec: brushcolor-r-g-b pencolor-r-g-b alpha-N (null = none). |
 | `$drawroundrect(x,y,w,h,rx,ry,r-g-b)` | yes | Filled rounded rectangle. |
 | `$gradientrect(x,y,w,h,top,bottom)` | yes | Vertical gradient between two r-g-b colours. |
 | `$gp_set_brush(a-r-g-b)` | yes | Brush for $gp_fill_rectangle (r-g-b = opaque). |
@@ -47,3 +47,5 @@ pixels; colours are `r-g-b` unless noted.
 | `$textbutton(x,y,w,h,normal,hover[,action[,TOOLTIP,text]])` | yes | Text button. |
 | `$imagebutton(x,y,normal,hover,action[,TOOLTIP,text])` | yes | Small image button (rating stars). |
 | `$scplsetlayout(…)` | ignored | Single Column Playlist layout — ignored (the native playlist has its own). |
+| `$fontexists(face)` | yes | True when the font face is installed (Panels UI 0.13; on macOS the Windows UI faces count). |
+| `$glass(left,right,top,bottom)` | ignored | Windows Vista glass margins (Panels UI 0.13) — ignored; %glass% is always false. |

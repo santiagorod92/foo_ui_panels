@@ -131,7 +131,7 @@ const std::vector<ScriptFunction>& script_functions() {
         { "calcwidth", 1, S::Implemented, &R::f_calcwidth, "$calcwidth(text)",
           "Pixel width of text in the current font." },
         { "drawrect", 5, S::Implemented, &R::f_drawrect, "$drawrect(x,y,w,h,spec)",
-          "Rectangle; spec: brushcolor-r-g-b pencolor-r-g-b alpha-N (null = none)." },
+          "Rectangle (w or h 0 = to the panel's edge with drawrect.zero_fills = 1); spec: brushcolor-r-g-b pencolor-r-g-b alpha-N (null = none)." },
         { "drawroundrect", 7, S::Implemented, &R::f_drawroundrect, "$drawroundrect(x,y,w,h,rx,ry,r-g-b)",
           "Filled rounded rectangle." },
         { "gradientrect", 6, S::Implemented, &R::f_gradientrect, "$gradientrect(x,y,w,h,top,bottom)",
@@ -162,6 +162,10 @@ const std::vector<ScriptFunction>& script_functions() {
           "$imagebutton(x,y,normal,hover,action[,TOOLTIP,text])", "Small image button (rating stars)." },
         { "scplsetlayout", 0, S::Stub, &R::f_stub, "$scplsetlayout(…)",
           "Single Column Playlist layout — ignored (the native playlist has its own)." },
+        { "fontexists", 1, S::Implemented, &R::f_fontexists, "$fontexists(face)",
+          "True when the font face is installed (Panels UI 0.13; on macOS the Windows UI faces count)." },
+        { "glass", 4, S::Stub, &R::f_stub, "$glass(left,right,top,bottom)",
+          "Windows Vista glass margins (Panels UI 0.13) — ignored; %glass% is always false." },
     };
     return table;
 }
@@ -372,6 +376,12 @@ bool ScriptRuntime::f_settitle(const ScriptArgs& a, ScriptOut&) {
 
 bool ScriptRuntime::f_stub(const ScriptArgs&, ScriptOut&) { return true; }
 
+bool ScriptRuntime::f_fontexists(const ScriptArgs& a, ScriptOut& out) {
+    const std::string face = trim_ws(eval_arg(a.str(0)));
+    out.truth = !face.empty() && m_env.font_exists(face) ? 1 : 0;
+    return true;
+}
+
 bool ScriptRuntime::f_font(const ScriptArgs& a, ScriptOut&) {
     flush_text();
     const std::string face = eval_arg(a.str(0));
@@ -441,7 +451,9 @@ bool ScriptRuntime::f_drawrect(const ScriptArgs& a, ScriptOut&) {
     int alpha = 255;
     auto ap = spec.find("alpha-");
     if (ap != std::string::npos) alpha = atoi(spec.c_str() + ap + 6);
-    gfx::Rect rc = mkrect(a.num(0), a.num(1), a.num(2), a.num(3));
+    const int x = a.num(0), y = a.num(1);
+    const bool fill = m_st.cfg.num("drawrect.zero_fills", 0) != 0;
+    gfx::Rect rc = mkrect(x, y, fill && a.num(2) == 0 ? m_w - x : a.num(2), fill && a.num(3) == 0 ? m_h - y : a.num(3));
     if (hb) {
         if (alpha < 255) m_cv.fill_rect_alpha(rc, brush, alpha);
         else m_cv.fill_rect(rc, brush);
